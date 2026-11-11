@@ -65,6 +65,7 @@
   hive-mcp.tools.clojure-discover
   hive-mcp.tools.consolidated.multi
   hive-mcp.tools.consolidated.hot
+  hive-mcp.tools.consolidated.hot-eject-fallback
   hive-mcp.tools.consolidated.inbox
   hive-mcp.tools.consolidated.addon
   hive-mcp.tools.consolidated.config

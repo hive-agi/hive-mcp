@@ -1,4 +1,10 @@
 {:turn-budget [{:initial 3} nil :refused],
+ :time-budget
+ [[nil 1500 1500 nil nil]
+  :refused
+  :refused
+  {:llm-retries 2, :time-budget-ms 1500}
+  {}],
  :loop-opts
  {:llm-retries 2,
   :resume {:run-id "r", :at {:seq 1}},

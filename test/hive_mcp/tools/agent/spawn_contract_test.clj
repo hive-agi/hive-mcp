@@ -92,6 +92,11 @@
    :resume        [(sp/normalize-resume nil) (sp/normalize-resume {:run_id "r" :prompt "p"})]
    :turn-budget   [(sp/turn-budget-opt identity {:initial 3}) (sp/turn-budget-opt nil nil)
                    (refused #(sp/turn-budget-opt nil {:initial 3}))]
+   :time-budget   [(mapv sp/time-budget-opt [nil 1500 "1500" 0 -5])
+                   (refused #(sp/time-budget-opt "soon"))
+                   (refused #(sp/time-budget-opt 1.5))
+                   (sp/loop-opts {:time_budget_ms 1500 :llm_retries 2} nil)
+                   (sp/loop-opts {:time_budget_ms 0} nil)]
    :editor        [(sp/editor-preflight-refusal :headless (constantly false))
                    (some? (sp/editor-preflight-refusal :vterm (constantly false)))]
    :provider      (sp/provider-preflight-refusal :claude :anthropic)

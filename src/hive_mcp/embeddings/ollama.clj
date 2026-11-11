@@ -227,6 +227,48 @@
                    [:=> [:cat] [:vector :string]]
                    [:=> [:cat :string] [:vector :string]]])
 
+(defn- tags-request
+  "GET /api/tags at `host`: the served models, each with its exact :digest."
+  [host]
+  (let [request  (-> (HttpRequest/newBuilder)
+                     (.uri (URI/create (str host "/api/tags")))
+                     (.GET)
+                     (.timeout (Duration/ofSeconds 10))
+                     (.build))
+        response (http/send-with-retry http-client request (HttpResponse$BodyHandlers/ofString))]
+    (if (= 200 (.statusCode response))
+      (json/read-str (.body response) :key-fn keyword)
+      (throw (ex-info "Ollama API error" {:status (.statusCode response)
+                                          :url    (str host "/api/tags")})))))
+
+(defn digest-in-tags
+  "Pure. The digest of `model` in an /api/tags response, or nil. A bare model
+   name matches its :latest tag, as Ollama resolves it."
+  [tags model]
+  (let [model  (str model)
+        wanted (if (re-find #":" model) #{model} #{model (str model ":latest")})]
+    (some (fn [{:keys [name digest] :as m}]
+            (when (or (contains? wanted name) (contains? wanted (:model m)))
+              digest))
+          (:models tags))))
+
+(m/=> digest-in-tags [:=> [:cat [:maybe [:map-of :keyword :any]] [:maybe :string]]
+                      [:maybe :string]])
+
+(defn model-digest
+  "Exact digest of `model` as the Ollama at `host` serves it (GET /api/tags),
+   or nil when the server is unreachable or does not serve that model. The
+   digest names the weights: a re-pulled tag with new weights is a new
+   embedding space even though its name did not change."
+  [host model]
+  (try
+    (digest-in-tags (tags-request host) model)
+    (catch Exception e
+      (log/warn "Could not read Ollama digest for" model "at" host "-" (.getMessage e))
+      nil)))
+
+(m/=> model-digest [:=> [:cat :string [:maybe :string]] [:maybe :string]])
+
 (defn pull-model
   "Pull a model from Ollama (downloads if not present).
    This is a convenience wrapper - you can also run `ollama pull <model>` in terminal."

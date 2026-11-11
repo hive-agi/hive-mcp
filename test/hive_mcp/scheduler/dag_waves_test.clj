@@ -32,7 +32,9 @@
             [hive-schemas.test :refer [deftrifecta-from-schema]]
             [hive-spi.memory.registry :as sreg]
             [hive-mcp.vectordb.kanban-facade :as kanban-facade]
-            [clojure.string :as str]))
+            [clojure.string :as str]
+            [hive-mcp.test-support.registry-isolation :as isolation]
+            [hive-mcp.addons.core :as addons]))
 
 ;; =============================================================================
 ;; Test Fixtures
@@ -232,15 +234,15 @@
    hive-mcp.vectordb.facade, which resolves the active IMemoryStore from the
    hive-spi registry. The table therefore has to be injected at the port; a
    `with-redefs` on any vectordb namespace binds a var the scheduler no longer
-   calls, and every dependency then reads as already-satisfied."
+   calls, and every dependency then reads as already-satisfied.
+
+   Refuses to run inside a live addon server and restores the prior slot map
+   in one atomic swap; it never calls the global reset-registry!."
   [f]
-  (let [prior (sreg/registered-stores)]
-    (try
+  (isolation/with-restored-store-registry
+    (fn []
       (stub/install! (stub/->stub nil {:get-entry-fn (fn [id] (mock-get-entry-by-id id))}))
-      (f)
-      (finally
-        (sreg/reset-registry!)
-        (doseq [[k s] prior] (sreg/register-store! k s))))))
+      (f))))
 
 (use-fixtures :each reset-dag-state-fixture with-task-store with-kanban-port)
 
@@ -1139,27 +1141,50 @@
   ;; silently collapsed. The fix reads through vectordb.kanban-facade, which
   ;; core's real kanban provider (installed here in place of the table double)
   ;; still does behind the IKanbanRead port.
-  (let [kanban-id    "kanban-slot-only-task"
-        kanban-card  {:id kanban-id :content {:title "lives in :kanban slot" :status "todo"}}
-        prior-kanban (get (sreg/registered-stores) :kanban)]
-    (try
-      ;; Card resolvable ONLY through the :kanban slot; force :kanban routing.
-      (sreg/register-store!
-       :kanban (stub/->stub nil {:get-entry-fn (fn [id] (when (= id kanban-id) kanban-card))}))
-      (kport/with-core-kanban
-        (fn []
-          (with-redefs [kanban-facade/mode (constantly :kanban)]
-            (testing "kanban-slot card is not done, and is resolved via the :kanban slot"
-              (is (some? (#'dag/get-kanban-task kanban-id))
-                  "get-kanban-task must resolve the card through the :kanban slot")
-              (is (false? (#'dag/kanban-task-done? kanban-id #{}))
-                  "wrong-facade regression: a live kanban card must read as NOT done"))
-            (testing "the same card counts as done once its id is in the completed set"
-              (is (true? (#'dag/kanban-task-done? kanban-id #{kanban-id})))))))
-      (finally
-        (if prior-kanban
-          (sreg/register-store! :kanban prior-kanban)
-          (sreg/unregister-store! :kanban))))))
+  ;; The :kanban registration runs under with-restored-store-registry: a running
+  ;; addon server is refused before the slot is touched, and the prior slot map
+  ;; is restored in one atomic swap instead of a per-slot re-register.
+  (let [kanban-id   "kanban-slot-only-task"
+        kanban-card {:id kanban-id :content {:title "lives in :kanban slot" :status "todo"}}]
+    (isolation/with-restored-store-registry
+      (fn []
+        ;; Card resolvable ONLY through the :kanban slot; force :kanban routing.
+        (sreg/register-store!
+         :kanban (stub/->stub nil {:get-entry-fn (fn [id] (when (= id kanban-id) kanban-card))}))
+        (kport/with-core-kanban
+          (fn []
+            (with-redefs [kanban-facade/mode (constantly :kanban)]
+              (testing "kanban-slot card is not done, and is resolved via the :kanban slot"
+                (is (some? (#'dag/get-kanban-task kanban-id))
+                    "get-kanban-task must resolve the card through the :kanban slot")
+                (is (false? (#'dag/kanban-task-done? kanban-id #{}))
+                    "wrong-facade regression: a live kanban card must read as NOT done"))
+              (testing "the same card counts as done once its id is in the completed set"
+                (is (true? (#'dag/kanban-task-done? kanban-id #{kanban-id})))))))))))
+
+(deftest with-task-store-cannot-clobber-a-live-registry
+  ;; Test isolation (card 20260629165759-7b9fd43c): the fixture used to call
+  ;; the global reset-registry! in its finally and never checked for a running
+  ;; addon server, so loading this ns in a live nREPL wiped the live stores.
+  (let [before (sreg/registered-stores)]
+    (testing "a throwing body leaves the exact prior slot map behind"
+      (is (thrown? Exception
+                   (with-task-store
+                     (fn []
+                       (is (some? (sreg/get-store)) "stub installed as :default")
+                       (throw (Exception. "body failed"))))))
+      (is (= before (sreg/registered-stores))))
+    (testing "a running addon server is refused before any store is written"
+      (let [ran? (atom false)
+            writes (atom 0)]
+        (with-redefs [addons/registry-status (constantly {:total 1 :active 1 :registered 0 :error 0})
+                      stub/install! (fn [s] (swap! writes inc) s)]
+          (is (= :live-addon-registry
+                 (:reason (ex-data (try (with-task-store (fn [] (reset! ran? true)))
+                                        (catch clojure.lang.ExceptionInfo e e)))))))
+        (is (false? @ran?))
+        (is (zero? @writes))
+        (is (= before (sreg/registered-stores)))))))
 
 ;; =============================================================================
 ;; Tests: terminal ling events beyond :completed

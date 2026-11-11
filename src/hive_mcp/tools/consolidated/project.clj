@@ -174,8 +174,10 @@
                                             :description "Project ID to query tree for / [kanban list] exact-match project filter / [kanban retag] alias for new_project_id"}
                               ;; Kanban params
                               "title" {:type "string" :description "[kanban create|update] Task title. On update a non-blank value replaces the current title in place — entry id, KG edges, status and scope are preserved."}
-                              "description" {:type "string" :description "[kanban create|update] Task description. On update a non-blank value replaces the current description in place."}
-                              "task_id" {:type "string" :description "[kanban get|update|delete|retag] Task ID"}
+                              "description" {:type "string" :description "[kanban create|update] Task description. On update a non-blank value replaces the current description; the old text is kept in the card's description-history (kanban history / kanban restore). To add a note, use append_description."}
+                              "append_description" {:type "string" :description "[kanban update] Append text to the existing description after a blank line, without replacing it"}
+                              "rev" {:type "integer" :description "[kanban restore] Revision number from kanban history (1 = oldest) to put back as the description"}
+                              "task_id" {:type "string" :description "[kanban get|update|delete|retag|history|restore] Task ID"}
                               "id" {:type "string" :description "[kanban get] Alias for task_id — entry id to fetch from either store"}
                               "new_status" {:type "string"
                                             :enum ["todo" "inprogress" "inreview" "done"]

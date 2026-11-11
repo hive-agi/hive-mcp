@@ -13,7 +13,6 @@
             [hive-mcp.plan.fsm :as plan-fsm]
             [hive-mcp.plan.kg-degraded :as kg-degraded]
             [hive-mcp.vectordb.facade :as facade]
-            [hive-mcp.knowledge-graph.connection :as kg-conn]
             [hive-mcp.knowledge-graph.edges :as kg-edges]
             [hive-mcp.context.request :as ctx]
             [clojure.string :as str]
@@ -166,56 +165,48 @@
      task-ids - Vector of kanban task IDs
      scope    - Project scope
      agent-id - Creating agent
-     waves    - Map of step-id -> wave-number (for metadata)
-     step-id-to-task-id - Map of step-id -> task-id
+     waves    - Map of step-id -> wave-number (unused; kept for the call shape)
+     step-id-to-task-id - Map of step-id -> task-id (unused; same reason)
 
-   Returns vector of created edge IDs."
-  [plan-id task-ids scope agent-id waves step-id-to-task-id]
-  (kg-conn/with-tx-batch
-    (let [task-id-to-step-id (into {} (map (fn [[k v]] [v k]) step-id-to-task-id))]
-      (vec
-       (for [task-id task-ids
-             :let [step-id (get task-id-to-step-id task-id)
-                   _wave (get waves step-id 0)]]
-         (kg-edges/add-edge!
-          {:from plan-id
-           :to task-id
-           :relation :depends-on
-           :scope scope
-           :confidence 1.0
-           :source-type :automated
-           :created-by (str "plan_to_kanban" (when agent-id (str ":" agent-id)))}))))))
+   Returns vector of created edge IDs.
+
+   The edges go through `add-edges!` on the write-coalescing queue: the call
+   enqueues and returns the ids, it does not wait on the store. A synchronous
+   transaction here ran past the kg-degraded budget on a busy store, so the
+   response reported the edges as skipped while the transaction went on to
+   write them."
+  [plan-id task-ids scope agent-id _waves _step-id-to-task-id]
+  (kg-edges/add-edges!
+   (mapv (fn [task-id]
+           {:from plan-id
+            :to task-id
+            :relation :depends-on
+            :scope scope
+            :confidence 1.0
+            :source-type :automated
+            :created-by (str "plan_to_kanban" (when agent-id (str ":" agent-id)))})
+         task-ids)))
 
 (defn- create-task-dependency-edges!
   "Create KG edges for task-to-task dependencies.
    task-B --depends-on--> task-A (B depends on A completing first)
 
-   Arguments:
-     step-id-to-task-id - Map from step ID to kanban task ID
-     steps - Plan steps with :depends-on fields
-     scope - Project scope
-     agent-id - Creating agent
-     waves - Map of step-id -> wave-number
-
-   Returns vector of created edge IDs."
-  [step-id-to-task-id steps scope agent-id waves]
-  (kg-conn/with-tx-batch
-    (vec
-     (for [step steps
-           dep-id (:depends-on step)
-           :when (and dep-id (contains? step-id-to-task-id dep-id))]
-       (let [from-task-id (get step-id-to-task-id (:id step))
-             to-task-id (get step-id-to-task-id dep-id)
-             _from-wave (get waves (:id step) 0)
-             _to-wave (get waves dep-id 0)]
-         (kg-edges/add-edge!
-          {:from from-task-id
-           :to to-task-id
-           :relation :depends-on
-           :scope scope
-           :confidence 1.0
-           :source-type :automated
-           :created-by (str "plan_to_kanban" (when agent-id (str ":" agent-id)))}))))))
+   `step-id-to-task-id` maps step ID to kanban task ID; `steps` carry
+   :depends-on. Returns vector of created edge IDs, enqueued in one
+   `add-edges!` call for the reason given on `create-plan-task-edges!`."
+  [step-id-to-task-id steps scope agent-id _waves]
+  (kg-edges/add-edges!
+   (vec
+    (for [step steps
+          dep-id (:depends-on step)
+          :when (and dep-id (contains? step-id-to-task-id dep-id))]
+      {:from (get step-id-to-task-id (:id step))
+       :to (get step-id-to-task-id dep-id)
+       :relation :depends-on
+       :scope scope
+       :confidence 1.0
+       :source-type :automated
+       :created-by (str "plan_to_kanban" (when agent-id (str ":" agent-id)))}))))
 
 (defn- build-execute-fn
   "Build the execute function for the Plan FSM.
@@ -279,7 +270,10 @@
                            waves step-id-to-task-id)]
                         ["task-dep-edges"
                          #(create-task-dependency-edges!
-                           step-id-to-task-id steps project-id agent-id waves)]])]
+                           step-id-to-task-id steps project-id agent-id waves)]])
+            ;; The edge calls only enqueue: wait, bounded, until the edges
+            ;; read back so the response says readable or still queued.
+            kg-result (kg-degraded/with-durability kg-result kg-edges/get-edge)]
 
         (when (:degraded? kg-result)
           (kg-degraded/log-degradation!
@@ -291,6 +285,7 @@
          :step-mapping step-id-to-task-id
          :decision-id decision-id
          :kg-degraded? (:degraded? kg-result)
+         :kg-pending? (:pending? kg-result)
          :kg-warnings (:warnings kg-result)}))))
 
 (defn plan-to-kanban
@@ -359,6 +354,7 @@
                      :kg-edges (:kg-edges result)
                      :edge-count (count (:kg-edges result))
                      :kg-degraded? (boolean (:kg-degraded? result))
+                     :kg-pending? (boolean (:kg-pending? result))
                      :kg-warnings (:kg-warnings result)
                      :step-mapping (:step-mapping result)}))))
 

@@ -2,6 +2,7 @@
   "Chroma connection configuration, collection management, and health status."
   (:require [hive-mcp.chroma.client :as chroma]
             [hive-mcp.embeddings.active :as emb]
+            [hive-mcp.embeddings.space :as space]
             [taoensso.timbre :as log] [hive-dsl.result :refer [rescue]]
             [malli.core :as m]))
 
@@ -60,13 +61,16 @@
   (rescue nil (deref (chroma/get-collection coll-name) 10000 nil)))
 
 (defn- create-new-collection
-  "Create a new Chroma collection with dimension metadata."
-  [coll-name dim]
-  (let [result (deref (chroma/create-collection coll-name {:metadata {:dimension dim :created-by "hive-mcp"}})
-                      15000 ::timeout)]
-    (when (= result ::timeout)
-      (throw (ex-info "Chroma create-collection timed out" {:collection coll-name})))
-    result))
+  "Create a new Chroma collection with dimension metadata, plus the embedding
+   space `stamp` (space/space->metadata) when the caller can name one."
+  ([coll-name dim] (create-new-collection coll-name dim nil))
+  ([coll-name dim stamp]
+   (let [result (deref (chroma/create-collection
+                        coll-name {:metadata (merge {:dimension dim :created-by "hive-mcp"} stamp)})
+                       15000 ::timeout)]
+     (when (= result ::timeout)
+       (throw (ex-info "Chroma create-collection timed out" {:collection coll-name})))
+     result)))
 
 (defn- cache-collection!
   "Cache and return collection, logging action."
@@ -91,23 +95,55 @@
 
 (defonce ^:private named-collection-cache (atom {}))
 
+(def metric
+  "Distance Chroma scores a collection with when no hnsw:space is given."
+  :l2)
+
+(defonce ^:private legacy-warned (atom #{}))
+
+(defn- admit-space!
+  "Guard `coll` (named `coll-name`) for vectors of `space`. A stamped
+   collection of another space throws :embedding-space-mismatch; an unstamped
+   one is legacy: admitted, with one warning per collection per process."
+  [coll-name coll space]
+  (let [{:keys [verdict space-id]} (space/admit coll-name space (when (map? coll) (:metadata coll)))]
+    (when (and (= :legacy verdict) (not (contains? @legacy-warned coll-name)))
+      (swap! legacy-warned conj coll-name)
+      (log/warn "Embedding space unrecorded for legacy collection" coll-name
+                "- admitting vectors of space" space-id
+                "unverified; isolate or re-embed to stamp it"))
+    coll))
+
 (defn get-or-create-named-collection
   "Get or create a named collection with explicit dimension.
-   Caches per collection-name. Used by type-based embedder routing."
-  [coll-name dimension]
-  (or (get @named-collection-cache coll-name)
-      (let [coll (or (try-get-collection coll-name)
-                     (create-new-collection coll-name dimension))]
-        (swap! named-collection-cache assoc coll-name coll)
-        (log/info "Named collection ready:" coll-name "dimension:" dimension)
-        coll)))
+   Caches per collection-name. Used by type-based embedder routing.
 
-(m/=> get-or-create-named-collection [:=> [:cat :string pos-int?] chroma/Coll])
+   With `space` (an EmbeddingSpace) a new collection is stamped with it, and
+   an existing one must hold it: a stamped collection of another space throws
+   ex-info :embedding-space-mismatch, so vectors of two spaces never share a
+   collection; an unstamped (legacy) collection is admitted with a warning.
+   A nil `space` (provider without a nameable space) skips the guard."
+  ([coll-name dimension] (get-or-create-named-collection coll-name dimension nil))
+  ([coll-name dimension space]
+   (let [coll (or (get @named-collection-cache coll-name)
+                  (let [coll (or (try-get-collection coll-name)
+                                 (create-new-collection coll-name dimension
+                                                        (some-> space space/space->metadata)))]
+                    (swap! named-collection-cache assoc coll-name coll)
+                    (log/info "Named collection ready:" coll-name "dimension:" dimension)
+                    coll))]
+     (if space (admit-space! coll-name coll space) coll))))
+
+(m/=> get-or-create-named-collection
+      [:function
+       [:=> [:cat :string pos-int?] chroma/Coll]
+       [:=> [:cat :string pos-int? [:maybe space/EmbeddingSpace]] chroma/Coll]])
 
 (defn reset-collection-cache!
   "Reset the collection cache (for testing/reconnection)."
   []
   (reset! collection-cache nil)
+  (reset! legacy-warned #{})
   (reset! named-collection-cache {}))
 
 (m/=> reset-collection-cache! [:=> [:cat] [:map-of {:max 0} :any :any]])

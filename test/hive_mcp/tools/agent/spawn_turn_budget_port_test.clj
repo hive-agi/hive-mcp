@@ -54,3 +54,16 @@
   (is (= {:turn-budget {:normalized {"initial" 60}} :llm-retries 4}
          (spawn/loop-opts {:turn_budget {"initial" 60} :llm_retries 4} stub-normalize)))
   (is (= {} (spawn/loop-opts {} stub-normalize))))
+
+(deftest loop-opts-threads-the-time-budget
+  (is (= {:time-budget-ms 90000 :llm-retries 4}
+         (spawn/loop-opts {:time_budget_ms 90000 :llm_retries 4} stub-normalize)))
+  (is (= {:time-budget-ms 90000 :turn-budget {:normalized {"initial" 60}}}
+         (spawn/loop-opts {:time_budget_ms "90000" :turn_budget {"initial" 60}} stub-normalize)))
+  (testing "nil, zero and negative set no deadline: the key is left out"
+    (doseq [v [nil 0 -1 "0"]]
+      (is (= {} (spawn/loop-opts {:time_budget_ms v} stub-normalize)))))
+  (testing "a value that is no integer is refused, naming the param"
+    (let [e (try (spawn/loop-opts {:time_budget_ms "soon"} stub-normalize) nil
+                 (catch clojure.lang.ExceptionInfo e e))]
+      (is (= "time_budget_ms" (:param (ex-data e)))))))

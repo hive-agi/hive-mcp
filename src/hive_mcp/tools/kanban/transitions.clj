@@ -193,6 +193,31 @@
       addition)
     current))
 
+(def description-history-limit
+  "How many replaced descriptions a card keeps in `:description-history`."
+  20)
+
+(defn description-history
+  "The card's `:description-history` as a vector of keyword-keyed revision
+   maps, oldest first. Tolerates JSON-roundtripped (string-keyed) content."
+  [content]
+  (let [h (content-val content :description-history nil)]
+    (if (sequential? h)
+      (mapv (fn [rev] (if (map? rev) (walk/keywordize-keys rev) {:description rev})) h)
+      [])))
+
+(defn push-description-history
+  "Pure: `history` with `old-desc` appended as a revision stamped `at` and,
+   when given, `agent-id`. Keeps the newest `description-history-limit`
+   revisions. A blank `old-desc` leaves `history` unchanged."
+  [history old-desc at agent-id]
+  (if (and (string? old-desc) (not (str/blank? old-desc)))
+    (let [rev (cond-> {:description old-desc :replaced-at at}
+                (and (string? agent-id) (not (str/blank? agent-id))) (assoc :agent agent-id))
+          h   (conj (vec history) rev)]
+      (vec (take-last description-history-limit h)))
+    (vec history)))
+
 (defn edit-transition
   "Pure: derive the content edit for a task. A field is edited only when
    `edits` carries a non-blank string for it; anything else leaves the
@@ -201,6 +226,12 @@
    `:append-description` is applied AFTER `:description`: it extends the
    description that results (the replaced one when both are given, else the
    current one), so history can grow without being rewritten.
+
+   When `:description` replaces a non-blank description, the old text is
+   pushed onto `:description-history` (oldest first, bounded by
+   `description-history-limit`) with `:replaced-at` (`:at` in `edits`, else
+   now) and `:agent` (`:agent-id` in `edits`), so a replace is never a loss.
+   An append alone keeps the old text inside the new one and records nothing.
 
    `:new-tags` is nil unless the priority changed. Priority lives in BOTH
    the content map and a `priority-*` tag — `kanban get` reads content while
@@ -227,9 +258,18 @@
                     (not= new-title old-title) (conj :title)
                     (not= new-desc old-desc)   (conj :description)
                     (not= new-prio old-prio)   (conj :priority))
+        replaced? (and (changed :description)
+                       (not= old-desc (pick :description old-desc))
+                       (string? old-desc) (not (str/blank? old-desc)))
         new-content (cond-> content
                       (changed :title)       (put-field :title new-title)
                       (changed :description) (put-field :description new-desc)
+                      replaced?              (put-field :description-history
+                                                        (push-description-history
+                                                         (description-history content)
+                                                         old-desc
+                                                         (or (get edits :at) (kanban-timestamp))
+                                                         (get edits :agent-id)))
                       (changed :priority)    (put-field :priority new-prio))]
     {:old-title    old-title
      :new-title    new-title
@@ -396,6 +436,8 @@
 (m/=> retag-transition [:=> [:cat ks/EntryIn [:maybe :string] ks/RetagOpts] ks/RetagResult])
 (m/=> reprioritize-tags [:=> [:cat ks/TagsIn :any] ks/StringTags])
 (m/=> append-description [:=> [:cat :any [:maybe :string]] :any])
+(m/=> description-history [:=> [:cat [:maybe [:map-of :any :any]]] [:vector :map]])
+(m/=> push-description-history [:=> [:cat [:maybe [:sequential :any]] :any :any :any] [:vector :map]])
 (m/=> edit-transition [:=> [:cat ks/EntryIn ks/Edits] ks/EditResult])
 (m/=> transition [:=> [:cat ks/EntryIn [:maybe :string] [:maybe :string]] ks/TransitionResult])
 (m/=> sort-by-priority-then-created [:=> [:cat [:maybe [:sequential ks/Task]]] [:sequential ks/Task]])

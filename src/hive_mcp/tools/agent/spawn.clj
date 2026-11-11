@@ -224,11 +224,30 @@
       (throw (ex-info "turn_budget needs the hive-agent addon, which is not loaded"
                       {:param "turn_budget" :value v})))))
 
+(defn time-budget-opt
+  "Pure: a raw time_budget_ms V as the run's wall-clock budget in ms. An
+   integer or a string of one; positive -> that long. nil, zero or negative
+   -> nil (no deadline, as hive-agent.loop.time-budget reads them). Anything
+   else throws ex-info naming time_budget_ms."
+  [v]
+  (when (some? v)
+    (let [n (cond
+              (integer? v) v
+              (string? v)  (parse-long (str/trim v))
+              :else        nil)]
+      (when-not (integer? n)
+        (throw (ex-info "time_budget_ms must be an integer number of milliseconds"
+                        {:param "time_budget_ms" :value v})))
+      (when (pos? n) (long n)))))
+
 (defn loop-opts
   "Validate the loop params of a spawn request once, by SpawnLoopParams, and
    return them as ling opts: {:llm-retries n :resume {...} :chat-run-id s
-   :turn-budget {...}}, absent keys omitted. A malformed value throws ex-info
-   with the humanized errors.
+   :turn-budget {...} :time-budget-ms n}, absent keys omitted. A malformed
+   value throws ex-info with the humanized errors.
+
+   :time-budget-ms is the run's wall-clock budget (see time-budget-opt); it
+   rides the ling ctx to the headless backend the way :turn-budget does.
 
    :turn-budget is the lease spec (hive-agent.swarm.wave-params/normalize-turn-budget,
    reached through the turn-budget port, see turn-budget-normalizer):
@@ -242,12 +261,14 @@
   ([params normalize]
    (let [{:keys [llm_retries resume chat_run_id]}
          (coerce-loop-params (select-keys params [:llm_retries :resume :chat_run_id]))
-         turn-budget (turn-budget-opt normalize (:turn_budget params))]
+         turn-budget (turn-budget-opt normalize (:turn_budget params))
+         time-budget (time-budget-opt (:time_budget_ms params))]
      (cond-> {}
        llm_retries (assoc :llm-retries llm_retries)
        resume      (assoc :resume (resume->backend resume))
        chat_run_id (assoc :chat-run-id chat_run_id)
-       turn-budget (assoc :turn-budget turn-budget)))))
+       turn-budget (assoc :turn-budget turn-budget)
+       time-budget (assoc :time-budget-ms time-budget)))))
 
 (defn normalize-resume
   "The MCP `resume` object as the kebab map the headless backend reads:
@@ -329,6 +350,28 @@
             child-depth (inc (long (grant/depth-of get-slave parent)))]
         (grant/child-grant (when (or parent-wire requested) (*grant-domain*))
                            parent-wire requested child-depth)))))
+
+(defn kanban-claim-refusal
+  "Claim card `kanban-task-id` for the spawner before the ling starts, and
+   answer the refusal text when another live owner holds it, else nil. The
+   claim owner is the spawn's `parent` lineage: the explicit parent when
+   given, else the caller (`effective-parent`), so the coordinator that spawns
+   holds the card and its ling works under that claim. `steal_claim` true
+   takes the card over. No card, no owner, or a claim that cannot be checked
+   (store down, unknown card) never blocks a spawn."
+  [{:keys [kanban_task_id steal_claim] :as params}]
+  (when-not (str/blank? (str kanban_task_id))
+    (when-let [owner (effective-parent params)]
+      (let [res (try ((requiring-resolve 'hive-mcp.tools.kanban.events/dispatch-claim!)
+                      {:task-id kanban_task_id :owner owner
+                       :steal-claim? (contains? #{true "true"} steal_claim)})
+                     (catch Throwable e
+                       (log/debug "kanban claim on spawn failed (non-fatal):" (ex-message e))
+                       nil))]
+        (when (= :kanban/claim-refused (:error res))
+          (:message res))))))
+
+(m/=> kanban-claim-refusal [:=> [:cat [:maybe :map]] [:maybe :string]])
 
 (defn handle-spawn
   "Spawn a new ling agent.
@@ -438,6 +481,8 @@
                         (throw (ex-info (str "Provider " (clojure.core/name effective-provider)
                                              " cannot serve this spawn: " (:fix err))
                                         err)))
+                    _ (when-let [refusal (kanban-claim-refusal params)]
+                        (throw (ex-info refusal {:kanban/claim-refused kanban_task_id})))
                     slave-id (proto/spawn! ling-agent (cond-> {:task brief
                                                                :parent parent
                                                                :spawned-by (spawner params)
@@ -510,7 +555,8 @@
    [:llm-retries {:optional true} nat-int?]
    [:resume {:optional true} ResumeBackend]
    [:chat-run-id {:optional true} [:string {:min 1}]]
-   [:turn-budget {:optional true} :map]])
+   [:turn-budget {:optional true} :map]
+   [:time-budget-ms {:optional true} pos-int?]])
 
 (def SpawnMode
   "A spawn mode keyword (open: addons register more), or nil."
@@ -538,6 +584,8 @@
 (m/=> turn-budget-normalizer [:=> [:cat] [:maybe helpers/Port]])
 
 (m/=> turn-budget-opt [:=> [:cat [:maybe helpers/Port] :any] [:maybe :map]])
+
+(m/=> time-budget-opt [:=> [:cat :any] [:maybe pos-int?]])
 
 (m/=> loop-opts
       [:function
