@@ -292,6 +292,71 @@
         ;; All three batches contributed edges.
         (is (= #{:e1 :e2 :e3 :decision-edge-id} (set (:kg-edges result))))))))
 
+;; =============================================================================
+;; Durability verdict: queued edges are pending, not lost.
+;; =============================================================================
+
+(def ^:private ok-result {:edges [:e1] :warnings [] :degraded? false})
+
+(deftest with-durability-test
+  (testing "drained queue: not pending, not degraded, no warning"
+    (is (= (assoc ok-result :pending? false)
+           (sut/with-durability ok-result (constantly :ok)))))
+
+  (testing "queue still draining: pending with a kg-pending warning, NOT degraded"
+    (let [result (sut/with-durability ok-result (constantly :weave/timeout))]
+      (is (true? (:pending? result)))
+      (is (false? (:degraded? result)))
+      (is (= [:e1] (:edges result)))
+      (is (= ["kg-pending:edges-queued:200ms"] (:warnings result)))))
+
+  (testing "a failed queued write is degraded"
+    (let [result (sut/with-durability ok-result (constantly :weave/write-failed))]
+      (is (false? (:pending? result)))
+      (is (true? (:degraded? result)))
+      (is (= ["kg-write-failed:edges-queued"] (:warnings result)))))
+
+  (testing "a throwing flush counts as a failed write and does not escape"
+    (let [result (sut/with-durability ok-result (fn [_] (throw (ex-info "x" {}))))]
+      (is (true? (:degraded? result)))
+      (is (= ["kg-write-failed:edges-queued"] (:warnings result)))))
+
+  (testing "the flush receives the configured budget"
+    (let [seen (atom nil)]
+      (sut/with-durability ok-result (fn [ms] (reset! seen ms) :ok))
+      (is (= 200 @seen))))
+
+  (testing "no edges: nothing to wait for, flush is not called"
+    (let [called? (atom false)
+          empty-result {:edges [] :warnings ["kg-timeout:a:200ms"] :degraded? true}]
+      (is (= (assoc empty-result :pending? false)
+             (sut/with-durability empty-result (fn [_] (reset! called? true) :ok))))
+      (is (false? @called?)))))
+
+(deftest integration-build-execute-fn-slow-store-test
+  (testing "a store slower than the budget leaves the edges queued: every edge
+            id is returned and nothing is reported skipped"
+    ;; The real edge fns run. They enqueue on the coalescing writer, so the
+    ;; store's speed cannot make them miss the budget; the store's speed shows
+    ;; only in the flush verdict, faked here as still draining.
+    ;; The budget is raised from the fixture's 200ms: the first enqueue opens
+    ;; the isolated store, and that cold open is not what this test measures.
+    (with-redefs [sut/kg-call-timeout-ms (constantly 5000)
+                  hive-mcp.knowledge-graph.connection.writer/flush-pending!
+                  (constantly :weave/timeout)]
+      (let [execute-fn (#'plan-tool/build-execute-fn
+                        "/tmp/nodir" "plan-id" "test-project" "test-agent")
+            plan      (plan-with [{:id "s1" :title "T1" :depends-on []}
+                                  {:id "s2" :title "T2" :depends-on ["s1"]}])
+            result    (execute-fn {:plan plan})]
+        (is (= 2 (count (:task-ids result))))
+        (is (= 4 (count (:kg-edges result)))
+            "decision edge + two plan->task edges + one task->task edge")
+        (is (every? string? (:kg-edges result)))
+        (is (false? (:kg-degraded? result)))
+        (is (true? (:kg-pending? result)))
+        (is (= ["kg-pending:edges-queued:5000ms"] (:kg-warnings result)))))))
+
 (deftest integration-build-execute-fn-kg-partial-test
   (testing "one batch hangs, others ok → partial edges + 1 warning"
     (with-redefs [plan-tool/create-plan-decision-edge!    (fn [& _] :ok-decision)

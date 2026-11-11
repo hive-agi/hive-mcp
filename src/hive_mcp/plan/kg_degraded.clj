@@ -152,6 +152,42 @@
      :warnings  warnings
      :degraded? (boolean (seq warnings))}))
 
+(defn with-durability
+  "Add the durability verdict of the queued edge writes to an `apply-kg-calls`
+   result. `flush-fn` takes a deadline in ms and returns :ok, :weave/timeout or
+   :weave/write-failed (the KG writer's flush-pending! contract).
+
+   Adds :pending? to the result:
+     :ok                 - edges are readable. :pending? false.
+     :weave/timeout      - edges are still queued and land when the writer
+                           drains. :pending? true, with a `kg-pending:` warning.
+                           Not degraded: nothing is lost, so the caller must not
+                           create the edges again.
+     :weave/write-failed - a queued write failed. Degraded, with a
+                           `kg-write-failed:` warning.
+
+   With no edges there is nothing to wait for and `flush-fn` is not called. A
+   throwing `flush-fn` counts as a failed write. Never throws."
+  [{:keys [edges] :as kg-result} flush-fn]
+  (if (empty? edges)
+    (assoc kg-result :pending? false)
+    (let [timeout-ms (kg-call-timeout-ms)
+          status     (try (flush-fn timeout-ms)
+                          (catch Throwable _ :weave/write-failed))]
+      (case status
+        :ok
+        (assoc kg-result :pending? false)
+
+        :weave/timeout
+        (-> kg-result
+            (assoc :pending? true)
+            (update :warnings conj
+                    (str "kg-pending:edges-queued:" timeout-ms "ms")))
+
+        (-> kg-result
+            (assoc :pending? false :degraded? true)
+            (update :warnings conj "kg-write-failed:edges-queued"))))))
+
 (defn log-degradation!
   "Side-effecting helper — caller invokes once if `:degraded?` is true."
   [{:keys [warnings]} ctx]
@@ -180,6 +216,16 @@
         [:edges [:vector :any]]
         [:warnings [:vector :string]]
         [:degraded? :boolean]]])
+
+(m/=> with-durability
+      [:=> [:cat
+            [:map [:edges [:vector :any]] [:warnings [:vector :string]] [:degraded? :boolean]]
+            [:fn ifn?]]
+       [:map
+        [:edges [:vector :any]]
+        [:warnings [:vector :string]]
+        [:degraded? :boolean]
+        [:pending? :boolean]]])
 
 (m/=> log-degradation!
       [:=> [:cat :map :map]
