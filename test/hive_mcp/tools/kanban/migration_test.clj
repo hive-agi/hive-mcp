@@ -9,6 +9,7 @@
   (:require [clojure.test :refer [deftest is use-fixtures]]
             [hive-mcp.protocols.memory :as proto]
             [hive-mcp.tools.kanban.migration :as mig]
+            [hive-mcp.test-support.registry-isolation :as registry-isolation]
             [hive-test.golden :refer [deftest-golden]]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
@@ -83,19 +84,24 @@
    {:id "decoy" :type "note" :tags ["kanban" "research"]
     :content {:task-type "research" :title "fake" :body "just notes"}}])
 
-(use-fixtures :each
-  (fn [f]
-    (let [snapshot (proto/registered-stores)]
+(defn- empty-slots-fixture
+  "Run F with :default and :kanban empty. Refuses a running addon server
+   before any write and puts the exact prior slot map back in one atomic swap
+   (no slot-by-slot unregister/register, no global reset)."
+  [f]
+  (registry-isolation/with-restored-store-registry
+    (fn []
       (proto/unregister-store! :default)
       (proto/unregister-store! :kanban)
-      (try
-        (f)
-        (finally
-          (proto/unregister-store! :default)
-          (proto/unregister-store! :kanban)
-          (doseq [[k store] snapshot]
-            (when (#{:default :kanban} k)
-              (proto/register-store! k store))))))))
+      (f))))
+
+(use-fixtures :each empty-slots-fixture)
+
+(deftest empty-slots-fixture-cannot-clobber-a-live-registry
+  ;; Test isolation (card 20260629165759-7b9fd43c): the fixture restored the
+  ;; prior stores slot by slot and never refused a running addon server.
+  (is (= registry-isolation/isolated-fixture-report
+         (registry-isolation/fixture-isolation-report empty-slots-fixture))))
 
 ;; =============================================================================
 ;; Tests
