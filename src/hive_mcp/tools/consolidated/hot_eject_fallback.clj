@@ -283,41 +283,54 @@
   (if (soft 'hive-addon.hot.inject/eject!) :bridge :fallback))
 
 (def UndoReport
-  "What `undo-report` answers: how an inject made now could be undone."
+  "What `undo-report` answers: how an inject made now could be undone.
+   :retains names what stays in the JVM after the undo, until a restart."
   [:map
    [:mode [:enum :bridge :fallback :none]]
    [:undoable? :boolean]
-   [:complete? :boolean]
+   [:drains? :boolean]
+   [:cascades? :boolean]
+   [:retains [:vector [:enum :classpath :namespaces :hive-hot-dirs :addon]]]
    [:restart-required? :boolean]
    [:message :string]])
 
 (defn undo-report
   "Pure. How a `hot inject` made now could be undone, from what the image has.
 
-   BRIDGE? is hive-addon's eject! and plug-out! both resolving: a complete
-   undo (drain, cascade, classpath and dir claims released). FALLBACK? is the
-   host being able to drop a registry entry by itself (this namespace's
-   plug-out): the addon leaves the registry and the tool surface, but its
-   classpath entries, loaded namespaces and hive-hot dir claims stay until a
-   restart, and nothing is drained. Neither: only a restart removes it.
+   No undo is complete: a JVM cannot drop classpath URLs or unload loaded
+   namespaces, so every mode :retains at least those until a restart (the
+   eject report lists them as retained too), and :restart-required? is true
+   for a clean image in every mode.
+
+   BRIDGE? is hive-addon's eject! and plug-out! both resolving: registry,
+   tool surface and hive-hot dir claims are released, calls in flight are
+   drained and dependents can cascade. FALLBACK? is the host able to drop a
+   registry entry by itself (this namespace's plug-out): registry and tool
+   surface only, no drain, no cascade, dir claims kept. Neither: only a
+   restart removes the addon.
 
    Friction 20261110132734-7e9213d3: an inject on an image whose hive-addon
    lacked plug-out! could not be undone, and nothing said so before mounting."
   [bridge? fallback?]
   (cond
     bridge?
-    {:mode :bridge :undoable? true :complete? true :restart-required? false
-     :message "hot eject / hot unmount can undo this inject completely (hive-addon eject!/plug-out!)"}
+    {:mode :bridge :undoable? true :drains? true :cascades? true
+     :retains [:classpath :namespaces] :restart-required? true
+     :message (str "hot eject / hot unmount can take this inject back out through hive-addon "
+                   "eject!/plug-out! (drain, cascade, hive-hot dir claims released); its "
+                   "classpath entries and loaded namespaces stay until a restart")}
 
     fallback?
-    {:mode :fallback :undoable? true :complete? false :restart-required? true
+    {:mode :fallback :undoable? true :drains? false :cascades? false
+     :retains [:classpath :namespaces :hive-hot-dirs] :restart-required? true
      :message (str "this image's hive-addon has no eject!/plug-out!: hot eject / hot unmount "
                    "will use the host-native fallback, which drops the addon from the registry "
                    "and the tool surface but keeps its classpath entries, loaded namespaces and "
                    "hive-hot dir claims until a restart (no drain, no cascade)")}
 
     :else
-    {:mode :none :undoable? false :complete? false :restart-required? true
+    {:mode :none :undoable? false :drains? false :cascades? false
+     :retains [:addon :classpath :namespaces :hive-hot-dirs] :restart-required? true
      :message (str "this image cannot undo an inject: hive-addon has no eject!/plug-out! and "
                    "the mount host cannot unregister an addon; only a restart removes it")}))
 
@@ -325,24 +338,29 @@
 
 (defn- host-can-unregister?
   "Can HOST drop a registry entry without hive-addon's eject!? Through
-   hive-addon.mount.boundary/unregister!, or the AddonRegistryHost's own seam."
-  [host]
-  (or (some? (soft 'hive-addon.mount.boundary/unregister!))
+   hive-addon.mount.boundary/unregister! (resolved by RESOLVE), or the
+   AddonRegistryHost's own seam."
+  [resolve host]
+  (or (some? (resolve 'hive-addon.mount.boundary/unregister!))
       (instance? hive_mcp.extensions.mount_host.AddonRegistryHost (mount-host/current host))))
 
 (defn undo-preflight
   "How a `hot inject` made now on HOST could be undone (`undo-report`), read
-   from this image at call time. Never throws."
-  [host]
-  (try
-    (undo-report (and (some? (soft 'hive-addon.hot.inject/eject!))
-                      (some? (soft 'hive-addon.hot.inject/plug-out!)))
-                 (and (some? host) (host-can-unregister? host)))
-    (catch Throwable t
-      (assoc (undo-report false false)
-             :message (str "undo preflight failed: " (ex-message t))))))
+   at call time. RESOLVE (symbol -> var or nil) defaults to resolving in this
+   image; tests pass a map of the symbols present instead. Never throws."
+  ([host] (undo-preflight host soft))
+  ([host resolve]
+   (try
+     (undo-report (and (some? (resolve 'hive-addon.hot.inject/eject!))
+                       (some? (resolve 'hive-addon.hot.inject/plug-out!)))
+                  (and (some? host) (host-can-unregister? resolve host)))
+     (catch Throwable t
+       (assoc (undo-report false false)
+              :message (str "undo preflight failed: " (ex-message t)))))))
 
-(m/=> undo-preflight [:=> [:cat :any] UndoReport])
+(m/=> undo-preflight [:function
+                      [:=> [:cat :any] UndoReport]
+                      [:=> [:cat :any ifn?] UndoReport]])
 
 (m/=> undo-mode [:=> [:cat] [:enum :bridge :fallback]])
 

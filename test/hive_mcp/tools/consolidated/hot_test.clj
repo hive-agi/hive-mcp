@@ -633,54 +633,118 @@
          (fb/undo-mode))))
 
 (deftest inject-undo-report-states-each-capability-test
-  (testing "the bridge is a complete undo"
+  (testing "the bridge undoes it with drain and cascade, but no mode drops the classpath"
     (let [u (fb/undo-report true true)]
       (is (= :bridge (:mode u)))
       (is (true? (:undoable? u)))
-      (is (true? (:complete? u)))
-      (is (false? (:restart-required? u)))))
-  (testing "the host-native fallback undoes it, but not completely"
+      (is (true? (:drains? u)))
+      (is (= [:classpath :namespaces] (:retains u)) "review M1: not a complete undo")
+      (is (true? (:restart-required? u)))
+      (is (not (contains? u :complete?)))))
+  (testing "the host-native fallback also keeps dir claims, no drain, no cascade"
     (let [u (fb/undo-report false true)]
       (is (= :fallback (:mode u)))
       (is (true? (:undoable? u)))
-      (is (false? (:complete? u)))
-      (is (true? (:restart-required? u)))
+      (is (false? (:drains? u)))
+      (is (some #{:hive-hot-dirs} (:retains u)))
       (is (str/includes? (:message u) "restart"))))
   (testing "nothing can undo it"
     (let [u (fb/undo-report false false)]
       (is (= :none (:mode u)))
       (is (false? (:undoable? u)))
+      (is (some #{:addon} (:retains u)))
       (is (str/includes? (:message u) "only a restart")))))
 
-(deftest inject-undo-preflight-reads-the-image-test
-  (let [u (fb/undo-preflight (mount-host/addon-registry-host))]
-    (is (= (if (and (requiring-resolve 'hive-addon.hot.inject/eject!)
-                    (requiring-resolve 'hive-addon.hot.inject/plug-out!))
-             :bridge :fallback)
-           (:mode u))
-        "a registry host can always fall back; the bridge wins when present"))
-  (is (= (if (and (requiring-resolve 'hive-addon.hot.inject/eject!)
-                  (requiring-resolve 'hive-addon.hot.inject/plug-out!))
-           :bridge :none)
-         (:mode (fb/undo-preflight nil)))
-      "without a host only the bridge can undo an inject"))
+(def ^:private bridge-syms
+  {'hive-addon.hot.inject/eject! :present 'hive-addon.hot.inject/plug-out! :present})
+
+(deftest inject-undo-preflight-on-stubbed-resolvers-test
+  ;; The resolver is a map of the symbols "present": independent of the image.
+  (let [registry-host (mount-host/addon-registry-host {:reg-fn identity :init-fn identity
+                                                       :shutdown-fn identity :unreg-fn identity
+                                                       :registered-fn (constantly nil)})
+        bare-host     (reify Object)]
+    (is (= :bridge (:mode (fb/undo-preflight registry-host bridge-syms))))
+    (is (= :bridge (:mode (fb/undo-preflight nil bridge-syms))) "the bridge needs no host seam")
+    (is (= :fallback (:mode (fb/undo-preflight registry-host {})))
+        "a registry host unregisters by its own seam")
+    (is (= :fallback (:mode (fb/undo-preflight bare-host {'hive-addon.mount.boundary/unregister! :present}))))
+    (is (= :none (:mode (fb/undo-preflight bare-host {}))))
+    (is (= :none (:mode (fb/undo-preflight nil {}))))
+    (is (= :fallback (:mode (fb/undo-preflight registry-host {'hive-addon.hot.inject/eject! :present})))
+        "eject! without plug-out! is not the bridge")))
 
 (deftest inject-undo-gate-refuses-before-mounting-test
   (let [bridge   (fb/undo-report true true)
         fallback (fb/undo-report false true)
         none     (fb/undo-report false false)]
-    (testing "a complete undo proceeds silently"
+    (testing "the bridge proceeds without a warning"
       (is (= {:warning nil} (hot/inject-undo-gate bridge {})))
       (is (= {:warning nil} (hot/inject-undo-gate bridge {:require_undo true}))))
     (testing "a fallback undo proceeds with a warning"
       (is (str/includes? (:warning (hot/inject-undo-gate fallback {})) "restart")))
-    (testing "require_undo refuses an incomplete undo up front"
-      (is (str/includes? (:refuse (hot/inject-undo-gate fallback {:require_undo true}))
-                         "require_undo")))
+    (testing "require_undo refuses a fallback-only undo up front, as true or \"true\""
+      (is (str/includes? (:refuse (hot/inject-undo-gate fallback {:require_undo true})) "require_undo"))
+      (is (string? (:refuse (hot/inject-undo-gate fallback {:require_undo "true"})))))
     (testing "no undo at all refuses unless force"
       (is (string? (:refuse (hot/inject-undo-gate none {}))))
       (is (string? (:warning (hot/inject-undo-gate none {:force true}))))
+      (is (string? (:warning (hot/inject-undo-gate none {:force "true"}))))
+      (is (string? (:refuse (hot/inject-undo-gate none {:force "false"}))))
       (is (string? (:refuse (hot/inject-undo-gate none {:force true :require_undo true})))))))
+
+(defn- inject-ports
+  "Stub InjectPorts: UNDO-MODE fixes the preflight; CALLS records inject!."
+  [undo-mode calls]
+  {:inject!     (fn [_h _specs path opts]
+                  (swap! calls conj [path opts])
+                  {:ok? true :hot/injected ["probe.inj"] :mounted [{:addon/id "probe.inj"}]})
+   :host        (constantly :stub-host)
+   :specs       (constantly [])
+   :undo        (fn [_h] (case undo-mode
+                           :bridge   (fb/undo-report true true)
+                           :fallback (fb/undo-report false true)
+                           :none     (fb/undo-report false false)))
+   :hot-init!   (fn [_ _] nil)
+   :reload-opts (constantly {})
+   :refresh!    (constantly {:server-tools {:ok {:surfaces [:stub]}} :agent-tools {:ok? true}})})
+
+(deftest run-inject-refuses-before-mounting-test
+  ;; Review M4: inject! is a stub; a refusal must never reach it.
+  (doseq [[label mode params] [["nothing can undo it" :none {:path "/tmp/x"}]
+                               ["require_undo on a fallback image" :fallback {:path "/tmp/x" :require_undo true}]
+                               ["require_undo given as a string" :fallback {:path "/tmp/x" :require_undo "true"}]]]
+    (testing label
+      (let [calls (atom [])
+            out   (body (hot/run-inject (inject-ports mode calls) params))]
+        (is (empty? @calls) "inject! was not called")
+        (is (false? (:ok? out)))
+        (is (true? (:refused? out)))
+        (is (= "hot/undo-unavailable" (:reason out)))
+        (is (= (name mode) (get-in out [:undo :mode])) ":hot/undo reaches the wire")))))
+
+(deftest run-inject-carries-undo-and-warning-test
+  (testing "a fallback-only undo mounts, with :warning and :hot/undo on the wire"
+    (let [calls (atom [])
+          out   (body (hot/run-inject (inject-ports :fallback calls) {:path "/tmp/x"}))]
+      (is (= 1 (count @calls)))
+      (is (= "fallback" (get-in out [:undo :mode])))
+      (is (= "fallback" (:undo-mode out)))
+      (is (some #{"hive-hot-dirs"} (get-in out [:undo :retains])))
+      (is (str/includes? (str (:warning out)) "restart"))))
+  (testing "the bridge mounts with no warning"
+    (let [calls (atom [])
+          out   (body (hot/run-inject (inject-ports :bridge calls) {:path "/tmp/x" :require_undo true}))]
+      (is (= 1 (count @calls)))
+      (is (= "bridge" (get-in out [:undo :mode])))
+      (is (not (contains? out :warning)))))
+  (testing "force mounts on an image nothing can undo, and still warns"
+    (let [calls (atom [])
+          out   (body (hot/run-inject (inject-ports :none calls) {:path "/tmp/x" :force "true"}))]
+      (is (= 1 (count @calls)))
+      (is (str/includes? (str (:warning out)) "only a restart"))))
+  (testing "no inject! bridge answers an error and mounts nothing"
+    (is (:isError (hot/run-inject (assoc (inject-ports :bridge (atom [])) :inject! nil) {:path "/tmp/x"})))))
 
 (deftest inject-advertises-require-undo-test
   (is (contains? (get-in hot/tool-def [:inputSchema :properties]) "require_undo"))
