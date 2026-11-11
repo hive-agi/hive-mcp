@@ -5,7 +5,11 @@
             [clojure.test :refer [deftest is testing use-fixtures]]
             [hive-mcp.telemetry.metrics-tool :as tool]
             [hive-mcp.telemetry.prometheus :as prom]
-            [hive-mcp.telemetry.resources :as res])
+            [hive-mcp.telemetry.resources :as res]
+            [iapetos.collector.jvm]
+            [iapetos.core]
+            [iapetos.export]
+            [iapetos.registry])
   (:import [io.prometheus.client CollectorRegistry]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
@@ -162,8 +166,14 @@
     (is (== 0.137 (.getSampleValue reg "hive_mcp_resource_process_cpu_load")))))
 
 (deftest gauges-do-not-duplicate-the-iapetos-jvm-collectors
-  (prom/init!)
-  (let [before (prom/metrics-response)]
+  ;; A registry of this test's own, built the way prometheus/registry builds
+  ;; the process-wide one (iapetos collector-registry + jvm/initialize). The
+  ;; shared registry is NOT used: every earlier test in the JVM that called
+  ;; start-default! has already registered the resource gauges there, so a
+  ;; "no gauge name is exported yet" check against it depended on run order.
+  (let [reg (iapetos.collector.jvm/initialize (iapetos.core/collector-registry))
+        raw (iapetos.registry/raw reg)
+        before (iapetos.export/text-format reg)]
     (testing "the iapetos JVM collectors are already registered"
       (is (str/includes? before "jvm_memory_bytes_used"))
       (is (str/includes? before "jvm_threads_current"))
@@ -171,14 +181,16 @@
     (testing "no resource gauge reuses an exported name"
       (doseq [n (res/metric-names)]
         (is (not (str/includes? before (str n " "))) n)))
-    (testing "start-default! registers the gauges in the hive registry once"
-      (is (map? (res/start-default!)))
+    (testing "start-default! registers the gauges in the given registry once"
+      (is (map? (res/start-default! raw)))
       (res/stop!)
-      (is (map? (res/start-default!)))
+      (is (map? (res/start-default! raw)))
       (res/stop!)
-      (let [after (prom/metrics-response)]
+      (let [after (iapetos.export/text-format reg)]
         (doseq [n (res/metric-names)]
-          (is (= 1 (count (re-seq (re-pattern (str "# TYPE " n " ")) after))) n))))))
+          (is (= 1 (count (re-seq (re-pattern (str "# TYPE " n " ")) after))) n))))
+    (testing "the process-wide registry is untouched by this test"
+      (is (not (identical? raw (iapetos.registry/raw @prom/registry)))))))
 
 (deftest resources-verb-answers-the-report
   (res/step {} (raw 0) {})

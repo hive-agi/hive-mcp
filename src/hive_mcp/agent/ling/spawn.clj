@@ -492,23 +492,44 @@
                             :effective-model effective-model
                             :enriched-task enriched-task})))
 
+(def ^:private overlay-contributor-ns
+  "Namespace of the extension keys that name further spawn-overlay contributors."
+  "spawn.opts-overlay")
+
+(defn- spawn-overlay-fns
+  "The spawn-overlay contributors in application order: the function under
+   :spawn/opts-overlay first, then every function registered under a key in
+   the `spawn.opts-overlay` namespace (e.g. :spawn.opts-overlay/router),
+   sorted by key name."
+  []
+  (let [single (ext/get-extension :spawn/opts-overlay)
+        extra  (->> (ext/registered-keys)
+                    (filter #(and (keyword? %)
+                                  (= overlay-contributor-ns (namespace %))))
+                    (sort-by name)
+                    (keep ext/get-extension))]
+    (cond->> (vec extra)
+      single (into [single]))))
+
 (defn- apply-spawn-overlay
   "Generic spawn-opts extension seam. Strips the internal :spawn/request key
-   from opts, then applies any extension registered under :spawn/opts-overlay
-   as (f opts ctx) -> opts'. Fail-soft: nil or a throw falls back to the
-   stripped opts. Applied once in spawn! so plan + executor both see merged opts."
+   from opts, then applies each contributor of `spawn-overlay-fns` in order as
+   (f opts ctx) -> opts', each seeing the opts the one before it returned.
+   Fail-soft per contributor: nil or a throw keeps the opts it was given.
+   Applied once in spawn! so plan + executor both see merged opts."
   [opts ling]
   (let [req  (:spawn/request opts)
         opts (dissoc opts :spawn/request)]
-    (if-let [f (ext/get-extension :spawn/opts-overlay)]
-      (or (r/rescue nil
-            (f opts {:request req
-                     :cwd (:cwd ling)
-                     :project-id (:project-id ling)
-                     :task (:task opts)
-                     :kanban-task-id (:kanban-task-id opts)}))
-          opts)
-      opts)))
+    (reduce (fn [acc f]
+              (or (r/rescue nil
+                    (f acc {:request req
+                            :cwd (:cwd ling)
+                            :project-id (:project-id ling)
+                            :task (:task acc)
+                            :kanban-task-id (:kanban-task-id acc)}))
+                  acc))
+            opts
+            (spawn-overlay-fns))))
 
 (defn- execute-spawn-plan!
   "Execute spawn effects: catchup enrichment, store pre-registration, strategy
