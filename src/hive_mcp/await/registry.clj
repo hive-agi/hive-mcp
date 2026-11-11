@@ -100,8 +100,12 @@
 (defn- now [reg] ((:now-fn reg)))
 
 (defn- persist!
+  "Write the current awaiters of `reg` to its file. Serialized on the
+   registry's state atom and the state is read inside the lock, so of two
+   racing persists the later one always writes the newer snapshot."
   [reg]
-  (write-awaiters! (:path reg) (:awaiters @(:state reg))))
+  (locking (:state reg)
+    (write-awaiters! (:path reg) (:awaiters @(:state reg)))))
 
 (defn awaiters
   "Every awaiter the registry holds, as a vector sorted by :created."
