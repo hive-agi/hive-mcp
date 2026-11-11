@@ -69,7 +69,8 @@
     (let [v (ns-resolve the-ns (symbol (name sym)))]
       (when (var? v) v))))
 
-(m/=> loaded-var [:=> [:cat qualified-symbol?] [:maybe [:fn var?]]])
+(m/=> loaded-var [:=> [:cat qualified-symbol?]
+                  [:maybe [:fn {:gen/elements [#'clojure.core/identity #'clojure.core/inc]} var?]]])
 
 (defn current-at
   "Where the handler at PATH in the handlers map SYM names stands RIGHT NOW,

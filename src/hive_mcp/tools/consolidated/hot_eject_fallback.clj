@@ -342,7 +342,7 @@
    AddonRegistryHost's own seam."
   [resolve host]
   (or (some? (resolve 'hive-addon.mount.boundary/unregister!))
-      (instance? hive_mcp.extensions.mount_host.AddonRegistryHost (mount-host/current host))))
+      (mount-host/registry-host? host)))
 
 (defn undo-preflight
   "How a `hot inject` made now on HOST could be undone (`undo-report`), read

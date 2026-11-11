@@ -133,3 +133,20 @@
       (is (not (identical? (class old) (class fresh))) "the stale record class was replaced")
       (is (= (into {} old) (into {} fresh)) "every seam is carried over")
       (is (satisfies? port/IMountHost fresh)))))
+
+(deftest registry-host?-survives-a-reload-of-this-namespace
+  ;; CI red on fix/friction-hot: a caller that compiled in
+  ;; (instance? hive_mcp.extensions.mount_host.AddonRegistryHost ..) kept the
+  ;; class object from before this namespace's reload, so every host built
+  ;; afterwards answered false. registry-host? reads the class at call time.
+  (let [state (atom {:order [] :reg {}})
+        old   (recording-host state)]
+    (is (true? (mh/registry-host? old)))
+    (is (false? (mh/registry-host? :not-a-host)))
+    (is (false? (mh/registry-host? (reify Object))))
+    (require 'hive-mcp.extensions.mount-host :reload)
+    (let [registry-host? (resolve 'hive-mcp.extensions.mount-host/registry-host?)
+          fresh          ((resolve 'hive-mcp.extensions.mount-host/addon-registry-host)
+                          (into {} old))]
+      (is (true? (registry-host? fresh)) "a host built after the reload")
+      (is (true? (registry-host? old)) "a host left behind by the reload"))))
