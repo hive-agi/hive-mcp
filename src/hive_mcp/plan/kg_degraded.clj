@@ -153,40 +153,42 @@
      :degraded? (boolean (seq warnings))}))
 
 (defn with-durability
-  "Add the durability verdict of the queued edge writes to an `apply-kg-calls`
-   result. `flush-fn` takes a deadline in ms and returns :ok, :weave/timeout or
-   :weave/write-failed (the KG writer's flush-pending! contract).
+  "Add to an `apply-kg-calls` result whether its queued edges are readable yet.
+   `readable?` takes an edge id and returns truthy once that edge can be read
+   back from the store.
+
+   The edges are enqueued in order and the writer flushes in order, so the last
+   edge id being readable means all of them are. Polls that id until it reads
+   back or the `kg-call-timeout-ms` budget runs out. It asks about this call's
+   own edges, not about the writer queue: a queue that other writers keep busy
+   says nothing about these edges.
 
    Adds :pending? to the result:
-     :ok                 - edges are readable. :pending? false.
-     :weave/timeout      - edges are still queued and land when the writer
-                           drains. :pending? true, with a `kg-pending:` warning.
-                           Not degraded: nothing is lost, so the caller must not
-                           create the edges again.
-     :weave/write-failed - a queued write failed. Degraded, with a
-                           `kg-write-failed:` warning.
+     false - the edges are readable, or there were none to wait for.
+     true  - not confirmed within the budget. The edges are queued and land
+             when the writer drains, so the caller must not create them again;
+             a `kg-pending:` warning says so. Not degraded: nothing is lost.
 
-   With no edges there is nothing to wait for and `flush-fn` is not called. A
-   throwing `flush-fn` counts as a failed write. Never throws."
-  [{:keys [edges] :as kg-result} flush-fn]
+   A throwing `readable?` counts as not readable yet. Never throws."
+  [{:keys [edges] :as kg-result} readable?]
   (if (empty? edges)
     (assoc kg-result :pending? false)
     (let [timeout-ms (kg-call-timeout-ms)
-          status     (try (flush-fn timeout-ms)
-                          (catch Throwable _ :weave/write-failed))]
-      (case status
-        :ok
+          deadline   (+ (System/currentTimeMillis) timeout-ms)
+          last-id    (peek edges)
+          readable?  (fn [] (try (boolean (readable? last-id))
+                                 (catch Throwable _not-readable-yet false)))
+          landed?    (loop []
+                       (cond
+                         (readable?) true
+                         (>= (System/currentTimeMillis) deadline) false
+                         :else (do (Thread/sleep 10) (recur))))]
+      (if landed?
         (assoc kg-result :pending? false)
-
-        :weave/timeout
         (-> kg-result
             (assoc :pending? true)
             (update :warnings conj
-                    (str "kg-pending:edges-queued:" timeout-ms "ms")))
-
-        (-> kg-result
-            (assoc :pending? false :degraded? true)
-            (update :warnings conj "kg-write-failed:edges-queued"))))))
+                    (str "kg-pending:edges-queued:" timeout-ms "ms")))))))
 
 (defn log-degradation!
   "Side-effecting helper — caller invokes once if `:degraded?` is true."

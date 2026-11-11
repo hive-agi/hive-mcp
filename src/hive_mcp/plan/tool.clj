@@ -13,7 +13,6 @@
             [hive-mcp.plan.fsm :as plan-fsm]
             [hive-mcp.plan.kg-degraded :as kg-degraded]
             [hive-mcp.vectordb.facade :as facade]
-            [hive-mcp.knowledge-graph.connection :as kg-conn]
             [hive-mcp.knowledge-graph.edges :as kg-edges]
             [hive-mcp.context.request :as ctx]
             [clojure.string :as str]
@@ -272,9 +271,9 @@
                         ["task-dep-edges"
                          #(create-task-dependency-edges!
                            step-id-to-task-id steps project-id agent-id waves)]])
-            ;; The edge calls only enqueue: wait, bounded, for the queue to
-            ;; drain so the response says readable, queued or lost.
-            kg-result (kg-degraded/with-durability kg-result kg-conn/flush-pending!)]
+            ;; The edge calls only enqueue: wait, bounded, until the edges
+            ;; read back so the response says readable or still queued.
+            kg-result (kg-degraded/with-durability kg-result kg-edges/get-edge)]
 
         (when (:degraded? kg-result)
           (kg-degraded/log-degradation!

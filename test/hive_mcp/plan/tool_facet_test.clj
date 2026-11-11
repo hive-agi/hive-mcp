@@ -14,6 +14,8 @@
             [hive-spi.kanban :as kanban]
             [hive-spi.kanban.registry :as kanban-registry]
             [hive-test.golden :as golden]
+            [hive-test.isolation :as iso]
+            [hive-mcp.isolation-methods]
             [malli.core :as m]
             [clojure.string :as str]))
 
@@ -46,7 +48,10 @@
              (kanban-registry/register! :IKanbanWrite prior)
              (kanban-registry/unregister! :IKanbanWrite))))))
 
-(use-fixtures :each kanban-fixture)
+;; The KG store is isolated per test: plan-to-kanban waits for its edges to
+;; read back, and that must not depend on what other suites left in the
+;; shared store or its writer queue.
+(use-fixtures :each kanban-fixture (iso/with-isolations :kg-conn))
 
 ;; -----------------------------------------------------------------------------
 ;; compute-waves over acyclic graphs
