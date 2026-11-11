@@ -238,7 +238,7 @@
   ([{:keys [op directory files paths message all target] :as m} timeout-ms]
    (case op
      :magit/stage
-     (git-ok (git! directory (if (= :all files) ["add" "-A"] (into ["add" "--"] files)))
+     (git-ok (git! directory (if (= :all files) ["add" "-A"] (into ["add" "-A" "--"] files)))
              :magit/stage-failed)
 
      :magit/stage-verify
@@ -298,28 +298,102 @@
         (or (re-find vessel-never-ran (str error))
             (and timed-out (contains? idempotent-ops (:op op)))))))
 
+(def ^:dynamic *handshake-race-ms*
+  "An 'entrypoints failed to load' answered faster than this is a load race
+   (another emacsclient call mid-load, a cold daemon), worth one retry on the
+   editor. A slower one is a hung handshake: the editor is not retried, the op
+   goes straight to the CLI."
+  1500)
+
+(def ^:dynamic *handshake-retry-delay-ms*
+  "Pause before the single handshake retry."
+  250)
+
+(def ^:private handshake-race
+  #"(?i)bridge entrypoints failed to load")
+
+(defn- scrub
+  "A vessel error as the git tool shows it: hive-emacs's hint ends with 'Plain
+   CLI git works meanwhile', which sends agents off hive-git; the tool has its
+   own CLI backend, so that sentence is dropped."
+  [error]
+  (str/trim (str/replace (str error) #"\s*Plain CLI git works meanwhile\.?" "")))
+
+(defn- invoke-vessel
+  "[envelope elapsed-ms] of one editor dispatch of OP."
+  [op timeout-ms]
+  (let [t0 (System/nanoTime)
+        envelope (svc/invoke :vessel :dispatch op timeout-ms)]
+    [envelope (quot (- (System/nanoTime) t0) 1000000)]))
+
+(defn- handshake-race?
+  "True when ENVELOPE is a fast 'entrypoints failed to load': the op never ran
+   and the bridge is likely mid-load, so one retry on the editor is safe."
+  [{:keys [success timed-out error]} elapsed-ms]
+  (boolean (and (not success) (not timed-out)
+                (re-find handshake-race (str error))
+                (< elapsed-ms *handshake-race-ms*))))
+
+(defn- invoke-with-handshake-retry
+  "Dispatch OP to the editor; retry ONCE after a short pause when the first
+   answer is a handshake race (see `handshake-race?`)."
+  [op timeout-ms]
+  (let [[envelope elapsed] (invoke-vessel op timeout-ms)]
+    (if (handshake-race? envelope elapsed)
+      (do (log/info "magit op: bridge handshake race, retrying once" {:op (:op op) :elapsed-ms elapsed})
+          (Thread/sleep (long *handshake-retry-delay-ms*))
+          (first (invoke-vessel op timeout-ms)))
+      envelope)))
+
+(defn- bridge-state
+  "One line naming the bridge state behind a vessel ERROR: retryable (the
+   entrypoints did not load) or down (no vessel, circuit open, no daemon)."
+  [error]
+  (if (re-find handshake-race (str error))
+    "bridge retryable: its entrypoints did not load (a load race or a cold daemon) and one retry already ran"
+    (str "bridge down: " (first (str/split-lines (scrub error))))))
+
+(defn- on-cli-backend
+  "R, a CLI failover result; an error says which backend ran and what to do."
+  [r error]
+  (if (find r :ok)
+    r
+    (update r :message str
+            "\nThis ran on the hive-git git CLI backend because the Emacs editor could not run it ("
+            (bridge-state error)
+            "). Next: fix the git error above, then re-run the same hive git call; "
+            "it takes the CLI backend whenever Emacs cannot answer.")))
+
 (defn- dispatch->result
   "Run a closed magit operation and convert its answer to Result.
    Remote ops (push, pull, fetch) run on the git CLI. Every other op goes to
-   the editor vessel first and fails over to the git CLI in :directory when the
-   vessel never ran it (see `vessel-never-ran`), or, for an idempotent op, timed
-   out. A commit that timed out is NOT rerun: it may have completed."
+   the editor vessel first (one retry on a handshake race, see
+   `invoke-with-handshake-retry`) and fails over to the git CLI in :directory
+   when the vessel never ran it (see `vessel-never-ran`), or, for an
+   idempotent op, timed out. A commit that timed out is NOT rerun: it may have
+   completed. Every error names the bridge state and the next step."
   [op timeout-ms]
   (if (contains? cli-only-ops (:op op))
     (cli-op op timeout-ms)
     (let [{:keys [success result error] :as envelope}
-          (svc/invoke :vessel :dispatch op timeout-ms)]
+          (invoke-with-handshake-retry op timeout-ms)]
       (cond
         success (result/ok result)
         (failover? op envelope)
         (do (log/info "magit op failing over to the git CLI" {:op (:op op) :vessel-error (str error)})
-            (or (cli-op op timeout-ms)
-                (result/err :magit/dispatch-failed {:message (str error)})))
+            (if-let [r (cli-op op timeout-ms)]
+              (on-cli-backend r error)
+              (result/err :magit/dispatch-failed
+                          {:message (str (scrub error) "\n" (bridge-state error)
+                                         "; " (:op op) " has no git CLI backend. Next: re-run once Emacs answers (emacsclient --eval t).")})))
         (:timed-out envelope)
         (result/err :magit/dispatch-failed
-                    {:message (str error "\nThe editor may still have run " (:op op)
-                                   "; it was not retried. Read `git status` before repeating it.")})
-        :else (result/err :magit/dispatch-failed {:message (str error)})))))
+                    {:message (str (scrub error) "\nbridge timed out: the editor may still have run " (:op op)
+                                   "; it was not retried, so nothing ran twice. Next: read `git status` (hive git command=status), "
+                                   "then repeat the call only if the change is not there.")})
+        :else (result/err :magit/dispatch-failed
+                          {:message (str (scrub error) "\nThe editor answered an error; this is not a bridge outage. "
+                                         "Next: fix the cause above and re-run the call.")})))))
 
 
 (defn- try-result
@@ -476,6 +550,72 @@
                                      " returned no verdict: " raw)})))
       r)))
 
+(defn- repo-dir?
+  "True when DIR is an existing directory git can run in."
+  [dir]
+  (.isDirectory (java.io.File. ^String dir)))
+
+(defn- deleted-tracked
+  "The PATHS absent from DIR's worktree that git tracks in the index or HEAD:
+   deletions to stage, not missing paths. A path git never knew stays out."
+  [paths dir]
+  (if-not (repo-dir? dir)
+    []
+    (filterv (fn [p]
+               (and (not (.exists (java.io.File. ^String dir ^String p)))
+                    (or (seq (git-lines dir ["ls-files" "--cached" "--" p]))
+                        (seq (git-lines dir ["ls-tree" "-r" "--name-only" "HEAD" "--" p])))))
+             paths)))
+
+(defn- stage-explicit
+  "Stage PATHS in DIR for a commit. A path removed from the worktree (rm, git
+   rm, git apply) but tracked in the index or HEAD is staged as a DELETION on
+   the git CLI (git rm --cached; a git rm'd path is already staged); the
+   remaining paths go through `stage-verify`. Result as `stage-verify`: a
+   deletion that leaves nothing staged is :magit/nothing-staged."
+  [paths dir timeout-ms]
+  (let [deleted (deleted-tracked paths dir)
+        present (vec (remove (set deleted) paths))]
+    (if (empty? deleted)
+      (stage-verify paths dir timeout-ms)
+      (let [rm (git! dir (into ["rm" "--cached" "-q" "--ignore-unmatch" "--"] deleted))]
+        (cond
+          (not (zero? (:exit rm)))
+          (git-ok rm :magit/stage-failed)
+
+          (seq present)
+          (let [r (stage-verify present dir timeout-ms)]
+            (if (find r :ok) (result/ok paths) r))
+
+          (empty? (git-lines dir (into ["diff" "--cached" "--name-only" "--"] deleted)))
+          (result/err :magit/nothing-staged
+                      {:message (str ":magit/nothing-staged - the deletion of " (str/join " " deleted)
+                                     " left nothing staged")})
+
+          :else (result/ok paths))))))
+
+(defn- stage-report
+  "The stage verb's answer once the stage op returned R for NORM in DIR. A
+   bare nil or blank answer is never passed through: paths that still carry
+   unstaged changes (the editor answered without staging them) are staged on
+   the git CLI, and the answer names what was staged."
+  [r norm dir]
+  (if-not (find r :ok)
+    r
+    (if (or (= :all norm) (not (repo-dir? dir)))
+      (with-default "Staged all changes" r)
+      (let [left (distinct (concat (git-lines dir (into ["diff" "--name-only" "--"] norm))
+                                   (git-lines dir (into ["ls-files" "--others" "--exclude-standard" "--"] norm))))
+            fixed (if (seq left)
+                    (git-ok (git! dir (into ["add" "-A" "--"] norm)) :magit/stage-failed)
+                    r)]
+        (if (find fixed :ok)
+          (result/ok (str "Staged " (count norm) " path(s): " (str/join " " norm)
+                          (when (seq left)
+                            (str "\nThe editor answered without staging " (str/join " " left)
+                                 "; they were staged on the git CLI backend."))))
+          fixed)))))
+
 (defn handle-magit-status
   "Get comprehensive git repository status via magit addon."
   [{:keys [directory] :as params}]
@@ -515,7 +655,8 @@
 
    `files` takes a list of paths, a single path, several paths in one
    whitespace-separated string, or 'all' for every modified file. An absent or
-   blank `files` is an error, never a silent no-op."
+   blank `files` is an error, never a silent no-op. The answer names the staged
+   paths; it is never a bare nil (see `stage-report`)."
   [{:keys [files directory] :as params}]
   (let [dir (resolve-directory directory)
         norm (normalize-files files)
@@ -526,9 +667,9 @@
                       "a whitespace-separated path string, or 'all'"))
       (result->mcp
        (try-result :magit/stage-failed
-                   #(with-default "Staged files"
-                      (dispatch->result {:op :magit/stage :files norm :directory dir}
-                                        timeout-ms)))))))
+                   #(stage-report (dispatch->result {:op :magit/stage :files norm :directory dir}
+                                                    timeout-ms)
+                                  norm dir))))))
 
 (defn handle-magit-commit
   "Create a commit with the given message.
@@ -545,7 +686,7 @@
         timeout-ms (emacs-timeout-ms params)
         norm (normalize-files files)
         stage-all (boolean (or all (= :all norm)))
-        staged (when (vector? norm) (stage-verify norm dir timeout-ms))]
+        staged (when (vector? norm) (stage-explicit norm dir timeout-ms))]
     (log/info "magit-commit" {:message-len (count message) :all stage-all
                               :files norm :directory dir})
     (if (and (some? staged) (nil? (find staged :ok)))

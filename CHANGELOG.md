@@ -36,6 +36,18 @@ bump, not a quiet minor, because a consumer's storage would change under it.
 ## [Unreleased]
 
 ### Fixed
+
+- `git stage`/`commit`/`batch-commit` when the Emacs bridge is down or racing.
+  A fast "bridge entrypoints failed to load" (a load race) is retried once on
+  the editor before the op fails over to the git CLI; a slow one, an open
+  circuit or a missing vessel go straight to the CLI. Every bridge error now
+  says whether the bridge is retryable, down or timed out, names the next
+  step, and no longer tells the caller to use plain git. `stage` never answers
+  a bare nil: paths the editor left unstaged are staged on the CLI and the
+  answer names them. An explicit `files` path removed from the worktree but
+  tracked in git is staged as a deletion instead of `:magit/path-not-found`.
+  (frictions 20261110132904-06e01a4f 20261110133549-604564c6
+  20261110133832-0c081375 20261110123738-56bf2ca2 20261110132809-56c88df0)
 - `git push` goes to `<remote>/<current-branch>` with an explicit refspec, never to
   a differently named upstream (a worktree cut from `origin/staging`);
   `set_upstream=true` re-points tracking at `<remote>/<current-branch>`.
