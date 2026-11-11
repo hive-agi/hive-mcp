@@ -632,6 +632,60 @@
            :bridge :fallback)
          (fb/undo-mode))))
 
+(deftest inject-undo-report-states-each-capability-test
+  (testing "the bridge is a complete undo"
+    (let [u (fb/undo-report true true)]
+      (is (= :bridge (:mode u)))
+      (is (true? (:undoable? u)))
+      (is (true? (:complete? u)))
+      (is (false? (:restart-required? u)))))
+  (testing "the host-native fallback undoes it, but not completely"
+    (let [u (fb/undo-report false true)]
+      (is (= :fallback (:mode u)))
+      (is (true? (:undoable? u)))
+      (is (false? (:complete? u)))
+      (is (true? (:restart-required? u)))
+      (is (str/includes? (:message u) "restart"))))
+  (testing "nothing can undo it"
+    (let [u (fb/undo-report false false)]
+      (is (= :none (:mode u)))
+      (is (false? (:undoable? u)))
+      (is (str/includes? (:message u) "only a restart")))))
+
+(deftest inject-undo-preflight-reads-the-image-test
+  (let [u (fb/undo-preflight (mount-host/addon-registry-host))]
+    (is (= (if (and (requiring-resolve 'hive-addon.hot.inject/eject!)
+                    (requiring-resolve 'hive-addon.hot.inject/plug-out!))
+             :bridge :fallback)
+           (:mode u))
+        "a registry host can always fall back; the bridge wins when present"))
+  (is (= (if (and (requiring-resolve 'hive-addon.hot.inject/eject!)
+                  (requiring-resolve 'hive-addon.hot.inject/plug-out!))
+           :bridge :none)
+         (:mode (fb/undo-preflight nil)))
+      "without a host only the bridge can undo an inject"))
+
+(deftest inject-undo-gate-refuses-before-mounting-test
+  (let [bridge   (fb/undo-report true true)
+        fallback (fb/undo-report false true)
+        none     (fb/undo-report false false)]
+    (testing "a complete undo proceeds silently"
+      (is (= {:warning nil} (hot/inject-undo-gate bridge {})))
+      (is (= {:warning nil} (hot/inject-undo-gate bridge {:require_undo true}))))
+    (testing "a fallback undo proceeds with a warning"
+      (is (str/includes? (:warning (hot/inject-undo-gate fallback {})) "restart")))
+    (testing "require_undo refuses an incomplete undo up front"
+      (is (str/includes? (:refuse (hot/inject-undo-gate fallback {:require_undo true}))
+                         "require_undo")))
+    (testing "no undo at all refuses unless force"
+      (is (string? (:refuse (hot/inject-undo-gate none {}))))
+      (is (string? (:warning (hot/inject-undo-gate none {:force true}))))
+      (is (string? (:refuse (hot/inject-undo-gate none {:force true :require_undo true})))))))
+
+(deftest inject-advertises-require-undo-test
+  (is (contains? (get-in hot/tool-def [:inputSchema :properties]) "require_undo"))
+  (is (str/includes? (:description hot/tool-def) ":hot/undo")))
+
 (deftest fallback-pure-strata-test
   (testing "declared dependents close transitively and exclude the seeds"
     (is (= #{"b" "c"} (fb/declared-dependents [{:addon/id "a"}
