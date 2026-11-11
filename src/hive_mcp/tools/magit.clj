@@ -58,31 +58,83 @@
   "Budget for a git run that waits on a network remote when the caller set none."
   120000)
 
+(def ^:dynamic *repo-port*
+  "The git and the filesystem the git verbs act on. nil means the real git CLI
+   and the real disk; a test binds a fake world (hive-mcp.test.stub.git-world)
+   so the default suite reaches no repository. Keys, each optional:
+     :run             (fn [dir args in timeout-ms] {:exit :out})  one git run
+     :kind            (fn [abs-path] {:type :file|:dir|:symlink|:absent
+                                      :target-exists? bool}), never follows a link
+     :snapshot-index  (fn [root] snapshot)
+     :restore-index!  (fn [root snapshot])"
+  nil)
+
+(defn- real-kind [^String abs]
+  (let [p (java.nio.file.Paths/get abs (make-array String 0))
+        nofollow (into-array java.nio.file.LinkOption [java.nio.file.LinkOption/NOFOLLOW_LINKS])]
+    (cond
+      (java.nio.file.Files/isSymbolicLink p)
+      {:type :symlink
+       :target-exists? (java.nio.file.Files/exists p (make-array java.nio.file.LinkOption 0))}
+      (java.nio.file.Files/isDirectory p nofollow) {:type :dir}
+      (java.nio.file.Files/exists p nofollow) {:type :file}
+      :else {:type :absent})))
+
+(defn- path-kind
+  "What sits at ABS on disk. A symlink is reported as a symlink, never as
+   what it points at, so a dangling link is present, not deleted."
+  [^String abs]
+  (if-let [k (:kind *repo-port*)] (k abs) (real-kind abs)))
+
+(defn- exists-follow?
+  "java.io.File#exists over `path-kind`: a file, a directory, or a link whose
+   target exists."
+  [^String abs]
+  (let [{:keys [type target-exists?]} (path-kind abs)]
+    (boolean (or (#{:file :dir} type) (and (= :symlink type) target-exists?)))))
+
+(declare real-git!)
+
 (defn- git!
   "Run git ARGS in DIR, optionally feeding IN on stdin, for at most TIMEOUT-MS
    (nil = `local-timeout-ms`). {:exit :out}; a run that outlives its budget is
    destroyed and answers exit -1. Git never prompts: the server has no terminal
    to answer a credential or merge-message prompt, so such a run fails instead
-   of hanging."
+   of hanging.
+
+   Every run carries --literal-pathspecs: a path a caller names is that path
+   and nothing else. Without it `pages/[id].tsx` is a character class matching
+   pages/i.tsx and pages/d.tsx, and `*.txt` every text file. A bound
+   `*repo-port*` answers instead of the git CLI."
   ([dir args] (git! dir args nil nil))
   ([dir args in] (git! dir args in nil))
   ([dir args in timeout-ms]
-   (let [budget (long (or timeout-ms local-timeout-ms))
-         pb (-> (ProcessBuilder. ^java.util.List (into ["git"] args))
-                (.directory (java.io.File. ^String dir))
-                (.redirectErrorStream true))
-         env (.environment pb)]
-     (.put env "GIT_TERMINAL_PROMPT" "0")
-     (.put env "GIT_MERGE_AUTOEDIT" "no")
-     (let [process (.start pb)
-           out (future (String. (.readAllBytes (.getInputStream process))
-                                java.nio.charset.StandardCharsets/UTF_8))]
-       (with-open [w (.getOutputStream process)]
-         (when in (.write w (.getBytes ^String in java.nio.charset.StandardCharsets/UTF_8))))
-       (if (.waitFor process budget java.util.concurrent.TimeUnit/MILLISECONDS)
-         {:exit (.exitValue process) :out @out}
-         (do (.destroyForcibly process)
-             {:exit -1 :out (str "git " (str/join " " args) " timed out after " budget "ms")}))))))
+   (let [args (into ["--literal-pathspecs"] args)]
+     (if-let [run (:run *repo-port*)]
+       (run dir args in timeout-ms)
+       (if-not (.isDirectory (java.io.File. ^String dir))
+         {:exit -1 :out (str "not a directory: " dir)}
+         (real-git! dir args in timeout-ms))))))
+
+(defn- real-git!
+  "One git run on the CLI; see `git!`."
+  [dir args in timeout-ms]
+  (let [budget (long (or timeout-ms local-timeout-ms))
+        pb (-> (ProcessBuilder. ^java.util.List (into ["git"] args))
+               (.directory (java.io.File. ^String dir))
+               (.redirectErrorStream true))
+        env (.environment pb)]
+    (.put env "GIT_TERMINAL_PROMPT" "0")
+    (.put env "GIT_MERGE_AUTOEDIT" "no")
+    (let [process (.start pb)
+          out (future (String. (.readAllBytes (.getInputStream process))
+                               java.nio.charset.StandardCharsets/UTF_8))]
+      (with-open [w (.getOutputStream process)]
+        (when in (.write w (.getBytes ^String in java.nio.charset.StandardCharsets/UTF_8))))
+      (if (.waitFor process budget java.util.concurrent.TimeUnit/MILLISECONDS)
+        {:exit (.exitValue process) :out @out}
+        (do (.destroyForcibly process)
+            {:exit -1 :out (str "git " (str/join " " args) " timed out after " budget "ms")})))))
 
 (defn- git-ok [{:keys [exit out]} category]
   (if (zero? exit)
@@ -238,11 +290,12 @@
   ([{:keys [op directory files paths message all target] :as m} timeout-ms]
    (case op
      :magit/stage
-     (git-ok (git! directory (if (= :all files) ["add" "-A"] (into ["add" "--"] files)))
+     (git-ok (git! directory (if (= :all files) ["add" "-A"] (into ["add" "-A" "--"] files)))
              :magit/stage-failed)
 
      :magit/stage-verify
-     (if-let [missing (first (remove #(.exists (java.io.File. ^String directory ^String %)) paths))]
+     (if-let [missing (first (remove #(exists-follow? (.getPath (java.io.File. ^String directory ^String %)))
+                                     paths))]
        (result/ok (json/write-str {:status "missing" :path missing}))
        (let [added (git! directory (into ["add" "--"] paths))]
          (if-not (zero? (:exit added))
@@ -268,6 +321,11 @@
                          :magit/pull-failed)
      :magit/fetch (cli-fetch m timeout-ms)
      nil)))
+
+(def ^:private cli-backed-ops
+  "Every op `cli-op` can run."
+  #{:magit/stage :magit/stage-verify :magit/commit :magit/status :magit/branches
+    :magit/log :magit/diff :magit/feature-branches :magit/push :magit/pull :magit/fetch})
 
 (def ^:private cli-only-ops
   "Ops that never reach the editor. They wait on a network remote, which is
@@ -298,28 +356,170 @@
         (or (re-find vessel-never-ran (str error))
             (and timed-out (contains? idempotent-ops (:op op)))))))
 
+(def ^:dynamic *handshake-race-ms*
+  "An 'entrypoints failed to load' answered faster than this is a load race
+   (another emacsclient call mid-load, a cold daemon), worth one retry on the
+   editor. A slower one is a hung handshake: the editor is not retried, the op
+   goes straight to the CLI."
+  1500)
+
+(def ^:dynamic *handshake-retry-delay-ms*
+  "Pause before the single handshake retry."
+  250)
+
+(def ^:private handshake-race
+  #"(?i)bridge entrypoints failed to load")
+
+(defn- scrub
+  "A vessel error as the git tool shows it: hive-emacs's hint ends with 'Plain
+   CLI git works meanwhile', which sends agents off hive-git; the tool has its
+   own CLI backend, so that sentence is dropped."
+  [error]
+  (str/trim (str/replace (str error) #"\s*Plain CLI git works meanwhile\.?" "")))
+
+(defn- invoke-vessel
+  "[envelope elapsed-ms] of one editor dispatch of OP."
+  [op timeout-ms]
+  (let [t0 (System/nanoTime)
+        envelope (svc/invoke :vessel :dispatch op timeout-ms)]
+    [envelope (quot (- (System/nanoTime) t0) 1000000)]))
+
+(defn- handshake-race?
+  "True when ENVELOPE is a fast 'entrypoints failed to load': the op never ran
+   and the bridge is likely mid-load, so one retry on the editor is safe."
+  [{:keys [success timed-out error]} elapsed-ms]
+  (boolean (and (not success) (not timed-out)
+                (re-find handshake-race (str error))
+                (< elapsed-ms *handshake-race-ms*))))
+
+(def ^:dynamic *bridge-down-ms*
+  "After a slow handshake failure or an editor timeout, how long the bridge is
+   remembered as down: ops in that window skip the editor and run on the CLI
+   at once, instead of each paying the full handshake budget again (about 25 s
+   per op against a daemon wedged on a prompt)."
+  30000)
+
+(defonce ^:private bridge-latch
+  ;; {:dispatch <the vessel dispatch fn that failed> :until epoch-ms :why text}.
+  ;; Keyed by the dispatch fn, so a re-registered vessel starts trusted.
+  (atom nil))
+
+(defn- vessel-dispatch-fn []
+  (get-in (svc/registered) [:vessel :dispatch]))
+
+(defn- latched-down
+  "The latch, when the registered vessel is remembered as down right now."
+  []
+  (let [{:keys [dispatch until] :as l} @bridge-latch]
+    (when (and l (identical? dispatch (vessel-dispatch-fn))
+               (< (System/currentTimeMillis) until))
+      l)))
+
+(defn- latch-down! [why]
+  (when (pos? *bridge-down-ms*)
+    (reset! bridge-latch {:dispatch (vessel-dispatch-fn) :why why
+                          :until (+ (System/currentTimeMillis) *bridge-down-ms*)})))
+
+(defn- invoke-with-handshake-retry
+  "Dispatch OP to the editor; retry ONCE after a short pause when the first
+   answer is a handshake race (see `handshake-race?`).
+   {:envelope :retried? :elapsed-ms}: what the error text may claim is read
+   from here, never assumed."
+  [op timeout-ms]
+  (let [[envelope elapsed] (invoke-vessel op timeout-ms)]
+    (if (handshake-race? envelope elapsed)
+      (do (log/info "magit op: bridge handshake race, retrying once" {:op (:op op) :elapsed-ms elapsed})
+          (Thread/sleep (long *handshake-retry-delay-ms*))
+          (let [[envelope2 elapsed2] (invoke-vessel op timeout-ms)]
+            {:envelope envelope2 :retried? true :elapsed-ms elapsed2}))
+      {:envelope envelope :retried? false :elapsed-ms elapsed})))
+
+(defn- bridge-state
+  "One line naming the bridge state behind a vessel ERROR, from what actually
+   happened (ATTEMPT is `invoke-with-handshake-retry`'s answer, or a latch).
+   hive-emacs reports a dead daemon, an open circuit breaker and a missing
+   socket all as 'entrypoints failed to load', so that text alone never
+   proves a race: after the retry failed too, the bridge is down."
+  [error {:keys [retried? elapsed-ms latched]}]
+  (cond
+    latched
+    (str "bridge down: remembered from an earlier call (" (:why latched)
+         "); the editor was skipped for up to " (quot *bridge-down-ms* 1000) " s")
+
+    (and (re-find handshake-race (str error)) retried?)
+    (str "bridge down: its entrypoints failed to load on the first call and again on one retry "
+         "(a dead or wedged daemon, an open circuit breaker, or a bad load-path)")
+
+    (re-find handshake-race (str error))
+    (str "bridge down: its entrypoints failed to load after " elapsed-ms
+         " ms (a hung handshake); the editor was not retried")
+
+    :else (str "bridge down: " (first (str/split-lines (scrub error))))))
+
+(defn- on-cli-backend
+  "R, a CLI failover result; an error says which backend ran and what to do."
+  [r error attempt]
+  (if (find r :ok)
+    r
+    (update r :message str
+            "\nThis ran on the hive-git git CLI backend because the Emacs editor could not run it ("
+            (bridge-state error attempt)
+            "). Next: fix the git error above, then re-run the same hive git call; "
+            "it takes the CLI backend whenever Emacs cannot answer.")))
+
+(defn- latch-worthy?
+  "True when ATTEMPT shows the bridge is down for longer than one call: the
+   editor timed out, or the entrypoints failed slowly or twice."
+  [{:keys [envelope retried? elapsed-ms]}]
+  (let [{:keys [success timed-out error]} envelope]
+    (boolean (and (not success)
+                  (or timed-out
+                      (and (re-find handshake-race (str error))
+                           (or retried? (>= elapsed-ms *handshake-race-ms*))))))))
+
 (defn- dispatch->result
   "Run a closed magit operation and convert its answer to Result.
    Remote ops (push, pull, fetch) run on the git CLI. Every other op goes to
-   the editor vessel first and fails over to the git CLI in :directory when the
-   vessel never ran it (see `vessel-never-ran`), or, for an idempotent op, timed
-   out. A commit that timed out is NOT rerun: it may have completed."
+   the editor vessel first (one retry on a handshake race, see
+   `invoke-with-handshake-retry`) and fails over to the git CLI in :directory
+   when the vessel never ran it (see `vessel-never-ran`), or, for an
+   idempotent op, timed out. A commit that timed out is NOT rerun: it may have
+   completed. Every error names the bridge state and the next step."
   [op timeout-ms]
-  (if (contains? cli-only-ops (:op op))
+  (cond
+    (contains? cli-only-ops (:op op))
     (cli-op op timeout-ms)
-    (let [{:keys [success result error] :as envelope}
-          (svc/invoke :vessel :dispatch op timeout-ms)]
+
+    ;; The bridge was seen down moments ago: the editor is not asked again, so
+    ;; the op never runs there and the CLI cannot run it twice.
+    (and (:directory op) (contains? cli-backed-ops (:op op)) (latched-down))
+    (let [latched (latched-down)]
+      (log/info "magit op: bridge remembered down, running on the git CLI" {:op (:op op)})
+      (on-cli-backend (cli-op op timeout-ms) (:why latched) {:latched latched}))
+
+    :else
+    (let [{:keys [envelope] :as attempt} (invoke-with-handshake-retry op timeout-ms)
+          {:keys [success result error]} envelope]
+      (when (latch-worthy? attempt)
+        (latch-down! (first (str/split-lines (scrub error)))))
+      (when success (reset! bridge-latch nil))
       (cond
         success (result/ok result)
         (failover? op envelope)
         (do (log/info "magit op failing over to the git CLI" {:op (:op op) :vessel-error (str error)})
-            (or (cli-op op timeout-ms)
-                (result/err :magit/dispatch-failed {:message (str error)})))
+            (if-let [r (cli-op op timeout-ms)]
+              (on-cli-backend r error attempt)
+              (result/err :magit/dispatch-failed
+                          {:message (str (scrub error) "\n" (bridge-state error attempt)
+                                         "; " (:op op) " has no git CLI backend. Next: re-run once Emacs answers (emacsclient --eval t).")})))
         (:timed-out envelope)
         (result/err :magit/dispatch-failed
-                    {:message (str error "\nThe editor may still have run " (:op op)
-                                   "; it was not retried. Read `git status` before repeating it.")})
-        :else (result/err :magit/dispatch-failed {:message (str error)})))))
+                    {:message (str (scrub error) "\nbridge timed out: the editor may still have run " (:op op)
+                                   "; it was not retried, so nothing ran twice. Next: read `git status` (hive git command=status), "
+                                   "then repeat the call only if the change is not there.")})
+        :else (result/err :magit/dispatch-failed
+                          {:message (str (scrub error) "\nThe editor answered an error; this is not a bridge outage. "
+                                         "Next: fix the cause above and re-run the call.")})))))
 
 
 (defn- try-result
@@ -345,14 +545,6 @@
   "Run a closed magit op through the Result boundary."
   [category op timeout-ms]
   (result->mcp (try-result category #(dispatch->result op timeout-ms))))
-
-(defn- with-default
-  "Provide default value when Result ok value is nil.
-   Uses if-let (CC-free) for both Result detection and nil check."
-  [default-val r]
-  (if-let [entry (find r :ok)]
-    (if-let [_v (val entry)] r (result/ok default-val))
-    r))
 
 ;; ============================================================
 ;; Magit Integration Tools (requires hive-mcp-magit addon)
@@ -401,45 +593,55 @@
                          selected)))
          vec)))
 
+(defn- names?
+  "True when the root-relative path REL names ENTRY: the path itself, or a
+   path beneath it when REL is a directory."
+  [rel entry]
+  (or (= rel ".") (= entry rel) (str/starts-with? entry (str rel "/"))))
+
+(defn- abs-in [^String root ^String rel]
+  (.getPath (java.io.File. root rel)))
+
 (defn- staged-paths
   "Read the index directly, without asking the shared Emacs buffer to choose a repo.
    A failed git inspection is a refusal, never an empty index."
   [dir]
   (try
-    (let [process (-> (ProcessBuilder. ["git" "diff" "--cached" "--name-only"
-                                      "--no-renames" "-z"])
-                      (.directory (java.io.File. dir))
-                      (.redirectErrorStream true)
-                      (.start))
-          bytes (.readAllBytes (.getInputStream process))
-          exit (.waitFor process)
-          output (String. bytes java.nio.charset.StandardCharsets/UTF_8)]
+    (let [{:keys [exit out]} (git! dir ["diff" "--cached" "--name-only" "--no-renames" "-z"])]
       (if (zero? exit)
-        (result/ok (vec (remove str/blank? (str/split output (re-pattern (str (char 0)))))))
+        (result/ok (vec (remove str/blank? (str/split out (re-pattern (str (char 0)))))))
         (result/err :magit/index-inspection-failed
-                    {:message (str ":magit/index-inspection-failed - git diff --cached failed in " dir ": " output)})))
+                    {:message (str ":magit/index-inspection-failed - git diff --cached failed in " dir ": " out)})))
     (catch Exception e
       (result/err :magit/index-inspection-failed
                   {:message (str ":magit/index-inspection-failed - " (.getMessage e))}))))
 
 (defn- verify-index-scope
-  "Refuse an explicit-files commit if the index holds any other path. A directory
-   pathspec covers its descendants whether or not its spelling ends in /."
-  [files dir]
-  (let [inspection (staged-paths dir)
-        scope-files (mapv (fn [path]
-                            (if (and (not (str/ends-with? path "/"))
-                                     (.isDirectory (java.io.File. dir path)))
-                              (str path "/")
-                              path)) files)]
-    (if-let [paths (:ok inspection)]
-      (let [extras (staged-outside-files scope-files paths)]
-        (if (seq extras)
-          (result/err :magit/unrelated-staged
-                      {:message (str ":magit/unrelated-staged - refusing commit; index also contains: "
-                                     (pr-str extras))})
-          (result/ok files)))
-      inspection)))
+  "Refuse an explicit-files commit if the index holds any other path. FILES are
+   root-relative (see `resolve-paths`) when RESOLVED?, and ROOT is the
+   repository top; a named path covers itself and, when it is or was a
+   directory, its descendants, whether or not it still exists on disk."
+  ([files dir] (verify-index-scope files dir false))
+  ([files dir resolved?]
+   (let [inspection (staged-paths dir)
+         scope-files (if resolved?
+                       files
+                       (mapv (fn [path]
+                               (if (and (not (str/ends-with? path "/"))
+                                        (= :dir (:type (path-kind (abs-in dir path)))))
+                                 (str path "/")
+                                 path)) files))]
+     (if-let [paths (:ok inspection)]
+       (let [extras (if resolved?
+                      (filterv (fn [p] (not-any? #(names? % p) scope-files)) paths)
+                      (staged-outside-files scope-files paths))]
+         (if (seq extras)
+           (result/err :magit/unrelated-staged
+                       {:message (str ":magit/unrelated-staged - refusing commit; index also contains: "
+                                      (pr-str extras)
+                                      ". Next: name them in files, unstage them, or pass include_staged=true.")})
+           (result/ok files)))
+       inspection))))
 
 (defn- stage-verify
   "Stage PATHS in DIR and confirm the index carries at least one of them.
@@ -476,6 +678,253 @@
                                      " returned no verdict: " raw)})))
       r)))
 
+(defn- nio ^java.nio.file.Path [^String s]
+  (java.nio.file.Paths/get s (make-array String 0)))
+
+(defn- resolve-paths
+  "Each caller PATH as the repo-root-relative path it names, never a pattern.
+   A relative path is read from DIR (a subdirectory works: `./a.txt` from
+   <repo>/src is src/a.txt); an absolute path must lie inside the repository.
+   (ok {:root R :paths [rel ...] :resolved? true}), or (err
+   :magit/path-outside-repo). When DIR is not inside a git work tree nothing
+   is resolved, (ok {:root DIR :paths PATHS :resolved? false}), and the ops
+   report that themselves."
+  [paths dir]
+  (if-let [root (git-out dir ["rev-parse" "--show-toplevel"])]
+    (let [d (.normalize (nio dir))
+          r (.normalize (nio root))
+          prefix (nio (or (git-out dir ["rev-parse" "--show-prefix"]) ""))
+          one (fn [p]
+                (let [pp (.normalize (nio p))
+                      rel (cond
+                            (not (.isAbsolute pp)) (.normalize (.resolve prefix pp))
+                            (.startsWith pp d) (.normalize (.resolve prefix (.relativize d pp)))
+                            (.startsWith pp r) (.relativize r pp))
+                      s (some-> rel str)]
+                  (cond
+                    (or (nil? s) (= s "..") (str/starts-with? s "../")) {:outside p}
+                    (= s "") {:rel "."}
+                    :else {:rel s})))
+          rs (mapv one paths)
+          outside (keep :outside rs)]
+      (if (seq outside)
+        (result/err :magit/path-outside-repo
+                    {:message (str ":magit/path-outside-repo - " (str/join " " outside)
+                                   " is not inside the repository " root
+                                   ". Next: name paths relative to " dir " or absolute under " root ".")})
+        (result/ok {:root root :paths (vec (distinct (map :rel rs))) :resolved? true})))
+    (result/ok {:root dir :paths (vec paths) :resolved? false})))
+
+(defn- tracked-under
+  "Index and HEAD entries REL names in ROOT (literal pathspec, exact match)."
+  [root rel]
+  (filterv #(names? rel %)
+           (distinct (concat (git-lines root ["ls-files" "--cached" "--" rel])
+                             (git-lines root ["ls-tree" "-r" "--name-only" "HEAD" "--" rel])))))
+
+(defn- cli-staged
+  "The root-relative PATHS that are staged on the git CLI rather than through
+   the editor's stage-verify, which tests existence by following links: a
+   tracked path with NOTHING on disk (a deletion) and a symlink (dangling or
+   not; its target is not the caller's business). A path that exists on disk
+   is never treated as deleted."
+  [paths root]
+  (filterv (fn [rel]
+             (let [{:keys [type]} (path-kind (abs-in root rel))]
+               (or (= :symlink type)
+                   (and (= :absent type) (seq (tracked-under root rel))))))
+           paths))
+
+(defn- index-entries
+  "ROOT's index as {path \"mode sha stage\"}, or nil when git cannot read it."
+  [root]
+  (let [{:keys [exit out]} (git! root ["ls-files" "-s" "-z"])]
+    (when (zero? exit)
+      (into {} (keep (fn [rec]
+                       (when-let [[_ meta p] (re-matches #"(?s)(\S+ \S+ \S+)\t(.*)" rec)]
+                         [p meta])))
+            (str/split out (re-pattern (str (char 0))))))))
+
+(defn- index-file ^java.io.File [root]
+  (when-let [p (git-out root ["rev-parse" "--git-path" "index"])]
+    (let [f (java.io.File. ^String p)]
+      (if (.isAbsolute f) f (java.io.File. ^String root ^String p)))))
+
+(defn- snapshot-index
+  "ROOT's index as it stands, to put back if the call is refused."
+  [root]
+  {:entries (index-entries root)
+   :raw (if-let [f (:snapshot-index *repo-port*)]
+          (f root)
+          (when-let [file (index-file root)]
+            {:file file
+             :bytes (when (.isFile file) (java.nio.file.Files/readAllBytes (.toPath file)))}))})
+
+(defn- restore-index!
+  "Put ROOT's index back as SNAP (from `snapshot-index`) recorded it."
+  [root {:keys [raw]}]
+  (if-let [f (:restore-index! *repo-port*)]
+    (f root raw)
+    (when-let [^java.io.File file (:file raw)]
+      (if-let [bytes (:bytes raw)]
+        (java.nio.file.Files/write (.toPath file) ^bytes bytes
+                                   ^"[Ljava.nio.file.OpenOption;" (make-array java.nio.file.OpenOption 0))
+        (.delete file))))
+  nil)
+
+(defn- touched-outside
+  "Index paths whose entry changed since SNAP that no root-relative path in
+   PATHS names: what a stage or commit must never touch."
+  [root snap paths]
+  (let [before (:entries snap)
+        after (index-entries root)]
+    (when (and before after)
+      (->> (into (set (keys before)) (keys after))
+           (filter #(not= (get before %) (get after %)))
+           (remove (fn [p] (some #(names? % p) paths)))
+           sort vec))))
+
+(defn- scope-violation
+  "The refusal for a stage that changed index paths the caller did not name."
+  [outside]
+  (result/err :magit/scope-violation
+              {:message (str ":magit/scope-violation - staging changed index paths that were not named: "
+                             (str/join " " outside)
+                             "; the index was put back as it was. Next: name each path to stage.")}))
+
+(def ^:private pathspec-magic
+  "A path git (or Magit, which passes no --literal-pathspecs) would read as a
+   pattern: wildcards, a character class, an escape, a :(magic) prefix."
+  #"[*?\[\\]|^:")
+
+(defn- stage-literal-cli
+  "Stage root-relative PATHS in ROOT on the git CLI, literally: a tracked path
+   with nothing on disk is removed from the index (rm --cached -r, so a
+   deleted directory works too), every other path is added (add -A, so a
+   symlink is recorded as the link it is). (ok PATHS) or (err)."
+  [paths root]
+  (let [gone (filterv #(= :absent (:type (path-kind (abs-in root %)))) paths)
+        here (vec (remove (set gone) paths))
+        rm (when (seq gone)
+             (git! root (into ["rm" "--cached" "-r" "-q" "--ignore-unmatch" "--"] gone)))
+        add (when (and (seq here) (or (nil? rm) (zero? (:exit rm))))
+              (git! root (into ["add" "-A" "--"] here)))
+        failed (first (filter #(and % (not (zero? (:exit %)))) [rm add]))]
+    (if failed
+      (git-ok failed :magit/stage-failed)
+      (result/ok paths))))
+
+(defn- unknown-paths
+  "The root-relative PATHS that name nothing: absent from disk and from the
+   index and HEAD."
+  [paths root]
+  (filterv #(and (= :absent (:type (path-kind (abs-in root %))))
+                 (empty? (tracked-under root %)))
+           paths))
+
+(defn- stage-explicit
+  "Stage the caller's PATHS for a commit, each read literally and resolved
+   against the repository root (see `resolve-paths`).
+
+   - A path that exists on disk is never staged as a deletion; a tracked path
+     with nothing on disk is (git rm --cached -r).
+   - Deletions, symlinks and paths git or Magit would read as a pattern are
+     staged on the git CLI with --literal-pathspecs; the rest go through the
+     editor's stage-verify (failing over to the CLI).
+   - The index is snapshotted first. If staging changed an index entry the
+     caller did not name, or the call fails, the index is put back as it was:
+     a refused stage leaves nothing behind.
+
+   (ok {:root R :paths [rel ...] :resolved? bool}), or an error Result."
+  [paths dir timeout-ms]
+  (let [res (resolve-paths paths dir)]
+    (if-not (find res :ok)
+      res
+      (let [{:keys [root paths resolved?] :as where} (:ok res)]
+        (if-not resolved?
+          (let [r (stage-verify paths dir timeout-ms)]
+            (if (find r :ok) (result/ok where) r))
+          (if-let [unknown (first (unknown-paths paths root))]
+            (result/err :magit/path-not-found
+                        {:message (str ":magit/path-not-found - no such path under " root ": " unknown
+                                       " (not on disk, not in the index, not in HEAD). Next: check the spelling;"
+                                       " paths are read literally, never as patterns.")})
+            (let [snap (snapshot-index root)
+                  cli (vec (distinct (concat (cli-staged paths root)
+                                             (filter #(re-find pathspec-magic %) paths))))
+                  rest-paths (vec (remove (set cli) paths))
+                  r (cond-> (if (seq cli) (stage-literal-cli cli root) (result/ok cli))
+                      (seq rest-paths)
+                      (as-> r (if (find r :ok)
+                                (let [v (stage-verify rest-paths root timeout-ms)]
+                                  ;; "at least one named path staged": a deletion
+                                  ;; staged above counts, the final check decides.
+                                  (if (and (seq cli) (= :magit/nothing-staged (:error v)))
+                                    (result/ok paths)
+                                    v))
+                                r)))
+                  outside (when (find r :ok) (touched-outside root snap paths))
+                  staged-any (when (and (find r :ok) (empty? outside))
+                               (seq (git-lines root (into ["diff" "--cached" "--name-only" "--"] paths))))]
+              (cond
+                (not (find r :ok)) (do (restore-index! root snap) r)
+                (seq outside) (do (restore-index! root snap) (scope-violation outside))
+                (not staged-any)
+                (do (restore-index! root snap)
+                    (result/err :magit/nothing-staged
+                                {:message (str ":magit/nothing-staged - staging left the index empty for "
+                                               (str/join " " paths)
+                                               "; refusing to commit what was already staged")}))
+                :else (result/ok where)))))))))
+
+(defn- ignored-paths
+  "The root-relative PATHS that are untracked and gitignored."
+  [paths root]
+  (filterv #(and (empty? (tracked-under root %))
+                 (seq (git-lines root ["ls-files" "--others" "--ignored" "--exclude-standard" "--" %])))
+           paths))
+
+(defn- stage-report
+  "The stage verb's answer for the root-relative PATHS in ROOT once the stage
+   op returned R; SNAP is the index before the call. It is read back from the
+   index, never from the op's answer (the editor's api-stage answers nil
+   whatever git did):
+   - paths that still carry changes are staged on the git CLI;
+   - a path that names nothing, or only an ignored file, is an error;
+   - an index entry the caller did not name that changed is an error;
+   on any error the index is put back as SNAP recorded it. A path with no
+   change to stage is named as such, not reported as staged."
+  [r paths root snap]
+  (let [fail (fn [e] (restore-index! root snap) e)]
+    (if-not (find r :ok)
+      (fail r)
+      (let [left (vec (distinct (concat (git-lines root (into ["diff" "--name-only" "--"] paths))
+                                        (git-lines root (into ["ls-files" "--others" "--exclude-standard" "--"] paths)))))
+            fixed (if (seq left) (stage-literal-cli paths root) r)
+            outside (when (find fixed :ok) (touched-outside root snap paths))
+            ignored (when (find fixed :ok) (ignored-paths paths root))
+            staged (set (git-lines root (into ["diff" "--cached" "--name-only" "--"] paths)))
+            staged? (fn [p] (some #(names? p %) staged))
+            done (filterv staged? paths)
+            unchanged (filterv (complement staged?) paths)]
+        (cond
+          (not (find fixed :ok)) (fail fixed)
+          (seq outside) (fail (scope-violation outside))
+          (seq ignored)
+          (fail (result/err :magit/path-ignored
+                            {:message (str ":magit/path-ignored - " (str/join " " ignored)
+                                           " is ignored by .gitignore and was not staged; the index was put back. "
+                                           "Next: drop it from files, or change .gitignore.")}))
+          :else
+          (result/ok (str/join "\n"
+                               (cond-> []
+                                 (seq done) (conj (str "Staged " (count done) " path(s): " (str/join " " done)))
+                                 (seq unchanged) (conj (str "Nothing to stage for " (str/join " " unchanged)
+                                                            ": no change against the index."))
+                                 (seq left) (conj (str "The editor answered without staging "
+                                                       (str/join " " left)
+                                                       "; they were staged on the git CLI backend."))))))))))
+
 (defn handle-magit-status
   "Get comprehensive git repository status via magit addon."
   [{:keys [directory] :as params}]
@@ -510,53 +959,99 @@
     (handle-op :magit/diff-failed {:op :magit/diff :target target :directory dir}
                (emacs-timeout-ms params))))
 
+(defn- stage-named
+  "Stage the caller's NORM paths in DIR: resolved literally against the
+   repository root, never read as patterns, verified against the index."
+  [norm dir timeout-ms]
+  (let [res (resolve-paths norm dir)]
+    (if-not (find res :ok)
+      res
+      (let [{:keys [root paths resolved?]} (:ok res)]
+        (if-not resolved?
+          (dispatch->result {:op :magit/stage :files paths :directory dir} timeout-ms)
+          (if-let [unknown (first (unknown-paths paths root))]
+            (result/err :magit/path-not-found
+                        {:message (str ":magit/path-not-found - no such path under " root ": " unknown
+                                       " (not on disk, not in the index, not in HEAD). Next: check the spelling;"
+                                       " paths are read literally, never as patterns.")})
+            (let [snap (snapshot-index root)
+                  cli (vec (distinct (concat (cli-staged paths root)
+                                             (filter #(re-find pathspec-magic %) paths))))
+                  rest-paths (vec (remove (set cli) paths))
+                  r (cond-> (if (seq cli) (stage-literal-cli cli root) (result/ok nil))
+                      (seq rest-paths)
+                      (as-> r (if (find r :ok)
+                                (dispatch->result {:op :magit/stage :files rest-paths :directory root}
+                                                  timeout-ms)
+                                r)))]
+              (stage-report r paths root snap))))))))
+
 (defn handle-magit-stage
   "Stage files for commit.
 
    `files` takes a list of paths, a single path, several paths in one
    whitespace-separated string, or 'all' for every modified file. An absent or
-   blank `files` is an error, never a silent no-op."
+   blank `files` is an error, never a silent no-op. Paths are literal (never
+   globs) and resolve against the repository root; the answer is read back
+   from the index and names what was staged (see `stage-report`)."
   [{:keys [files directory] :as params}]
   (let [dir (resolve-directory directory)
         norm (normalize-files files)
         timeout-ms (emacs-timeout-ms params)]
     (log/info "magit-stage" {:files norm :directory dir})
-    (if (nil? norm)
+    (cond
+      (nil? norm)
       (mcp-error (str ":magit/no-files - files is required: a path, a list of paths, "
                       "a whitespace-separated path string, or 'all'"))
+
+      (= :all norm)
       (result->mcp
        (try-result :magit/stage-failed
-                   #(with-default "Staged files"
-                      (dispatch->result {:op :magit/stage :files norm :directory dir}
-                                        timeout-ms)))))))
+                   #(let [r (dispatch->result {:op :magit/stage :files :all :directory dir} timeout-ms)]
+                      (if (and (find r :ok) (str/blank? (str (:ok r))))
+                        (result/ok "Staged all changes")
+                        r))))
+
+      :else
+      (result->mcp (try-result :magit/stage-failed #(stage-named norm dir timeout-ms))))))
 
 (defn handle-magit-commit
   "Create a commit with the given message.
 
    `files` restricts the commit to explicit paths: a list, a single path,
    several paths in one whitespace-separated string, or 'all'. Named paths are
-   staged and VERIFIED before the commit runs; a path that does not exist, or a
-   stage that leaves the index empty for those paths, fails the operation
-   instead of committing whatever the index already held. An explicit path list
-   also refuses a foreign staged path, naming it, unless include_staged is true.
-   A deps.edn :local/root leaving the repo is refused (git-local-root/refusal)."
+   read literally (never as globs), resolved against the repository root
+   (absolute paths inside it work), staged and VERIFIED before the commit runs
+   (see `stage-explicit`); a path that names nothing, or a stage that leaves
+   the index empty for those paths, fails the operation instead of committing
+   whatever the index already held. An explicit path list also refuses a
+   foreign staged path, naming it, unless include_staged is true. A deps.edn
+   :local/root leaving the repo is refused (git-local-root/refusal). Every
+   refusal before the commit runs puts the index back as it was."
   [{:keys [message all directory files include_staged] :as params}]
   (let [dir (resolve-directory directory)
         timeout-ms (emacs-timeout-ms params)
         norm (normalize-files files)
         stage-all (boolean (or all (= :all norm)))
-        staged (when (vector? norm) (stage-verify norm dir timeout-ms))]
+        root (when (vector? norm) (git-out dir ["rev-parse" "--show-toplevel"]))
+        snap (when root (snapshot-index root))
+        refuse (fn [r] (when snap (restore-index! root snap)) (result->mcp r))
+        staged (when (vector? norm) (stage-explicit norm dir timeout-ms))]
     (log/info "magit-commit" {:message-len (count message) :all stage-all
                               :files norm :directory dir})
     (if (and (some? staged) (nil? (find staged :ok)))
-      (result->mcp staged)
-      (let [scope (when (and (vector? norm) (not stage-all) (not include_staged))
-                    (verify-index-scope norm dir))]
+      (refuse staged)
+      (let [{:keys [root paths resolved?]} (:ok staged)
+            scope (when (and (vector? norm) (not stage-all) (not include_staged))
+                    (if resolved?
+                      (verify-index-scope paths root true)
+                      (verify-index-scope norm dir)))]
         (if (and (some? scope) (nil? (find scope :ok)))
-          (result->mcp scope)
-          (or (local-root/refusal dir stage-all)
-              (handle-op :magit/commit-failed {:op :magit/commit :message message
-                                               :all stage-all :directory dir} timeout-ms)))))))
+          (refuse scope)
+          (if-let [refused (local-root/refusal dir stage-all)]
+            (do (when snap (restore-index! root snap)) refused)
+            (handle-op :magit/commit-failed {:op :magit/commit :message message
+                                             :all stage-all :directory dir} timeout-ms)))))))
 
 (defn handle-magit-push
   "Push the current branch to <remote>/<current-branch>, on the git CLI.
