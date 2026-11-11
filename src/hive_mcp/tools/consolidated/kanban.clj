@@ -105,6 +105,8 @@
                        (handle-batch-update params)
                        (mem-kanban/handle-mem-kanban-move params)))
    :delete         #'mem-kanban/handle-mem-kanban-delete
+   :history        #'mem-kanban/handle-mem-kanban-history
+   :restore        #'mem-kanban/handle-mem-kanban-restore
    :status         #'mem-kanban/handle-mem-kanban-stats
    :retag          #'mem-kanban/handle-mem-kanban-retag
    :sync           (fn [_] {:success true :message "Memory kanban is single-backend, no sync needed"})
@@ -146,19 +148,22 @@
 (def tool-def
   {:name "kanban"
    :consolidated true
-   :description "Kanban task management: list (all/filtered tasks), get (single task/entry by id — unified across the kanban store AND the default memory store, since they are separate backends; surfaces full fields + KG edges; on miss returns semantic-search suggestions), create (new task), update (move status via new_status and/or edit title/description/priority in place; both in one call move first, then edit), delete (hard-remove task by id; no archival, no completion — use for duplicates/cancellations), retag (scope-move via project_id + optional ±tags; preserves entry id + KG edges, no re-embed), status (board overview + milestones), sync (backends), plan-to-kanban (convert plan to tasks, supports plan_id or plan_path), plan-schema (the plan-memory EDN contract: JSON-schema + example + how-to, so a type=plan memory can be authored without reading source), batch-update (bulk status changes; per-op :command respected — pass :command \"delete\" inside an op to mix delete in), batch-delete (sweep many task_ids; mirror of batch-update), batch-retag (sweep many scope-moves). Aliases (deprecated): move→update, roadmap→status, my-tasks→list. Use command='help' to list all. HCR: a list shows its own scope + ANCESTORS (parent tasks, always — 'child sees parent'); include_descendants=true (default) also aggregates DESCENDANT (child) project tasks; scope=\"all\" lifts the project filter entirely for a cross-workspace whole-board view. List filters: query (substring), tags (extra required tags), tag_match (any|all), created_after / updated_after (ISO-8601), limit / offset (pagination), fields (projection). Session todos: cards tagged session-todo (an agent's private todo_write step list) are HIDDEN by default from list, status and the catchup kanban block; opt in with include_session_todos=true or by naming the session-todo tag in tags."
+   :description "Kanban task management: list (all/filtered tasks), get (single task/entry by id — unified across the kanban store AND the default memory store, since they are separate backends; surfaces full fields + KG edges; on miss returns semantic-search suggestions), create (new task), update (move status via new_status and/or edit title/description/priority in place; both in one call move first, then edit; a replaced description is kept in the card's description-history, append_description adds a note instead of replacing), history (a task's earlier descriptions, numbered rev 1.. oldest first, with replaced-at and agent), restore (put revision rev from history back as the description; the replaced text joins the history), delete (hard-remove task by id; no archival, no completion — use for duplicates/cancellations), retag (scope-move via project_id + optional ±tags; preserves entry id + KG edges, no re-embed), status (board overview + milestones), sync (backends), plan-to-kanban (convert plan to tasks, supports plan_id or plan_path), plan-schema (the plan-memory EDN contract: JSON-schema + example + how-to, so a type=plan memory can be authored without reading source), batch-update (bulk status changes; per-op :command respected — pass :command \"delete\" inside an op to mix delete in), batch-delete (sweep many task_ids; mirror of batch-update), batch-retag (sweep many scope-moves). Aliases (deprecated): move→update, roadmap→status, my-tasks→list. Use command='help' to list all. HCR: a list shows its own scope + ANCESTORS (parent tasks, always — 'child sees parent'); include_descendants=true (default) also aggregates DESCENDANT (child) project tasks; scope=\"all\" lifts the project filter entirely for a cross-workspace whole-board view. List filters: query (substring), tags (extra required tags), tag_match (any|all), created_after / updated_after (ISO-8601), limit / offset (pagination), fields (projection). Session todos: cards tagged session-todo (an agent's private todo_write step list) are HIDDEN by default from list, status and the catchup kanban block; opt in with include_session_todos=true or by naming the session-todo tag in tags."
    :inputSchema {:type "object"
                  :properties {"command" {:type "string"
-                                         :enum ["list" "get" "create" "move" "status" "update" "delete" "retag" "roadmap" "my-tasks" "sync" "plan-to-kanban" "plan-schema" "batch-update" "batch-delete" "batch-create" "batch-retag" "help"]
+                                         :enum ["list" "get" "create" "move" "status" "update" "delete" "history" "restore" "retag" "roadmap" "my-tasks" "sync" "plan-to-kanban" "plan-schema" "batch-update" "batch-delete" "batch-create" "batch-retag" "help"]
                                          :description "Kanban operation to perform"}
                               "status" {:type "string"
                                         :enum ["todo" "inprogress" "inreview" "done"]
                                         :description "Filter by task status"}
                               "title" {:type "string"
                                        :description "[create|update] Task title. On update a non-blank value replaces the current title in place — entry id, KG edges, status and scope are preserved."}
+                              "steal_claim" {:type "boolean"
+                                             :description "[update] A move to inprogress claims the card for you (owner + since on the card); a card another live agent or coordinator claims is refused, naming the holder. true takes it over. todo/done clear the claim."}
                               "description" {:type "string"
-                                             :description "[create|update] Task description. On update a non-blank value replaces the current description in place."}
-                              "append_description" {:type "string" :description "[update] Append text to the existing description; description replaces it."}
+                                             :description "[create|update] Task description. On update a non-blank value replaces the current description; the old text is kept in the card's description-history (see history/restore). To add a note, use append_description."}
+                              "append_description" {:type "string" :description "[update] Append text to the existing description after a blank line, without replacing it. Applied after description when both are given."}
+                              "rev" {:type "integer" :description "[restore] Revision number from `history` (1 = oldest) to put back as the description"}
                               "task_id" {:type "string"
                                          :description "Task ID to get/move/update/retag/delete"}
                               "id" {:type "string"
@@ -189,6 +194,7 @@
                                                                  "remove_tags"    {:type "array" :items {:type "string"}}
                                                                  "title"          {:type "string"}
                                                                  "description"    {:type "string"}
+                                                                 "append_description" {:type "string"}
                                                                  "priority"       {:type "string"
                                                                                    :enum ["high" "medium" "low"]}}}
                                             :description "Array of operations for batch-update / batch-delete / batch-create / batch-retag. Each op may specify :command to mix verbs in one batch; otherwise the wrapper's default applies."}

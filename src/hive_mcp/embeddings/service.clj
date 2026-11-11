@@ -689,6 +689,92 @@
 
 (m/=> type->collection-names [:=> [:cat [:maybe TypeName]] [:vector :string]])
 
+;; =============================================================================
+;; Embedding space of a resolved provider (collection provenance)
+;; =============================================================================
+
+(def doc-serializer-rev
+  "Revision of the document text that is embedded for a memory entry
+   (hive-mcp.chroma.helpers/memory-to-document, or a caller's :embed-text).
+   Bump it whenever that text changes shape: vectors of the old text and of
+   the new one are not the same space even under the same model."
+  "memory-to-document/1")
+
+(defn- ollama-digest
+  "Digest of `model` as served by the Ollama at `host`, or nil."
+  [host model]
+  ((requiring-resolve 'hive-mcp.embeddings.ollama/model-digest) host model))
+
+(defn- default-digest-resolver
+  "Port default: Ollama reports the exact digest of a local model; remote
+   providers report none, so their digest stays unrecorded (nil)."
+  [{:keys [impl model host]}]
+  (when (= impl :ollama)
+    (ollama-digest (or host "http://localhost:11434") model)))
+
+(defonce ^:private digest-resolver (atom default-digest-resolver))
+(defonce ^:private digest-cache (atom {}))
+
+(defn set-digest-resolver!
+  "Install the digest port: (fn [provider-spec]) -> digest string or nil.
+   Tests install a stub so no provider is contacted. Clears the digest cache.
+   Returns `f`."
+  [f]
+  (reset! digest-cache {})
+  (reset! digest-resolver f)
+  f)
+
+(m/=> set-digest-resolver! [:=> [:cat fn?] fn?])
+
+(defn- resolve-digest
+  "Digest for a provider spec: a declared :digest wins, else the port's answer.
+   Only a found digest is cached, so a provider that was briefly unreachable
+   is asked again rather than pinned to 'unrecorded'."
+  [spec]
+  (or (:digest spec)
+      (let [k [(:impl spec) (:host spec) (:model spec)]]
+        (or (get @digest-cache k)
+            (let [d (try (@digest-resolver spec)
+                         (catch Throwable t
+                           (log/warn "Embedding digest lookup failed for" (:model spec)
+                                     "-" (.getMessage t))
+                           nil))]
+              (when (string? d) (swap! digest-cache assoc k d))
+              d)))))
+
+(defn- query-template-rev
+  "Revision of the configured query template (role/shape-query input)."
+  []
+  (let [t (get-in (global-config/get-global-config) [:embeddings :query-template])]
+    (cond (nil? t)     "raw"
+          (keyword? t) (name t)
+          (string? t)  t
+          :else        (pr-str t))))
+
+(defn space-for-resolved
+  "The EmbeddingSpace the vectors of `resolved` (a `resolve-provider-for-type`
+   map) live in: provider impl, model, exact digest, dimension, query-template
+   and document-serializer revisions, plus `extra` from the vector store (its
+   :metric, :normalized?). Nil when the provider comes from no configured spec
+   (the global fallback), whose space nobody can name."
+  ([resolved] (space-for-resolved resolved nil))
+  ([{:keys [provider-key dimension]} extra]
+   (when-let [spec (get-in (embedder-config) [:providers provider-key])]
+     (when (and (:impl spec) (:model spec) (or dimension (:dimension spec)))
+       (space/->space (merge {:provider           (:impl spec)
+                              :model              (str (:model spec))
+                              :digest             (resolve-digest spec)
+                              :dimension          (or dimension (:dimension spec))
+                              :query-template-rev (query-template-rev)
+                              :doc-serializer-rev doc-serializer-rev}
+                             (select-keys spec [:metric :normalized?])
+                             extra))))))
+
+(m/=> space-for-resolved [:function
+                          [:=> [:cat [:map-of :keyword :any]] [:maybe space/EmbeddingSpace]]
+                          [:=> [:cat [:map-of :keyword :any] [:maybe [:map-of :keyword :any]]]
+                           [:maybe space/EmbeddingSpace]]])
+
 (defn reset-service!
   "Reset all service state. For testing."
   []

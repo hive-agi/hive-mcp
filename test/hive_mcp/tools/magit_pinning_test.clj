@@ -246,29 +246,15 @@
 ;; Push Remote Targeting
 ;; =============================================================================
 
-(deftest handle-magit-push-carries-remote-test
-  (testing "An explicit remote reaches :magit/push as :remote"
-    (sh/with-swarm-host [host (fn [_ _] {:success true :result "{}"})]
-      (tools/handle-magit-push {:remote "github" :directory "/some/repo"})
-      (is (= {:op :magit/push :set-upstream false :remote "github" :directory "/some/repo"}
-             (only-op host))
-          "The remote the caller named must reach api-push")))
-
-  (testing "set_upstream and remote travel together"
-    (sh/with-swarm-host [host (fn [_ _] {:success true :result "{}"})]
-      (tools/handle-magit-push {:remote "github" :set_upstream true})
-      (let [op (only-op host)]
-        (is (true? (:set-upstream op)))
-        (is (= "github" (:remote op))))))
-
-  (testing "No remote and no upstream: the translator emits bare nil options"
-    (sh/with-swarm-host [host (fn [_ _] {:success true :result "{}"})]
-      (tools/handle-magit-push {})
-      (let [op (only-op host)]
-        (is (false? (:set-upstream op)))
-        (is (nil? (:remote op))))))
-
-  (testing "A blank remote is absent, not a remote named the empty string"
-    (sh/with-swarm-host [host (fn [_ _] {:success true :result "{}"})]
-      (tools/handle-magit-push {:remote "   "})
-      (is (nil? (:remote (only-op host)))))))
+(deftest remote-ops-never-reach-the-editor-test
+  (testing "push, pull and fetch run on the git CLI: the editor's 5 s budget and
+            its bare `git push` were the two ways they failed
+            (20261109130937-248e5d53, 20261109122531-4b8ec731)"
+    (let [dir (str (java.nio.file.Files/createTempDirectory
+                    "magit-remote" (make-array java.nio.file.attribute.FileAttribute 0)))]
+      (sh/with-swarm-host [host (fn [_ _] {:success true :result "{}"})]
+        (tools/handle-magit-push {:remote "github" :directory dir})
+        (tools/handle-magit-push {:set_upstream true :directory dir})
+        (tools/handle-magit-pull {:directory dir})
+        (tools/handle-magit-fetch {:remote "  " :directory dir})
+        (is (empty? (sh/calls host)) "no remote op was dispatched to the vessel")))))

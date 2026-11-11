@@ -3,7 +3,8 @@
   (:require [clojure.test :refer [deftest is testing]]
             [clojure.data.json :as json]
             [hive-mcp.tools.memory.crud.retrieve :as retrieve]
-            [hive-mcp.protocols.memory :as mem-proto]))
+            [hive-mcp.protocols.memory :as mem-proto]
+            [hive-mcp.test-support.registry-isolation :as isolation]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -28,18 +29,15 @@
   (reset-store! [_] nil))
 
 (defn- with-slots
-  "Register DEFAULT and KANBAN stores for the duration of F, then restore."
+  "Register DEFAULT and KANBAN stores for the duration of F. Refuses a running
+   addon server before either slot is touched and restores the exact prior
+   slot map in one atomic swap, instead of re-registering slot by slot."
   [default kanban f]
-  (let [prior (mem-proto/registered-stores)]
-    (try
+  (isolation/with-restored-store-registry
+    (fn []
       (mem-proto/register-store! :default default)
       (mem-proto/register-store! :kanban kanban)
-      (f)
-      (finally
-        (doseq [slot [:default :kanban]]
-          (if-let [p (get prior slot)]
-            (mem-proto/register-store! slot p)
-            (mem-proto/unregister-store! slot)))))))
+      (f))))
 
 (deftest batch-get-reports-kanban-ids
   (let [card {:id "card-1" :type "kanban" :content "a card" :tags ["kanban"]}

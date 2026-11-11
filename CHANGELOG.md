@@ -35,6 +35,42 @@ bump, not a quiet minor, because a consumer's storage would change under it.
 
 ## [Unreleased]
 
+### Fixed
+
+- `git stage`/`commit`/`batch-commit` when the Emacs bridge is down or racing.
+  A fast "bridge entrypoints failed to load" (a load race) is retried once on
+  the editor before the op fails over to the git CLI; a slow one, an open
+  circuit or a missing vessel go straight to the CLI. Every bridge error now
+  says whether the bridge is retryable, down or timed out, names the next
+  step, and no longer tells the caller to use plain git. `stage` never answers
+  a bare nil: paths the editor left unstaged are staged on the CLI and the
+  answer names them. An explicit `files` path removed from the worktree but
+  tracked in git is staged as a deletion instead of `:magit/path-not-found`.
+  (frictions 20261110132904-06e01a4f 20261110133549-604564c6
+  20261110133832-0c081375 20261110123738-56bf2ca2 20261110132809-56c88df0)
+- `git stage`/`commit` never touch a path the caller did not name (review
+  20261111112014-721856fa). Paths are literal (`--literal-pathspecs` on every
+  git run), so `pages/[id].tsx` or `*.txt` no longer match other files, and
+  they resolve against the repository root, so an absolute path or a `./`
+  path from a subdirectory names the right file. A path that exists on disk
+  is never staged as a deletion; a dangling symlink is a link, not a deleted
+  file; a deleted directory stages with `rm -r`. The index is snapshotted
+  before staging and put back on any refusal, and a stage that changed an
+  entry the caller did not name is refused (`:magit/scope-violation`).
+  `stage` reads its answer back from the index: a path that names nothing,
+  an ignored path, or a path with no change is reported as such, never as
+  "Staged". Bridge errors claim a retry only when one ran, and call a bridge
+  that failed twice "down"; a bridge seen down is skipped for 30 s instead of
+  costing each op the full handshake budget.
+- `git push` goes to `<remote>/<current-branch>` with an explicit refspec, never to
+  a differently named upstream (a worktree cut from `origin/staging`);
+  `set_upstream=true` re-points tracking at `<remote>/<current-branch>`.
+- `git push|pull|fetch` run on the git CLI and never need Emacs; every other `git`
+  verb fails over to the git CLI when the Emacs bridge does not load, no vessel is
+  registered (tmux coordinators), or, for reads and staging, emacsclient times out.
+  A commit that timed out in the editor is not re-run. Fetching every remote
+  tolerates one unreachable remote.
+
 ## [1.9.1] - 2026-10-02
 
 ### Changed

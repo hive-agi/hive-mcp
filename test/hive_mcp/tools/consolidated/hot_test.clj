@@ -18,6 +18,7 @@
             [hive-dsl.result :as r]
             [hive-mcp.extensions.mount-host :as mount-host]
             [hive-mcp.tools.consolidated.hot :as hot]
+            [hive-mcp.tools.consolidated.hot-eject-fallback :as fb]
             [hive-mcp.addons.manifest :as manifest]
             [hive-mcp.config.core :as config]
             [hive-mcp.config.source :as source]))
@@ -313,16 +314,6 @@
     (is (true? (:refused? out)))
     (is (= ["hive.dependent"] (:blocking out)))))
 
-(deftest eject-unsupported-when-the-bridge-is-absent-test
-  (let [refreshes (atom 0)
-        resp (hot/run-host-verb (eject-verb 'no.such.hive-addon/eject!) (stub-ports refreshes)
-                                {:addon "hive.rss"})
-        out  (body resp)]
-    (is (not (:isError resp)) "an absent bridge is a report, not a failure of the tool")
-    (is (false? (:ok? out)))
-    (is (= "unsupported" (:reason out)))
-    (is (zero? @refreshes))))
-
 (deftest eject-needs-a-target-test
   (is (:isError (hot/run-host-verb (eject-verb `stub-eject!) (stub-ports (atom 0)) {}))))
 
@@ -457,3 +448,321 @@
         (let [again (body (hot/run-host-verb hot/unmount-verb ports {:addon "probe.unmount"}))]
           (is (false? (:ok? again)))
           (is (= "hot/eject-unknown" (:reason again))))))))
+
+;; =============================================================================
+;; The host-native fallback: eject/unmount without hive-addon's eject!
+;; Doubles reach it through the HostPorts (:host, :specs, :reload-opts).
+;; =============================================================================
+
+(defrecord FallbackProbe [id log throw?]
+  proto/IAddon
+  (addon-id [_] id)
+  (addon-type [_] :native)
+  (capabilities [_] #{})
+  (initialize! [_ _] {:success? true :errors []})
+  (shutdown! [_]
+    (swap! log conj [:iaddon-shutdown id])
+    (when throw? (throw (ex-info "probe shutdown exploded" {:id id})))
+    nil)
+  (tools [_] [])
+  (schema-extensions [_] [])
+  (health [_] {:status :ok})
+  (excluded-tools [_] #{})
+  (hooks [_] {}))
+
+(defn- fallback-host
+  "An AddonRegistryHost whose seams mirror addons.core over the REG atom:
+   shutdown-fn calls the instance's IAddon shutdown! and answers a failure
+   as {:success? false :errors [..]}, unreg-fn drops the entry."
+  [log reg]
+  (mount-host/addon-registry-host
+   {:reg-fn        (fn [a] (swap! reg assoc (proto/addon-id a) a) {:success? true})
+    :init-fn       (fn [_ _] {:success? true :errors []})
+    :shutdown-fn   (fn [id]
+                     (try (proto/shutdown! (get @reg id))
+                          {:success? true}
+                          (catch Throwable t {:success? false :errors [(ex-message t)]})))
+    :unreg-fn      (fn [id] (swap! log conj [:unregister id]) (swap! reg dissoc id) {:success? true})
+    :registered-fn (fn [id] (get @reg id))}))
+
+(defn- fallback-ports [log reg specs refreshes]
+  (let [h (fallback-host log reg)]
+    {:host        (constantly h)
+     :specs       (constantly specs)
+     :reload-opts (constantly
+                   {:unhot!      (fn [ss] (swap! log conj [:unhot (mapv :addon/id ss)])
+                                   {:hot/unregistered (mapv :addon/id ss)})
+                    :source-dirs (fn [ss] (mapv #(str "/src/" (:addon/id %)) ss))})
+     :refresh!    (fn [] (swap! refreshes inc) {:count 1})}))
+
+(defn- fallback-verb [bridge]
+  {:bridge bridge :target #'hot/eject-target :opts #'hot/plug-out-opts
+   :fallback #'fb/eject-fallback :report-keys hot/eject-report-keys})
+
+(def ^:private absent-unmount-verb
+  (assoc hot/unmount-verb :bridge 'no.such.hive-addon/plug-out!))
+
+(def ^:private probe-spec {:addon/id "probe.fb" :addon/init-ns "probe.fb.init"})
+
+(deftest eject-unsupported-when-the-bridge-is-absent-test
+  (testing "a descriptor with no :fallback still answers unsupported"
+    (let [refreshes (atom 0)
+          resp (hot/run-host-verb (eject-verb 'no.such.hive-addon/eject!) (stub-ports refreshes)
+                                  {:addon "hive.rss"})
+          out  (body resp)]
+      (is (not (:isError resp)) "an absent bridge is a report, not a failure of the tool")
+      (is (false? (:ok? out)))
+      (is (= "unsupported" (:reason out)))
+      (is (zero? @refreshes))))
+  (testing "eject and unmount carry the fallback, so a registered addon is plugged out"
+    (is (= #'fb/plug-out-fallback (:fallback hot/unmount-verb)))
+    (let [log       (atom [])
+          refreshes (atom 0)
+          reg       (atom {"probe.fb" (->FallbackProbe "probe.fb" log false)})
+          resp      (hot/run-host-verb (fallback-verb 'no.such.hive-addon/eject!)
+                                       (fallback-ports log reg [probe-spec] refreshes)
+                                       {:addon "probe.fb"})
+          out       (body resp)]
+      (is (not (:isError resp)))
+      (is (true? (:ok? out)) (pr-str out))
+      (is (true? (:fallback out)))
+      (is (nil? (:reason out)) "no longer unsupported")
+      (is (= ["probe.fb"] (:ejected out)))
+      (is (= ["probe.fb"] (:torn-down out)))
+      (is (= ["probe.fb"] (:unregistered out)))
+      (is (= ["probe.fb"] (:unhot out)))
+      (is (= [[:iaddon-shutdown "probe.fb"] [:unregister "probe.fb"] [:unhot ["probe.fb"]]] @log)
+          "IAddon shutdown! runs before the entry is dropped")
+      (is (empty? @reg))
+      (is (= 1 @refreshes) "the surface is refreshed")
+      (is (false? (get-in out [:drain :drained?])) "it says plainly that it did not drain")
+      (is (= ["/src/probe.fb"] (get-in out [:retained :classpath])))
+      (is (= ["/src/probe.fb"] (get-in out [:retained :hive-hot-dirs])))
+      (is (= ["probe.fb.init"] (get-in out [:retained :namespaces])))
+      (is (true? (get-in out [:retained :restart-required?]))))))
+
+(deftest fallback-unmount-answers-ok-test
+  (let [log (atom [])
+        reg (atom {"probe.fb" (->FallbackProbe "probe.fb" log false)})
+        out (body (hot/run-host-verb absent-unmount-verb
+                                     (fallback-ports log reg [probe-spec] (atom 0))
+                                     {:addon "probe.fb"}))]
+    (is (true? (:ok? out)) (pr-str out))
+    (is (true? (:fallback out)))
+    (is (= ["probe.fb"] (:unregistered out)))))
+
+(deftest fallback-unknown-target-test
+  (let [log (atom [])
+        reg (atom {"probe.fb" (->FallbackProbe "probe.fb" log false)})
+        ports (fallback-ports log reg [probe-spec] (atom 0))]
+    (testing "eject: the bridge's unknown shape"
+      (let [out (body (hot/run-host-verb (fallback-verb 'no.such.hive-addon/eject!) ports
+                                         {:addon "nope"}))]
+        (is (false? (:ok? out)))
+        (is (= [] (:ejected out)))
+        (is (= ["nope"] (:unknown out)))
+        (is (seq (:errors out)))))
+    (testing "unmount: refused as hot/eject-unknown"
+      (let [out (body (hot/run-host-verb absent-unmount-verb ports {:addon "nope"}))]
+        (is (false? (:ok? out)))
+        (is (= "hot/eject-unknown" (:reason out)))))
+    (is (empty? @log) "nothing was shut down")
+    (is (contains? @reg "probe.fb"))))
+
+(deftest fallback-refuses-while-dependents-are-mounted-test
+  (let [log   (atom [])
+        reg   (atom {"probe.fb"  (->FallbackProbe "probe.fb" log false)
+                     "probe.dep" (->FallbackProbe "probe.dep" log false)})
+        specs [probe-spec {:addon/id "probe.dep" :addon/dependencies #{"probe.fb"}}]
+        ports (fallback-ports log reg specs (atom 0))]
+    (testing "eject is refused and names the dependent"
+      (let [out (body (hot/run-host-verb (fallback-verb 'no.such.hive-addon/eject!) ports
+                                         {:addon "probe.fb"}))]
+        (is (false? (:ok? out)))
+        (is (true? (:refused? out)))
+        (is (= ["probe.dep"] (:blocking out)))))
+    (testing "cascade stays refused, saying it needs the newer hive-addon"
+      (let [out (body (hot/run-host-verb (fallback-verb 'no.such.hive-addon/eject!) ports
+                                         {:addon "probe.fb" :cascade true}))]
+        (is (true? (:refused? out)))
+        (is (str/includes? (first (:errors out)) "hive-addon.hot.inject/eject!"))))
+    (testing "unmount answers hot/eject-refused"
+      (let [out (body (hot/run-host-verb absent-unmount-verb ports {:addon "probe.fb"}))]
+        (is (= "hot/eject-refused" (:reason out)))
+        (is (true? (:refused? out)))))
+    (is (empty? @log) "nothing was shut down")
+    (is (= #{"probe.fb" "probe.dep"} (set (keys @reg))))))
+
+(deftest fallback-shutdown-throwing-still-answers-a-report-test
+  (let [log  (atom [])
+        reg  (atom {"probe.fb" (->FallbackProbe "probe.fb" log true)})
+        resp (hot/run-host-verb (fallback-verb 'no.such.hive-addon/eject!)
+                                (fallback-ports log reg [probe-spec] (atom 0))
+                                {:addon "probe.fb"})
+        out  (body resp)]
+    (is (not (:isError resp)) "a failed shutdown is in the report, not thrown")
+    (is (false? (:ok? out)))
+    (is (true? (:fallback out)))
+    (is (some #(str/includes? % "probe shutdown exploded") (:errors out)))
+    (is (= [] (:torn-down out)) "a shutdown that threw is not reported as torn down")
+    (is (= ["probe.fb"] (:unregistered out)) "the entry is still dropped")
+    (is (empty? @reg))
+    (testing "unmount projects it as hot/eject-failed"
+      (let [reg2 (atom {"probe.fb" (->FallbackProbe "probe.fb" log true)})
+            out2 (body (hot/run-host-verb absent-unmount-verb
+                                          (fallback-ports log reg2 [probe-spec] (atom 0))
+                                          {:addon "probe.fb"}))]
+        (is (= "hot/eject-failed" (:reason out2)))))))
+
+(deftest a-present-bridge-never-runs-the-fallback-test
+  (reset! eject-calls [])
+  (let [fallback-calls (atom 0)
+        verb  (assoc (eject-verb `stub-eject!)
+                     :fallback (fn [& _] (swap! fallback-calls inc) {:ok? false}))
+        with  (body (hot/run-host-verb verb (stub-ports (atom 0)) {:addon "hive.rss"}))
+        without (body (hot/run-host-verb (eject-verb `stub-eject!) (stub-ports (atom 0))
+                                         {:addon "hive.rss"}))]
+    (is (zero? @fallback-calls))
+    (is (= without with) "the bridge path answers exactly what it answered before")
+    (is (not (contains? with :fallback)))
+    (is (= 2 (count @eject-calls)))))
+
+(deftest inject-says-how-it-can-be-undone-test
+  (is (= (if (try (requiring-resolve 'hive-addon.hot.inject/eject!) (catch Throwable _absent nil))
+           :bridge :fallback)
+         (fb/undo-mode))))
+
+(deftest inject-undo-report-states-each-capability-test
+  (testing "the bridge undoes it with drain and cascade, but no mode drops the classpath"
+    (let [u (fb/undo-report true true)]
+      (is (= :bridge (:mode u)))
+      (is (true? (:undoable? u)))
+      (is (true? (:drains? u)))
+      (is (= [:classpath :namespaces] (:retains u)) "review M1: not a complete undo")
+      (is (true? (:restart-required? u)))
+      (is (not (contains? u :complete?)))))
+  (testing "the host-native fallback also keeps dir claims, no drain, no cascade"
+    (let [u (fb/undo-report false true)]
+      (is (= :fallback (:mode u)))
+      (is (true? (:undoable? u)))
+      (is (false? (:drains? u)))
+      (is (some #{:hive-hot-dirs} (:retains u)))
+      (is (str/includes? (:message u) "restart"))))
+  (testing "nothing can undo it"
+    (let [u (fb/undo-report false false)]
+      (is (= :none (:mode u)))
+      (is (false? (:undoable? u)))
+      (is (some #{:addon} (:retains u)))
+      (is (str/includes? (:message u) "only a restart")))))
+
+(def ^:private bridge-syms
+  {'hive-addon.hot.inject/eject! :present 'hive-addon.hot.inject/plug-out! :present})
+
+(deftest inject-undo-preflight-on-stubbed-resolvers-test
+  ;; The resolver is a map of the symbols "present": independent of the image.
+  (let [registry-host (mount-host/addon-registry-host {:reg-fn identity :init-fn identity
+                                                       :shutdown-fn identity :unreg-fn identity
+                                                       :registered-fn (constantly nil)})
+        bare-host     (reify Object)]
+    (is (= :bridge (:mode (fb/undo-preflight registry-host bridge-syms))))
+    (is (= :bridge (:mode (fb/undo-preflight nil bridge-syms))) "the bridge needs no host seam")
+    (is (= :fallback (:mode (fb/undo-preflight registry-host {})))
+        "a registry host unregisters by its own seam")
+    (is (= :fallback (:mode (fb/undo-preflight bare-host {'hive-addon.mount.boundary/unregister! :present}))))
+    (is (= :none (:mode (fb/undo-preflight bare-host {}))))
+    (is (= :none (:mode (fb/undo-preflight nil {}))))
+    (is (= :fallback (:mode (fb/undo-preflight registry-host {'hive-addon.hot.inject/eject! :present})))
+        "eject! without plug-out! is not the bridge")))
+
+(deftest inject-undo-gate-refuses-before-mounting-test
+  (let [bridge   (fb/undo-report true true)
+        fallback (fb/undo-report false true)
+        none     (fb/undo-report false false)]
+    (testing "the bridge proceeds without a warning"
+      (is (= {:warning nil} (hot/inject-undo-gate bridge {})))
+      (is (= {:warning nil} (hot/inject-undo-gate bridge {:require_undo true}))))
+    (testing "a fallback undo proceeds with a warning"
+      (is (str/includes? (:warning (hot/inject-undo-gate fallback {})) "restart")))
+    (testing "require_undo refuses a fallback-only undo up front, as true or \"true\""
+      (is (str/includes? (:refuse (hot/inject-undo-gate fallback {:require_undo true})) "require_undo"))
+      (is (string? (:refuse (hot/inject-undo-gate fallback {:require_undo "true"})))))
+    (testing "no undo at all refuses unless force"
+      (is (string? (:refuse (hot/inject-undo-gate none {}))))
+      (is (string? (:warning (hot/inject-undo-gate none {:force true}))))
+      (is (string? (:warning (hot/inject-undo-gate none {:force "true"}))))
+      (is (string? (:refuse (hot/inject-undo-gate none {:force "false"}))))
+      (is (string? (:refuse (hot/inject-undo-gate none {:force true :require_undo true})))))))
+
+(defn- inject-ports
+  "Stub InjectPorts: UNDO-MODE fixes the preflight; CALLS records inject!."
+  [undo-mode calls]
+  {:inject!     (fn [_h _specs path opts]
+                  (swap! calls conj [path opts])
+                  {:ok? true :hot/injected ["probe.inj"] :mounted [{:addon/id "probe.inj"}]})
+   :host        (constantly :stub-host)
+   :specs       (constantly [])
+   :undo        (fn [_h] (case undo-mode
+                           :bridge   (fb/undo-report true true)
+                           :fallback (fb/undo-report false true)
+                           :none     (fb/undo-report false false)))
+   :hot-init!   (fn [_ _] nil)
+   :reload-opts (constantly {})
+   :refresh!    (constantly {:server-tools {:ok {:surfaces [:stub]}} :agent-tools {:ok? true}})})
+
+(deftest run-inject-refuses-before-mounting-test
+  ;; Review M4: inject! is a stub; a refusal must never reach it.
+  (doseq [[label mode params] [["nothing can undo it" :none {:path "/tmp/x"}]
+                               ["require_undo on a fallback image" :fallback {:path "/tmp/x" :require_undo true}]
+                               ["require_undo given as a string" :fallback {:path "/tmp/x" :require_undo "true"}]]]
+    (testing label
+      (let [calls (atom [])
+            out   (body (hot/run-inject (inject-ports mode calls) params))]
+        (is (empty? @calls) "inject! was not called")
+        (is (false? (:ok? out)))
+        (is (true? (:refused? out)))
+        (is (= "hot/undo-unavailable" (:reason out)))
+        (is (= (name mode) (get-in out [:undo :mode])) ":hot/undo reaches the wire")))))
+
+(deftest run-inject-carries-undo-and-warning-test
+  (testing "a fallback-only undo mounts, with :warning and :hot/undo on the wire"
+    (let [calls (atom [])
+          out   (body (hot/run-inject (inject-ports :fallback calls) {:path "/tmp/x"}))]
+      (is (= 1 (count @calls)))
+      (is (= "fallback" (get-in out [:undo :mode])))
+      (is (= "fallback" (:undo-mode out)))
+      (is (some #{"hive-hot-dirs"} (get-in out [:undo :retains])))
+      (is (str/includes? (str (:warning out)) "restart"))))
+  (testing "the bridge mounts with no warning"
+    (let [calls (atom [])
+          out   (body (hot/run-inject (inject-ports :bridge calls) {:path "/tmp/x" :require_undo true}))]
+      (is (= 1 (count @calls)))
+      (is (= "bridge" (get-in out [:undo :mode])))
+      (is (not (contains? out :warning)))))
+  (testing "force mounts on an image nothing can undo, and still warns"
+    (let [calls (atom [])
+          out   (body (hot/run-inject (inject-ports :none calls) {:path "/tmp/x" :force "true"}))]
+      (is (= 1 (count @calls)))
+      (is (str/includes? (str (:warning out)) "only a restart"))))
+  (testing "no inject! bridge answers an error and mounts nothing"
+    (is (:isError (hot/run-inject (assoc (inject-ports :bridge (atom [])) :inject! nil) {:path "/tmp/x"})))))
+
+(deftest inject-advertises-require-undo-test
+  (is (contains? (get-in hot/tool-def [:inputSchema :properties]) "require_undo"))
+  (is (str/includes? (:description hot/tool-def) ":hot/undo")))
+
+(deftest fallback-pure-strata-test
+  (testing "declared dependents close transitively and exclude the seeds"
+    (is (= #{"b" "c"} (fb/declared-dependents [{:addon/id "a"}
+                                               {:addon/id "b" :addon/dependencies #{"a"}}
+                                               {:addon/id "c" :addon/dependencies #{"b"}}
+                                               {:addon/id "d"}]
+                                              ["a"]))))
+  (testing "verdict"
+    (is (= :unknown (fb/verdict [] [])))
+    (is (= :refused (fb/verdict ["a"] ["b"])))
+    (is (= :proceed (fb/verdict ["a"] []))))
+  (testing "outcome keeps plug-out!'s categories"
+    (is (= :hot/eject-refused (:error (fb/outcome {:ok? false :hot/refused? true :errors ["x"]}))))
+    (is (= :hot/eject-unknown (:error (fb/outcome {:ok? false :hot/ejected [] :errors ["x"]}))))
+    (is (= :hot/eject-failed (:error (fb/outcome {:ok? false :hot/ejected ["a"] :errors ["x"]}))))
+    (is (= {:ok? true} (:ok (fb/outcome {:ok? true}))))))

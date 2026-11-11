@@ -161,7 +161,9 @@
            [:title {:optional true} :any]
            [:description {:optional true} :any]
            [:append-description {:optional true} :any]
-           [:priority {:optional true} :any]]])
+           [:priority {:optional true} :any]
+           [:at {:optional true} :any]
+           [:agent-id {:optional true} :any]]])
 
 (def EditResult
   "`edit-transition`: the derived content edit."
@@ -191,8 +193,14 @@
 (def FacadeUpdate
   [:map [:task-id :any] [:payload [:map-of :keyword :any]]])
 
-(def FxMap
-  "Effect map of a kanban handler. The soft commit is always present."
+(def ClaimRefused
+  "Effect map of a refused card claim: nothing is written."
+  [:map {:closed true}
+   [:kanban/claim-refused
+    [:map [:refused [:= true]] [:holder :string] [:since [:maybe :string]] [:task-id :any]]]])
+
+(def CommitFxMap
+  "Effect map of a kanban handler that commits."
   [:map
    [:kanban/facade-update FacadeUpdate]
    [:kanban/track-movement {:optional true}
@@ -202,6 +210,11 @@
      [:data :map] [:project-id :any]]]
    [:kanban/notify-done {:optional true} [:map [:entry :map] [:task-id :any]]]
    [:kanban/archive-external {:optional true} [:map [:entry :map] [:task-id :any]]]])
+
+(def FxMap
+  "Effect map of a kanban handler. The soft commit is always present, except
+   in a refused claim (`ClaimRefused`), which writes nothing."
+  [:or ClaimRefused CommitFxMap])
 
 (def DispatchPayload
   "Payload of a public kanban dispatch entry point."
@@ -215,6 +228,9 @@
    [:description {:optional true} :any]
    [:append-description {:optional true} :any]
    [:priority {:optional true} :any]
+   [:agent-id {:optional true} :any]
+   [:owner {:optional true} :any]
+   [:steal-claim? {:optional true} :any]
    [:directory {:optional true} [:maybe :string]]])
 
 (def Result

@@ -247,6 +247,38 @@
       [:=> [:cat [:maybe :map] [:maybe :map]]
        [:vector [:map [:subsystem :string] [:status [:maybe :string]] [:why :string]]]])
 
+(defn carto-status-block
+  "Pure: the carto-status catchup block for `carto-status`. The last known
+   indexed-form count and its age (:indexed-forms-cached :cached-at
+   :cached-age-ms) ride along when the provider reports them, so a session
+   whose live count is slow or unanswered still sees how big the index was
+   and when (friction 20261109101930-6115ab49). Absent keys stay absent."
+  [carto-status]
+  (merge
+   {:_block "carto-status"
+    :lsp-up? (:lsp-up? carto-status)
+    :carto-store? (:carto-store? carto-status)
+    :indexed-forms (:indexed-forms carto-status)
+    :last-scan-ts (:last-scan-ts carto-status)
+    :scan-status (:scan-status carto-status)
+    :scan-result (:scan-result carto-status)
+    :readiness (:readiness carto-status)
+    :warnings (or (:warnings carto-status) [])
+    :hint (or (:hint carto-status)
+              "Carto readiness at-a-glance.")}
+   (select-keys carto-status [:indexed-forms-cached :cached-at :cached-age-ms
+                              :indexed-forms-pending? :indexed-forms-populated?])))
+
+(m/=> carto-status-block
+      [:=> [:cat [:maybe :map]]
+       [:map
+        [:_block [:= "carto-status"]]
+        [:warnings :any]
+        [:hint :any]
+        [:indexed-forms-cached {:optional true} :any]
+        [:cached-at {:optional true} :any]
+        [:cached-age-ms {:optional true} :any]]])
+
 (defn build-catchup-response
   [{:keys [project-name project-id scopes git-info permeation
            axioms-meta axiom-candidates-meta
@@ -349,19 +381,7 @@
       ;; host never names a contributor.
       (seq (contributed-sections contributed-blocks))
       (when carto-status
-        (make-block
-         "carto-status"
-         {:_block "carto-status"
-          :lsp-up? (:lsp-up? carto-status)
-          :carto-store? (:carto-store? carto-status)
-          :indexed-forms (:indexed-forms carto-status)
-          :last-scan-ts (:last-scan-ts carto-status)
-          :scan-status (:scan-status carto-status)
-          :scan-result (:scan-result carto-status)
-          :readiness (:readiness carto-status)
-          :warnings (or (:warnings carto-status) [])
-          :hint (or (:hint carto-status)
-                    "Carto readiness at-a-glance.")}))])))
+        (make-block "carto-status" (carto-status-block carto-status)))])))
 
 (defn store-not-configured-error
   "Return error response when no IMemoryStore is registered."

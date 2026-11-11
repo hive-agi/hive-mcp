@@ -20,7 +20,8 @@
             [malli.core :as m]
             [hive-mcp.tools.core :as core]
             [hive-mcp.addons.metrics :as addon-metrics]
-            [hive-mcp.tools.composite.moved :as moved]))
+            [hive-mcp.tools.composite.moved :as moved]
+            [taoensso.timbre :as log]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -55,6 +56,107 @@
                                      handler)]))
           commands)))
 
+(defn loaded-var
+  "The var SYM names when its namespace is ALREADY loaded, else nil.
+
+   Never loads anything. The call path must not `require`: a call landing
+   between a reloader's unload and load passes would load the namespace on the
+   request thread and race the reloader (top-level effects run twice), and a
+   namespace whose reload failed would be recompiled, and fail again, on every
+   call."
+  [sym]
+  (when-let [the-ns (find-ns (symbol (namespace sym)))]
+    (let [v (ns-resolve the-ns (symbol (name sym)))]
+      (when (var? v) v))))
+
+(m/=> loaded-var [:=> [:cat qualified-symbol?]
+                  [:maybe [:fn {:gen/elements [#'clojure.core/identity #'clojure.core/inc]} var?]]])
+
+(defn current-at
+  "Where the handler at PATH in the handlers map SYM names stands RIGHT NOW,
+   read through `loaded-var` (never loading) and `dispatch/current` at every
+   level: {:handler h}, or {:stale reason} with reason one of
+   :ns-not-loaded (the namespace is unloaded: mid-reload, or its reload failed),
+   :var-missing (loaded, but no such var), :verb-missing (no handler at PATH)."
+  [sym path]
+  (if-not (find-ns (symbol (namespace sym)))
+    {:stale :ns-not-loaded}
+    (if-let [v (loaded-var sym)]
+      (let [node (reduce (fn [node seg] (when (map? node) (dispatch/current (get node seg))))
+                         (dispatch/current v)
+                         path)]
+        (if (dispatch/handler? node)
+          {:handler node}
+          {:stale :verb-missing}))
+      {:stale :var-missing})))
+
+(m/=> current-at [:=> [:cat qualified-symbol? [:vector :any]]
+                  [:or [:map [:handler :any]]
+                   [:map [:stale [:enum :ns-not-loaded :var-missing :verb-missing]]]]])
+
+(defonce ^:private stale-logged
+  ;; #{[sym path reason]} warned about and not yet recovered.
+  (atom #{}))
+
+(defn- note-staleness!
+  "Log the stale fallback for [SYM PATH REASON] once; forget it when the leaf
+   resolves again, so a later relapse is logged too."
+  [sym path reason]
+  (if reason
+    (let [k [sym path reason]
+          [old _] (swap-vals! stale-logged conj k)]
+      (when-not (contains? old k)
+        (log/warn "late-bound handler is STALE: answering from the code read at load time"
+                  {:handlers sym :path path :reason reason})))
+    (when (seq @stale-logged)
+      (swap! stale-logged (fn [s] (into #{} (remove #(and (= sym (first %)) (= path (second %)))) s))))))
+
+(defn stale-response
+  "RESPONSE marked as answered by the handler read at load time: :stale-handler
+   {:handlers :path :reason}, and a trailing notice on a string :text. Anything
+   that is not an MCP response map passes through."
+  [response sym path reason]
+  (if (map? response)
+    (cond-> (assoc response :stale-handler {:handlers (str sym) :path (mapv name path)
+                                            :reason (name reason)})
+      (string? (:text response))
+      (update :text str "\n\n[stale handler] " sym " " (pr-str (mapv name path))
+              " answered from the code loaded before the last reload (" (name reason)
+              "); reload " (namespace sym) " to clear this."))
+    response))
+
+(m/=> stale-response [:=> [:cat :any qualified-symbol? [:vector :any] :keyword] :any])
+
+(defn- late-bound
+  "LEAF of the handlers map named by SYM, at PATH, as a handler that looks itself
+   up when called (`current-at`, which never loads a namespace). A subtree (a
+   map, or a var holding one) stays a map WITH ITS METADATA, so the tree keeps
+   its shape and its verb-root declarations (::verbs/root, ::verbs/provided-by,
+   ::cli/verbs), which dispatch.verbs/effective-tree folds contributed verbs
+   by. A value that is not a handler is kept as it is.
+
+   When the lookup finds no handler, the one read at load time answers, the
+   response says so (`stale-response`) and the first such call per leaf logs a
+   warning: serving old code silently is the defect this exists to remove."
+  [sym path leaf]
+  (let [node (dispatch/current leaf)]
+    (cond
+      (map? node)
+      (with-meta (into {} (map (fn [[k v]] [k (late-bound sym (conj path k) v)])) node)
+        (meta node))
+
+      (dispatch/handler? leaf)
+      (with-meta
+        (fn late-bound-handler [& args]
+          (let [{:keys [handler stale]} (current-at sym path)]
+            (note-staleness! sym path stale)
+            (if handler
+              (apply handler args)
+              (stale-response (apply leaf args) sym path stale))))
+        (meta leaf))
+
+      :else leaf)))
+
 (defn lazy-resolve-handlers
   "Lazily resolve a consolidated tool's `handlers` map by fully-qualified
    symbol, triggering ns load on first access (DIP).
@@ -65,11 +167,25 @@
    moving / renaming a subdomain consolidator no longer breaks compile,
    it just yields an empty handler tree at runtime.
 
+   The tree's SHAPE is read once, here; every handler in it resolves SYM again
+   when called (`late-bound`). The link from a domain root to its subdomain is
+   invisible to a namespace reload (the root has no :require on it), so a root
+   holding the handlers it read at load time kept calling the old namespace's
+   code after the subdomain reloaded: `project kanban plan-to-kanban` ran the
+   pre-reload handler (friction 20261110235404-7305c23d).
+
+   Only THIS call (at the root's load) may load SYM's namespace. A late-bound
+   handler never does: it reads an already-loaded namespace (`loaded-var`).
+   A verb the reload ADDED is not in the shape until the root itself reloads.
+   When the namespace is unloaded (mid-reload, or its reload failed), the var
+   is gone, or the verb was removed, the handler read at load time answers,
+   logged once and marked in the response (`stale-response`).
+
    Returns the handlers tree on success, `{}` on miss. Caller merges
    into its canonical-handlers tree the same way the literal reference
    would have."
   [sym]
-  (or (try (some-> (requiring-resolve sym) deref)
+  (or (try (some->> (requiring-resolve sym) dispatch/current (late-bound sym []))
            (catch Throwable _ nil))
       {}))
 
