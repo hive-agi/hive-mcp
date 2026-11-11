@@ -224,11 +224,30 @@
       (throw (ex-info "turn_budget needs the hive-agent addon, which is not loaded"
                       {:param "turn_budget" :value v})))))
 
+(defn time-budget-opt
+  "Pure: a raw time_budget_ms V as the run's wall-clock budget in ms. An
+   integer or a string of one; positive -> that long. nil, zero or negative
+   -> nil (no deadline, as hive-agent.loop.time-budget reads them). Anything
+   else throws ex-info naming time_budget_ms."
+  [v]
+  (when (some? v)
+    (let [n (cond
+              (integer? v) v
+              (string? v)  (parse-long (str/trim v))
+              :else        nil)]
+      (when-not (integer? n)
+        (throw (ex-info "time_budget_ms must be an integer number of milliseconds"
+                        {:param "time_budget_ms" :value v})))
+      (when (pos? n) (long n)))))
+
 (defn loop-opts
   "Validate the loop params of a spawn request once, by SpawnLoopParams, and
    return them as ling opts: {:llm-retries n :resume {...} :chat-run-id s
-   :turn-budget {...}}, absent keys omitted. A malformed value throws ex-info
-   with the humanized errors.
+   :turn-budget {...} :time-budget-ms n}, absent keys omitted. A malformed
+   value throws ex-info with the humanized errors.
+
+   :time-budget-ms is the run's wall-clock budget (see time-budget-opt); it
+   rides the ling ctx to the headless backend the way :turn-budget does.
 
    :turn-budget is the lease spec (hive-agent.swarm.wave-params/normalize-turn-budget,
    reached through the turn-budget port, see turn-budget-normalizer):
@@ -242,12 +261,14 @@
   ([params normalize]
    (let [{:keys [llm_retries resume chat_run_id]}
          (coerce-loop-params (select-keys params [:llm_retries :resume :chat_run_id]))
-         turn-budget (turn-budget-opt normalize (:turn_budget params))]
+         turn-budget (turn-budget-opt normalize (:turn_budget params))
+         time-budget (time-budget-opt (:time_budget_ms params))]
      (cond-> {}
        llm_retries (assoc :llm-retries llm_retries)
        resume      (assoc :resume (resume->backend resume))
        chat_run_id (assoc :chat-run-id chat_run_id)
-       turn-budget (assoc :turn-budget turn-budget)))))
+       turn-budget (assoc :turn-budget turn-budget)
+       time-budget (assoc :time-budget-ms time-budget)))))
 
 (defn normalize-resume
   "The MCP `resume` object as the kebab map the headless backend reads:
@@ -534,7 +555,8 @@
    [:llm-retries {:optional true} nat-int?]
    [:resume {:optional true} ResumeBackend]
    [:chat-run-id {:optional true} [:string {:min 1}]]
-   [:turn-budget {:optional true} :map]])
+   [:turn-budget {:optional true} :map]
+   [:time-budget-ms {:optional true} pos-int?]])
 
 (def SpawnMode
   "A spawn mode keyword (open: addons register more), or nil."
@@ -562,6 +584,8 @@
 (m/=> turn-budget-normalizer [:=> [:cat] [:maybe helpers/Port]])
 
 (m/=> turn-budget-opt [:=> [:cat [:maybe helpers/Port] :any] [:maybe :map]])
+
+(m/=> time-budget-opt [:=> [:cat :any] [:maybe pos-int?]])
 
 (m/=> loop-opts
       [:function
