@@ -41,7 +41,7 @@
     (is (= (set top-level-nss) (set (map (comp symbol namespace) (:universe top)))))
     (is (= (set agent-nss) (set (map (comp symbol namespace) (:universe agent)))))
     (is (= 49 (count (:universe top)) (count (:covered top))) "every top-level public defn")
-    (is (= 44 (count (:universe agent)) (count (:covered agent))) "every tools/agent public defn")))
+    (is (= 45 (count (:universe agent)) (count (:covered agent))) "every tools/agent public defn")))
 
 (deftest every-m25-contract-generates-both-sides
   (doseq [ns-sym (concat top-level-nss agent-nss)

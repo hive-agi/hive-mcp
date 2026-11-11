@@ -42,7 +42,8 @@
    [:spawn-mode :keyword]
    [:model [:maybe :string]]
    [:token-budget :any]
-   [:turn-budget {:optional true} :any]])
+   [:turn-budget {:optional true} :any]
+   [:time-budget-ms {:optional true} :any]])
 
 (def LingValue
   "A Ling record, as `->ling` builds it. The six identity fields are always
@@ -64,7 +65,8 @@
            :spawn-mode (or (:ling/spawn-mode slave) :claude)
            :model (:ling/model slave)
            :token-budget (:ling/token-budget slave)}
-    (:ling/turn-budget slave) (assoc :turn-budget (:ling/turn-budget slave))))
+    (:ling/turn-budget slave) (assoc :turn-budget (:ling/turn-budget slave))
+    (:ling/time-budget-ms slave) (assoc :time-budget-ms (:ling/time-budget-ms slave))))
 
 (m/=> slave->ling-opts [:=> [:cat [:maybe :map]] LingOpts])
 
@@ -172,6 +174,7 @@
      :ling-id (:id ling)
      :token-budget (:token-budget ling)
      :turn-budget (:turn-budget ling)
+     :time-budget-ms (:time-budget-ms ling)
      :max-budget-usd (or (:max-budget-usd opts) (:max-budget-usd ling))
      :grant (:grant opts)
      :task (:task opts)}))
@@ -403,7 +406,7 @@
       :else nil)))
 
 (defn- stamp-spawn-metadata!
-  [{:keys [mode effective-model token-budget turn-budget] :as plan} slave-id headless?]
+  [{:keys [mode effective-model token-budget turn-budget time-budget-ms] :as plan} slave-id headless?]
   (let [now (System/currentTimeMillis)
         provider (provider-name plan)]
     (spawn-store/update-slave! (spawn-store/get-store)
@@ -417,6 +420,8 @@
                                  (assoc :ling/token-budget token-budget)
                                  (some? turn-budget)
                                  (assoc :ling/turn-budget turn-budget)
+                                 (some? time-budget-ms)
+                                 (assoc :ling/time-budget-ms time-budget-ms)
                                  provider
                                  (assoc :ling/provider provider)
                                  headless?
@@ -759,6 +764,7 @@
                  (:provider opts)           (assoc :provider (:provider opts))
                  (:token-budget opts)       (assoc :token-budget (:token-budget opts))
                  (:turn-budget opts)        (assoc :turn-budget (:turn-budget opts))
+                 (:time-budget-ms opts)     (assoc :time-budget-ms (:time-budget-ms opts))
                  (some? (:kg-compress? opts)) (assoc :kg-compress? (:kg-compress? opts))
                  (some? (:verbose? opts))   (assoc :verbose? (:verbose? opts))
                  (:llm-retries opts)        (assoc :llm-retries (:llm-retries opts))
