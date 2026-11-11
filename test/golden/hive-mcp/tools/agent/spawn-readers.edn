@@ -15,7 +15,7 @@
   :isError true},
  :normalize-sb [true :refused],
  :sandbox [nil true false true false :refused :refused],
- :grant-share {:grant nil},
+ :grant-share {:grant nil, :depth 1},
  :editor [nil true],
  :brief-refused :refused,
  :resume [nil {:run-id "r", :prompt "p"}],
