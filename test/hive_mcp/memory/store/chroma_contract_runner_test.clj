@@ -81,13 +81,11 @@
       ((ns-resolve 'hive-test.memory.store-contract sym)))
     (+ (:fail @counters 0) (:error @counters 0))))
 
-(defmacro ^:private gap-test
-  "A deftest asserting contract case SYM still fails on this adapter."
-  [test-name sym]
-  `(deftest ~test-name
-     (is (pos? (run-gap '~sym))
-         ~(str sym " now passes on ChromaMemoryStore: remove it from adapter-gaps "
-               "and make it an ordinary contract deftest"))))
+(defn- still-a-gap?
+  "True while contract case SYM still fails on this adapter. When it answers
+   false, remove SYM from adapter-gaps and make it an ordinary contract deftest."
+  [sym]
+  (pos? (run-gap sym)))
 
 ;; Protocol Satisfaction (runner-specific — verify Chroma implements all 3)
 ;; =============================================================================
@@ -124,12 +122,14 @@
 ;; Contract Test Invocations — IMemoryStore: CRUD
 ;; =============================================================================
 
-(gap-test chroma-add-get-roundtrip-gap test-add-get-roundtrip)
+(deftest chroma-add-get-roundtrip-gap
+  (is (still-a-gap? 'test-add-get-roundtrip)))
 
 (deftest chroma-add-delete-get
   (contract/test-add-delete-get))
 
-(gap-test chroma-add-update-get-gap test-add-update-get)
+(deftest chroma-add-update-get-gap
+  (is (still-a-gap? 'test-add-update-get)))
 
 (deftest chroma-add-delete-count-invariant
   (contract/test-add-delete-count-invariant))
@@ -158,7 +158,8 @@
 ;; Contract Test Invocations — IMemoryStore: Expiration
 ;; =============================================================================
 
-(gap-test chroma-expiration-cleanup-gap test-expiration-cleanup)
+(deftest chroma-expiration-cleanup-gap
+  (is (still-a-gap? 'test-expiration-cleanup)))
 
 (deftest chroma-cleanup-expired-shape
   (contract/test-cleanup-expired-shape))

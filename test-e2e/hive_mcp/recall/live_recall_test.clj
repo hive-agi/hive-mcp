@@ -2,8 +2,9 @@
   "GOLDEN RECALL — THE LIVE TIER. Requires Milvus + a reachable embedder.
 
    E2E TIER (test-e2e/, ^:e2e): never on the default tier's path. Run with
-     clojure -J-Dhive.e2e.recall.config=<sandbox config.edn> -M:test-e2e \
+     clojure -J-Dhive.e2e.recall.config=<sandbox config.edn> -M:test-e2e
        -n hive-mcp.recall.live-recall-test
+     (one command line)
    in a JVM where the memory addon has registered its store. The unit-level
    behaviour (pipeline over a store that keeps its contract, rank-fault,
    recall-fault) stays in the default tier: hive-mcp.recall.lexical-anchor-test
