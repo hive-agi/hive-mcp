@@ -4,7 +4,18 @@
             [clojure.test :refer [deftest is]]
             [hive-mcp.protocols.memory :as mem]
             [hive-mcp.protocols.store-metrics :as metrics]
+            [hive-mcp.test-support.registry-isolation :as isolation]
             [hive-mcp.tools.memory.crud.write :as write]))
+
+(defn- with-default-store
+  "Run F with STORE in the :default slot. Refuses a running addon server
+   before the slot is touched and restores the exact prior slot map in one
+   atomic swap, instead of unregistering and re-registering :default."
+  [store f]
+  (isolation/with-restored-store-registry
+    (fn []
+      (mem/register-store! :default store)
+      (f))))
 
 (defn- recording-store [entry reads]
   (reify mem/IMemoryStore
@@ -26,22 +37,18 @@
         entry {:id id :type "note" :content "persisted" :tags ["scope:project:test"]
                :created "2026-01-01T00:00:00Z" :access-count 0
                :kg-incoming ["old-edge"] :document "internal"}
-        reads (atom 0)
-        old (:default (mem/registered-stores))]
-    (try
-      (mem/register-store! :default (recording-store entry reads))
-      (let [resp (#'write/finalize-entry! id {} "test" nil
-                  {:tags-with-scope ["scope:project:test"] :type "note"})
-            body (json/read-str (:text resp) :key-fn keyword)]
-        (is (not (:isError resp)))
-        (is (= 1 @reads) "read the store's canonical entry, not an input reconstruction")
-        (is (= {:id id :status "ok" :type "note" :tags ["scope:project:test"]
-                :chars 9 :preview "persisted"}
-               body))
-        (is (not (contains? body :kg_edges_created))))
-      (finally
-        (mem/unregister-store! :default)
-        (when old (mem/register-store! :default old))))))
+        reads (atom 0)]
+    (with-default-store (recording-store entry reads)
+      (fn []
+        (let [resp (#'write/finalize-entry! id {} "test" nil
+                    {:tags-with-scope ["scope:project:test"] :type "note"})
+              body (json/read-str (:text resp) :key-fn keyword)]
+          (is (not (:isError resp)))
+          (is (= 1 @reads) "read the store's canonical entry, not an input reconstruction")
+          (is (= {:id id :status "ok" :type "note" :tags ["scope:project:test"]
+                  :chars 9 :preview "persisted"}
+                 body))
+          (is (not (contains? body :kg_edges_created))))))))
 
 (deftest readback-retries-until-store-shape-is-visible
   (let [id (str "readback-" (random-uuid))
@@ -69,40 +76,33 @@
                :tags ["persisted"] :created "created" :updated "updated"
                :duration "long" :project-id "test" :content-hash "persisted-hash"
                :kg-outgoing ["edge"] :kg-incoming ["incoming"]}
-        reads (atom 0)
-        old (:default (mem/registered-stores))]
-    (try
-      (mem/register-store! :default (recording-store entry reads))
-      (let [resp (#'write/finalize-entry! "receipt" {} "test" nil
-                  {:type "note" :tags-with-scope [] :receipt entry})
-            body (json/read-str (:text resp) :key-fn keyword)]
-        (is (not (:isError resp)))
-        (is (zero? @reads))
-        (is (= {:id "receipt" :status "ok" :type "note" :tags ["persisted"]
-                :chars 18 :preview "{\"canonical\":true}" :duration "long"
-                :project-id "test" :content-hash "persisted-hash"}
-               body))
-        (is (= body
-               (json/read-str
-                (:text (#'write/finalize-entry! "receipt" {} "test" nil
-                         {:type "note" :tags-with-scope []}))
-                :key-fn keyword)))
-        (is (= 1 @reads)))
-      (finally
-        (mem/unregister-store! :default)
-        (when old (mem/register-store! :default old))))))
+        reads (atom 0)]
+    (with-default-store (recording-store entry reads)
+      (fn []
+        (let [resp (#'write/finalize-entry! "receipt" {} "test" nil
+                    {:type "note" :tags-with-scope [] :receipt entry})
+              body (json/read-str (:text resp) :key-fn keyword)]
+          (is (not (:isError resp)))
+          (is (zero? @reads))
+          (is (= {:id "receipt" :status "ok" :type "note" :tags ["persisted"]
+                  :chars 18 :preview "{\"canonical\":true}" :duration "long"
+                  :project-id "test" :content-hash "persisted-hash"}
+                 body))
+          (is (= body
+                 (json/read-str
+                  (:text (#'write/finalize-entry! "receipt" {} "test" nil
+                           {:type "note" :tags-with-scope []}))
+                  :key-fn keyword)))
+          (is (= 1 @reads)))))))
 
 (deftest mismatched-receipt-keeps-readback
   (let [entry {:id "canonical" :type "note" :content "stored" :tags []}
-        reads (atom 0) old (:default (mem/registered-stores))]
-    (try
-      (mem/register-store! :default (recording-store entry reads))
-      (#'write/finalize-entry! "canonical" {} "test" nil
-       {:type "note" :tags-with-scope [] :receipt {:id "wrong"}})
-      (is (= 1 @reads))
-      (finally
-        (mem/unregister-store! :default)
-        (when old (mem/register-store! :default old))))))
+        reads (atom 0)]
+    (with-default-store (recording-store entry reads)
+      (fn []
+        (#'write/finalize-entry! "canonical" {} "test" nil
+         {:type "note" :tags-with-scope [] :receipt {:id "wrong"}})
+        (is (= 1 @reads))))))
 
 (deftest unsupported-store-keeps-id-contract
   (let [entry {:id "legacy"}]

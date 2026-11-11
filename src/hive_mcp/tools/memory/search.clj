@@ -43,6 +43,7 @@
             [taoensso.timbre :as log]
             [hive-mcp.vectordb.resilience :refer [with-resilience]]
             [hive-mcp.memory.ingest-search :as ingest-search]
+            [hive-mcp.memory.shadow-retrieval :as shadow]
             [malli.core :as m]
             [hive-mcp.tools.memory.schema :as ms]
             [hive-mcp.tools.memory.read-outcome :as read-outcome]
@@ -459,6 +460,14 @@
           (result/ok? post)
           (let [{:keys [results dropped-null-hits]} (:ok post)]
             (record-co-access! results project-id "system:semantic-search")
+            ;; Shadow seam: raw pre-merge candidates go to an optional
+            ;; :memory/retrieval retriever, asynchronously and for comparison
+            ;; only. Its answer is never read here; off when unregistered.
+            (shadow/dispatch-shadow! {:query             query
+                                      :limit             limit-val
+                                      :store-candidates  store-results
+                                      :ingest-candidates ingest-results
+                                      :primary-ids       (mapv :id results)})
             (result/ok (search-payload {:results          results
                                         :dropped-null-hits dropped-null-hits
                                         :query            query

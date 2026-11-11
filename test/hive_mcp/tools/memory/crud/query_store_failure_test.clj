@@ -11,7 +11,8 @@
             [hive-test.trifecta :refer [deftrifecta]]
             [hive-mcp.protocols.memory :as mem-proto]
             [hive-mcp.tools.memory.crud.query :as q]
-            [hive-mcp.protocols.memory-read :as mread]))
+            [hive-mcp.protocols.memory-read :as mread]
+            [hive-mcp.test-support.registry-isolation :as isolation]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -59,16 +60,15 @@
     (reset-store! [_] nil)))
 
 (defn- query-against
+  "handle-query against a :default store answering ANSWER. Refuses a running
+   addon server before the slot is touched and restores the exact prior slot
+   map in one atomic swap, instead of unregistering and re-registering :default."
   [answer]
-  (let [snapshot (mem-proto/registered-stores)]
-    (try
+  (isolation/with-restored-store-registry
+    (fn []
       (mem-proto/register-store! :default (answering-store answer))
       (q/handle-query {:tags ["guard-rule"] :scope "all" :verbosity "full"
-                       :limit 10 :directory "/tmp"})
-      (finally
-        (mem-proto/unregister-store! :default)
-        (when-let [old (:default snapshot)]
-          (mem-proto/register-store! :default old))))))
+                       :limit 10 :directory "/tmp"}))))
 
 (deftest failed-read-is-an-error-not-an-empty-result
   (testing "a timed-out Milvus read answers an error response naming it"

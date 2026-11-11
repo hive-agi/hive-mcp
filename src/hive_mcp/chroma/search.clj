@@ -110,7 +110,8 @@
             provider (if resolved (:provider resolved) (emb/get-embedding-provider))
             coll     (if resolved
                        (conn/get-or-create-named-collection
-                         (:collection-name resolved) (:dimension resolved))
+                         (:collection-name resolved) (:dimension resolved)
+                         (embedding-service/space-for-resolved resolved {:metric conn/metric}))
                        (conn/get-or-create-collection))
             query-emb (emb/embed-text provider shaped-query)
             results   (search-collection coll query-emb limit where-clause where-doc-clause)]
@@ -126,11 +127,16 @@
                                    (if (= cn "hive-mcp-memory") "note" "decision"))
                         provider (:provider resolved)
                         coll     (conn/get-or-create-named-collection
-                                   cn (:dimension resolved))
+                                   cn (:dimension resolved)
+                                   (embedding-service/space-for-resolved resolved {:metric conn/metric}))
                         query-emb (emb/embed-text provider shaped-query)]
                     (search-collection coll query-emb limit where-clause where-doc-clause))
                   (catch Exception e
-                    (log/debug "Fan-out search failed for" cn ":" (.getMessage e))
+                    ;; A space mismatch is a refusal, not a transient failure:
+                    ;; that collection is left out of the merge, loudly.
+                    (if (= :embedding-space-mismatch (:error (ex-data e)))
+                      (log/warn "Fan-out search skipped" cn ":" (.getMessage e))
+                      (log/debug "Fan-out search failed for" cn ":" (.getMessage e)))
                     [])))
               coll-names)]
         (log/debug "Fan-out search:" (count all-results) "total results")
