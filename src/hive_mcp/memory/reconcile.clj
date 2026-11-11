@@ -48,6 +48,20 @@
       "Delete the vector-index records whose ids are IDS (strings). Answers
        how many were deleted.")))
 
+(defonce ^:private -listing-completeness-defined? (atom false))
+
+(when (compare-and-set! -listing-completeness-defined? false true)
+  (defprotocol IListingCompleteness
+    "Optional: lets a sources value say POSITIVELY that its listings were
+     exhaustive. A purge needs that answer and fails closed without it:
+     sources that do not implement this port are refused, because a listing
+     that cannot vouch for its own end may be a cut one, and every id past
+     the cut would read as an orphan."
+    (listings-complete? [this]
+      "True only when the most recent `store-ids` read AND the most recent
+       `vector-ids` read both reached the end of their listing. False before
+       either was read, when either was cut, and whenever it is not known.")))
+
 (defn- id-string
   "The id as a non-blank string, or nil when it is not an id."
   [id]
@@ -152,6 +166,48 @@
                                     (> (count missing) limit))))))
 
 (m/=> truncate-report [:=> [:cat TruncatableReport :int] TruncatedReport])
+
+(def max-purge-fraction
+  "The largest share of the distinct usable vector ids one purge may delete.
+   A plan above it is refused (`purge-refusal`): orphaning more than half of
+   the index at once is far more likely a faulty entry-store listing (a
+   swallowed error, a disconnected or half-loaded store) than real drift. A
+   real mass drift is repaired by rebuilding the index, not by this purge."
+  1/2)
+
+(defn purge-refusal
+  "Why a purge of PLAN must not run, as a reason string, or nil when it may.
+   Pure. STORE-ID-COLL is the entry-store listing PLAN was derived from and
+   VECTOR-ID-COLL the vector-index listing.
+
+   Refuses when PLAN is not empty and either
+     the store listing holds no usable id (an empty source of truth makes
+     every vector an orphan; that is a listing fault until proven otherwise),
+     or PLAN is more than `max-purge-fraction` of the distinct usable
+     vector ids."
+  [store-id-coll vector-id-coll plan]
+  (let [plan-n   (count (id-set plan))
+        store-n  (count (id-set store-id-coll))
+        vector-n (count (id-set vector-id-coll))]
+    (cond
+      (zero? plan-n)
+      nil
+
+      (zero? store-n)
+      (str "the entry-store listing is empty while " plan-n
+           " vector id(s) would be purged; an empty source of truth is treated"
+           " as a listing fault; nothing deleted")
+
+      (> plan-n (* max-purge-fraction vector-n))
+      (str "the purge would delete " plan-n " of " vector-n
+           " vector ids, more than the safety cap of "
+           (long (* 100 max-purge-fraction))
+           " percent; a mass orphaning is treated as a listing fault;"
+           " nothing deleted")
+
+      :else nil)))
+
+(m/=> purge-refusal [:=> [:cat IdColl IdColl IdColl] [:maybe :string]])
 
 (defn purge-plan
   "The ids a purge may delete: those of CANDIDATE-IDS absent from
