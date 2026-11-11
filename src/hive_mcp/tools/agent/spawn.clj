@@ -336,6 +336,8 @@
    raw `grant` param, nil = share). {:grant wire-or-nil} or {:refused msg}.
    See hive-mcp.agent.grant/child-grant. With no grant recorded on the
    parent's lineage and none requested, nothing changes: {:grant nil}.
+   Either answer also carries :depth, the lineage depth the child sits at
+   (parent depth + 1; a coordinator is 0), which the registry row records.
 
    `requested` is first read by `grant/requested-grant`: a JSON-object
    string is parsed (a client whose cached schema predates the parameter
@@ -348,8 +350,9 @@
       (let [get-slave *get-slave*
             parent-wire (grant/recorded-grant get-slave parent)
             child-depth (inc (long (grant/depth-of get-slave parent)))]
-        (grant/child-grant (when (or parent-wire requested) (*grant-domain*))
-                           parent-wire requested child-depth)))))
+        (assoc (grant/child-grant (when (or parent-wire requested) (*grant-domain*))
+                                  parent-wire requested child-depth)
+               :depth child-depth)))))
 
 (defn kanban-claim-refusal
   "Claim card `kanban-task-id` for the spawner before the ling starts, and
@@ -415,7 +418,7 @@
         (try
           ;; Resolve provider+model via registry chain
           (let [parent (effective-parent params)
-                {child-grant :grant grant-refusal :refused} (spawn-grant parent (:grant params))
+                {child-grant :grant grant-refusal :refused child-depth :depth} (spawn-grant parent (:grant params))
                 _ (when grant-refusal
                     (throw (ex-info grant-refusal {:grant/refused true})))
                 worker-tier (normalize-tier tier)
@@ -485,6 +488,7 @@
                         (throw (ex-info refusal {:kanban/claim-refused kanban_task_id})))
                     slave-id (proto/spawn! ling-agent (cond-> {:task brief
                                                                :parent parent
+                                                               :depth child-depth
                                                                :spawned-by (spawner params)
                                                                :kanban-task-id kanban_task_id
                                                                :spawn-mode (:spawn-mode ling-agent)
@@ -565,8 +569,8 @@
 (def GrantDecision
   "spawn-grant's answer: a grant (nil = share) or a refusal message."
   [:or
-   [:map [:grant [:maybe :map]]]
-   [:map [:refused :string]]])
+   [:map [:grant [:maybe :map]] [:depth {:optional true} :int]]
+   [:map [:refused :string] [:depth {:optional true} :int]]])
 
 (m/=> effective-parent [:=> [:cat SpawnParams] [:maybe :string]])
 

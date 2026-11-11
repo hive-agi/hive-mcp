@@ -139,6 +139,20 @@
        [:=> [:cat :any [:maybe :map]] [:maybe :string]]
        [:=> [:cat :any [:maybe :map] ifn?] [:maybe :string]]])
 
+(defn lineage-depth
+  "The lineage depth a child of PARENT sits at: the parent's registry depth
+   plus one, a coordinator (or an unknown parent) being depth 0. The tool
+   handler passes :depth explicitly; this answers for every other spawn path
+   so no path records a hardcoded depth."
+  ([parent] (lineage-depth grant/registry-get-slave parent))
+  ([get-slave parent]
+   (inc (long (grant/depth-of get-slave parent)))))
+
+(m/=> lineage-depth
+      [:function
+       [:=> [:cat :any] :int]
+       [:=> [:cat ifn? :any] :int]])
+
 (defn- compute-spawn-plan
   "Derive all spawn decisions from ling state and opts.
    Returns a plan map with resolved mode, model, strategy, and context.
@@ -157,8 +171,8 @@
         mode (lifecycle/resolve-effective-mode
               {:model effective-model
                :spawn-mode requested})
-        {:keys [depth parent kanban-task-id]
-         :or {depth 1}} opts]
+        {:keys [parent kanban-task-id]} opts
+        depth (or (:depth opts) (lineage-depth parent))]
     {:effective-model effective-model
      :mode mode
      :strat (lifecycle/resolve-strategy mode)
