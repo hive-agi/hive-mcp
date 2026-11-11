@@ -12,7 +12,7 @@
             [hive-mcp.await.registry :as registry]
             [hive-mcp.await.resumers.hive-agent-run]
             [hive-mcp.await.sources.manual :as manual]
-            [hive-mcp.tools.core :refer [mcp-json mcp-error]]
+            [hive-mcp.tools.core :as tc :refer [mcp-json mcp-error]]
             [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
@@ -112,6 +112,8 @@
                         :next (str "Awaiter " (:id a) " is armed. End your run now (parked);"
                                    " the wake resumes it with your prompt and the wake payload.")})))))
 
+(m/=> handle-create [:=> [:cat [:maybe :map]] tc/McpResponse])
+
 (defn handle-list
   "Every awaiter (or only those with `status` armed|woken|cancelled), plus
    the registered sources and owner kinds, and the resume result of each
@@ -133,6 +135,8 @@
                  :resumers (ports/known-resumers)
                  :statuses domain/statuses}))))
 
+(m/=> handle-list [:=> [:cat [:maybe :map]] tc/McpResponse])
+
 (defn handle-cancel
   "Cancel the armed awaiter `id`; its source and deadline are released and
    its owner is never resumed."
@@ -144,6 +148,8 @@
                   (r/ok {:awaiter a})
                   (r/err :await/unknown-awaiter {:message (str "no awaiter " id)}))
                 (r/err :await/bad-request {:message "pass `id`"})))))
+
+(m/=> handle-cancel [:=> [:cat [:maybe :map]] tc/McpResponse])
 
 (defn handle-fire
   "Inject one :manual event with `data` (an object, default {}) into the
@@ -163,6 +169,8 @@
                 {:offered offered
                  :woke    (mapv (fn [w] {:id w :resume (registry/resume-result reg w)})
                                 (filter before woke))}))))
+
+(m/=> handle-fire [:=> [:cat [:maybe :map]] tc/McpResponse])
 
 (def handlers
   {:create #'handle-create

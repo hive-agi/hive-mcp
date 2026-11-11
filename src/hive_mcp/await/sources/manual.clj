@@ -7,7 +7,9 @@
    Subscription: {:type :manual :filter {..} :dedup-key k}. An injected
    event is {:type :manual :data <map>}; the awaiter's filter and dedup are
    applied by the pure step, not here."
-  (:require [hive-mcp.await.ports :as ports]))
+  (:require [hive-mcp.await.ports :as ports]
+            [malli.core :as m]
+            [hive-mcp.await.domain :as domain]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -28,6 +30,8 @@
   []
   (vec (sort (keys @listeners))))
 
+(m/=> listening [:=> [:cat] [:vector :string]])
+
 (defn fire!
   "Inject one :manual event with `data` (a map). With `awaiter-id`, offer
    it to that awaiter only; otherwise to every listening awaiter (each
@@ -40,3 +44,7 @@
                    @listeners)]
      (doseq [[_ deliver!] targets] (deliver! event))
      (vec (sort (keys targets))))))
+
+(m/=> fire! [:function
+             [:=> [:cat [:maybe :map]] [:vector :string]]
+             [:=> [:cat [:maybe :map] [:maybe domain/AwaiterId]] [:vector :string]]])

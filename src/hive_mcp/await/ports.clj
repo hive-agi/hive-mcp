@@ -12,7 +12,9 @@
                 the awaiter wakes; its return value is recorded.
 
    The defaults refuse plainly, so an unknown :type or :kind is a loud
-   error at arm time, never a silent wait that nothing can ever wake.")
+   error at arm time, never a silent wait that nothing can ever wake."
+  (:require [malli.core :as m]
+            [hive-mcp.await.domain :as domain]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -48,10 +50,14 @@
   []
   (vec (sort (remove #{:default} (keys (methods open-source))))))
 
+(m/=> known-sources [:=> [:cat] [:vector :keyword]])
+
 (defn known-resumers
   "Every registered owner :kind."
   []
   (vec (sort (remove #{:default} (keys (methods open-resumer))))))
+
+(m/=> known-resumers [:=> [:cat] [:vector :keyword]])
 
 (defn require-ports!
   "Throw the same refusal the defaults throw when `awaiter`'s source :type
@@ -68,3 +74,5 @@
       ((get-method open-resumer :default) (:owner awaiter)))
     (open-resumer (:owner awaiter))
     awaiter))
+
+(m/=> require-ports! [:=> [:cat domain/Awaiter] domain/Awaiter])

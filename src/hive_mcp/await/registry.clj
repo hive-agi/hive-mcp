@@ -43,6 +43,46 @@
                    (io/file (System/getProperty "user.home") ".local" "share" "hive-mcp"))]
         (str (io/file base "await" "registry.edn")))))
 
+(m/=> default-path [:=> [:cat] :string])
+
+(def Registry
+  "A registry value as make-registry builds it: its EDN :path, the :now-fn
+   clock (epoch ms), the deadline :executor and the :state atom."
+  [:map {:closed true}
+   [:path :string]
+   [:now-fn [:fn ifn?]]
+   [:executor [:fn some?]]
+   [:state [:fn #(instance? clojure.lang.IAtom %)]]])
+
+(def ResumeResult
+  "What an owner's resumer answered, as resume! records it: {:ok? true
+   :value v} or {:ok? false :error message :data ex-data}."
+  [:map {:closed true}
+   [:ok? :boolean]
+   [:value {:optional true} :any]
+   [:error {:optional true} [:maybe :string]]
+   [:data {:optional true} [:maybe :map]]])
+
+(def InitReport
+  "What init! answers: how many awaiters were loaded, the ids re-armed and
+   the ids that could not be, with the reason."
+  [:map {:closed true}
+   [:loaded :int]
+   [:armed [:vector :string]]
+   [:failed [:vector [:map {:closed true} [:id :string] [:error [:maybe :string]]]]]])
+
+(def CreateRequest
+  "A create! request: the awaiter's :owner and :subscription, plus an
+   optional :id, absolute :deadline (epoch ms), relative :timeout-ms and
+   continuation :prompt."
+  [:map {:closed true}
+   [:id {:optional true} [:maybe domain/AwaiterId]]
+   [:owner domain/Owner]
+   [:subscription domain/Subscription]
+   [:deadline {:optional true} [:maybe :int]]
+   [:timeout-ms {:optional true} [:maybe :int]]
+   [:prompt {:optional true} [:maybe :string]]])
+
 ;; =============================================================================
 ;; Persistence: EDN, temp file + ATOMIC_MOVE
 ;; =============================================================================
@@ -62,6 +102,8 @@
           (log/warn e "await registry: unreadable file, starting empty" {:path path})
           {})))))
 
+(m/=> read-awaiters [:=> [:cat :string] [:map-of :string domain/Awaiter]])
+
 (defn write-awaiters!
   "Persist `awaiters` ({id awaiter}) at `path`: write a sibling temp file,
    then move it over the target with ATOMIC_MOVE, so a reader sees the old
@@ -76,6 +118,8 @@
                 (into-array CopyOption [StandardCopyOption/ATOMIC_MOVE
                                         StandardCopyOption/REPLACE_EXISTING]))
     path))
+
+(m/=> write-awaiters! [:=> [:cat :string [:map-of :string domain/Awaiter]] :string])
 
 ;; =============================================================================
 ;; Registry value
@@ -97,6 +141,10 @@
     :executor (Executors/newSingleThreadScheduledExecutor (daemon-factory))
     :state    (atom {:awaiters {} :closers {} :timers {} :resumes {}})}))
 
+(m/=> make-registry [:function
+                     [:=> [:cat :string] Registry]
+                     [:=> [:cat :string [:map {:closed true} [:now-fn {:optional true} [:maybe [:fn ifn?]]]]] Registry]])
+
 (defn- now [reg] ((:now-fn reg)))
 
 (defn- persist!
@@ -113,15 +161,21 @@
   [reg]
   (vec (sort-by (juxt :created :id) (vals (:awaiters @(:state reg))))))
 
+(m/=> awaiters [:=> [:cat Registry] [:vector domain/Awaiter]])
+
 (defn lookup
   "The awaiter `id`, or nil."
   [reg id]
   (get-in @(:state reg) [:awaiters (str id)]))
 
+(m/=> lookup [:=> [:cat Registry domain/AwaiterId] [:maybe domain/Awaiter]])
+
 (defn resume-result
   "What the owner's resumer answered for awaiter `id`, or nil."
   [reg id]
   (get-in @(:state reg) [:resumes (str id)]))
+
+(m/=> resume-result [:=> [:cat Registry domain/AwaiterId] [:maybe ResumeResult]])
 
 ;; =============================================================================
 ;; Executing a step
@@ -181,6 +235,8 @@
         (resume! reg (:awaiter r) (:payload r)))
       r)))
 
+(m/=> offer! [:=> [:cat Registry domain/AwaiterId [:maybe domain/Event]] [:maybe domain/StepResult]])
+
 (defn tick!
   "Offer a clock tick to every :armed awaiter, so every reached deadline
    wakes with :reason :timeout. Answers the ids that woke."
@@ -188,6 +244,8 @@
   (into []
         (keep (fn [a] (when (:wake? (offer! reg (:id a) nil)) (:id a))))
         (filter domain/armed? (awaiters reg))))
+
+(m/=> tick! [:=> [:cat Registry] [:vector :string]])
 
 ;; =============================================================================
 ;; Arming
@@ -246,6 +304,8 @@
     (persist! reg)
     (arm! reg a)))
 
+(m/=> create! [:=> [:cat Registry CreateRequest] domain/Awaiter])
+
 (defn cancel!
   "Cancel awaiter `id` when still :armed: persist, release its source and
    timer. Answers the awaiter, or nil when unknown."
@@ -257,6 +317,8 @@
       (release! reg id)
       (swap! (:state reg) update :resumers dissoc id)
       (lookup reg id))))
+
+(m/=> cancel! [:=> [:cat Registry domain/AwaiterId] [:maybe domain/Awaiter]])
 
 (defn init!
   "Load the persisted awaiters and re-arm every :armed one (sources opened,
@@ -277,6 +339,8 @@
             {:loaded (count loaded) :armed [] :failed []}
             (filter domain/armed? (vals loaded)))))
 
+(m/=> init! [:=> [:cat Registry] InitReport])
+
 (defn shutdown!
   "Close every source and timer and stop the executor. Persisted state is
    left as it is, so the next init re-arms what was armed."
@@ -285,6 +349,8 @@
   (doseq [id (keys (:timers @(:state reg)))] (release! reg id))
   (.shutdownNow ^ScheduledExecutorService (:executor reg))
   :shutdown)
+
+(m/=> shutdown! [:=> [:cat Registry] [:= :shutdown]])
 
 ;; =============================================================================
 ;; Process registry
@@ -302,3 +368,5 @@
             (let [reg (make-registry (default-path))]
               (init! reg)
               (reset! process-registry reg))))))
+
+(m/=> default-registry [:=> [:cat] Registry])

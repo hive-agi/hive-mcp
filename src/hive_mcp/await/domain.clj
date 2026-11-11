@@ -67,6 +67,10 @@
    [:payload [:maybe :map]]
    [:awaiter Awaiter]])
 
+(def AwaiterId
+  "How a caller names an awaiter: the registry reads it through `str`."
+  [:or :string :uuid :keyword :int])
+
 (defn new-awaiter
   "An :armed awaiter from a create request, stamped `now`. Pure."
   [{:keys [id owner subscription deadline prompt]} now]
@@ -85,10 +89,14 @@
   [awaiter]
   (= :armed (:status awaiter)))
 
+(m/=> armed? [:=> [:cat Awaiter] :boolean])
+
 (defn expired?
   "True when `awaiter` has a deadline at or before `now`. Pure."
   [{:keys [deadline]} now]
   (boolean (and (some? deadline) (some? now) (<= deadline now))))
+
+(m/=> expired? [:=> [:cat [:map [:deadline [:maybe :int]]] [:maybe :int]] :boolean])
 
 (defn matches?
   "True when `event` is of the subscription's :type and its :data agrees
@@ -98,6 +106,8 @@
        (let [data (:data event)]
          (every? (fn [[k v]] (and (map? data) (= v (get data k)))) filter))))
 
+(m/=> matches? [:=> [:cat Subscription Event] :boolean])
+
 (defn dedup-value
   "The value that identifies `event` under `subscription`, or nil when the
    subscription names no :dedup-key. Pure."
@@ -105,6 +115,8 @@
   (when dedup-key
     (let [data (:data event)]
       (when (map? data) (get data dedup-key)))))
+
+(m/=> dedup-value [:=> [:cat Subscription Event] :any])
 
 (defn- woken
   "`awaiter` woken with `payload`. Pure."
