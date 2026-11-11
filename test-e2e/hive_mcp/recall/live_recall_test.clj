@@ -1,8 +1,13 @@
-(ns ^:integration hive-mcp.recall.live-recall-test
+(ns ^:e2e hive-mcp.recall.live-recall-test
   "GOLDEN RECALL — THE LIVE TIER. Requires Milvus + a reachable embedder.
 
-   Excluded from `:test-unit` by the `^:integration` metadata; run with
-   `clojure -M:test-integration`.
+   E2E TIER (test-e2e/, ^:e2e): never on the default tier's path. Run with
+     clojure -J-Dhive.e2e.recall.config=<sandbox config.edn> -M:test-e2e \
+       -n hive-mcp.recall.live-recall-test
+   in a JVM where the memory addon has registered its store. The unit-level
+   behaviour (pipeline over a store that keeps its contract, rank-fault,
+   recall-fault) stays in the default tier: hive-mcp.recall.lexical-anchor-test
+   and hive-mcp.recall.golden-contract-test.
 
    WHY A SECOND TIER EXISTS
    -----------------------
@@ -27,6 +32,8 @@
    whole suite exists to eliminate — it is the same lie as an empty result set
    from a populated store, told in the test harness instead of the product."
   (:require [clojure.data.json :as json]
+            [clojure.edn]
+            [hive-mcp.config.test-support :as cfg-test]
             [clojure.test :refer [deftest is testing]]
             [hive-mcp.embeddings.service :as embed-svc]
             [hive-mcp.protocols.memory :as mem-proto]
@@ -40,12 +47,28 @@
 ;; Bootstrap — the real config, the real providers. Read-only.
 ;; =============================================================================
 
-(defn- live-embeddings!
-  "Bring up the embedding service exactly as the server does: from
-   ~/.config/hive-mcp/config.edn. Read-only — configures in-process providers,
-   touches no collection."
+(defn- sandbox-config-path
+  "The config this tier reads, named EXPLICITLY by the operator with
+   -Dhive.e2e.recall.config=<path> (convention 20261111105238-0ceaa524: an
+   e2e test names its sandbox and never points at the live instance by
+   default). Moved out of the default tree 2026-11-11: under -M:test it used
+   to read ~/.config/hive-mcp/config.edn on any developer host."
   []
-  (init/init-embedding-provider!))
+  (System/getProperty "hive.e2e.recall.config"))
+
+(defn- live-embeddings!
+  "Bring up the embedding service exactly as the server does, from the
+   sandbox config. Read-only: configures in-process providers, touches no
+   collection. Throws when no sandbox config was named."
+  []
+  (let [path (sandbox-config-path)]
+    (when-not (and path (.exists (java.io.File. ^String path)))
+      (throw (ex-info (str "live recall tier: name its config with "
+                           "-Dhive.e2e.recall.config=<path>; it never reads "
+                           "~/.config/hive-mcp by default")
+                      {:hive.e2e.recall.config path})))
+    (cfg-test/with-config (clojure.edn/read-string (slurp path))
+      (init/init-embedding-provider!))))
 
 (defn- live-store
   "The registered :default IMemoryStore, or nil. In a bare test JVM no addon has
@@ -67,7 +90,7 @@
 ;; CASE 5 (LIVE) — the dimension invariant, on the real configured providers
 ;; =============================================================================
 
-(deftest ^:integration live-dimension-invariant
+(deftest ^:e2e live-dimension-invariant
   (testing "for every configured memory collection, the width the EMBEDDER emits
             must equal the width the COLLECTION holds. This needs no Milvus
             connection — only the live config — and it is the single check that
@@ -93,7 +116,7 @@
 ;; CASE 1 (LIVE) — the anchor, from the real store
 ;; =============================================================================
 
-(deftest ^:integration live-lexical-anchor
+(deftest ^:e2e live-lexical-anchor
   (testing "the canary's OWN anchor must come back from the live store.
 
             This tier used to assert a hand-picked production id. That id was
@@ -119,7 +142,7 @@
                                             :must-contain [(:anchor ids)]}))))))
       (is (nil? (backend-absent-fault))))))
 
-(deftest ^:integration live-results-are-ordered-nearest-first
+(deftest ^:e2e live-results-are-ordered-nearest-first
   (testing "THE WIRE TEST. `:distance` must ascend. If the Milvus boundary ever
             regresses to passing a COSINE similarity through under the :distance
             key (MEM-P0-EMBED-LANE), the numbers still look plausible and the
@@ -138,7 +161,7 @@
                                  :results (:results body)}))))
       (is (nil? (backend-absent-fault))))))
 
-(deftest ^:integration live-store-is-actually-populated
+(deftest ^:e2e live-store-is-actually-populated
   (testing "the premise every other assertion rests on. If the store is empty,
             an empty result IS honest, and this whole suite is measuring nothing
             — so state the premise as an assertion rather than assuming it."

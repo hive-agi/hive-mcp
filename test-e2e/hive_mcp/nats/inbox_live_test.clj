@@ -42,7 +42,7 @@
 
 (defn- bodies [r] (mapv :body (:messages r)))
 
-(deftest ^:integration arm-send-read-status
+(deftest ^:e2e arm-send-read-status
   (with-broker
     (fn [conn]
       (testing "a message sent before the first arm waits in the stream"
@@ -83,7 +83,7 @@
           (is (= ["late"] (bodies r)))
           (is (< (- (System/currentTimeMillis) t0) 2000)))))))
 
-(deftest ^:integration verbs-answer-json-through-the-live-connection
+(deftest ^:e2e verbs-answer-json-through-the-live-connection
   (with-broker
     (fn [conn]
       (with-redefs [hive-mcp.tools.consolidated.inbox/connection (constantly conn)]

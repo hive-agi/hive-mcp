@@ -50,7 +50,7 @@
   (with-open [c (Nats/connect ^String url)]
     (set (.getStreamNames (.jetStreamManagement c)))))
 
-(deftest ^:integration a-broker-down-at-boot-is-joined-when-it-comes-up
+(deftest ^:e2e a-broker-down-at-boot-is-joined-when-it-comes-up
   (if-not (docker?)
     (println "SKIP: docker unavailable")
     (let [port  (free-port)
@@ -82,7 +82,7 @@
           (is (= #{"HIVE_EVENTS" "HIVE_INBOX"} (stream-names url))))
         (finally (broker-rm! cname))))))
 
-(deftest ^:integration ensure-streams-applies-the-declared-limits
+(deftest ^:e2e ensure-streams-applies-the-declared-limits
   (if-not (docker?)
     (println "SKIP: docker unavailable")
     (let [port (free-port) url (str "nats://127.0.0.1:" port) cname (str "hive-test-nats-" port)]

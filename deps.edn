@@ -438,8 +438,16 @@
    ;; runs at the caller's adj (0, the same as the server). bin/clj-test (any
    ;; `clojure` args) and bin/test-sandboxed.sh raise it to 800 so the test JVM
    ;; dies before hive-mcp. Use one of them on a shared host.
+   ;; THE DEFAULT TIER. Stubs and fakes only (convention 20261111105238).
+   ;; :integration and :e2e are excluded here exactly as in :test-unit: a
+   ;; plain `clojure -M:test` used to run every ^:integration test, so a dev
+   ;; host with Chroma on :8000 or a hive-mcp on :7911 saw the suite reach
+   ;; them, while CI (which runs :test-unit) stayed green. hive-mcp.test-runner
+   ;; is cognitect's runner plus a network tripwire: a connection to a
+   ;; non-loopback host or a live-service port is refused and fails the run.
+   ;; Live suites live in test-e2e/ and run under :test-e2e only.
    :jvm-opts ["-Xmx2g" "-Dhive.test=true" "-Dhive.mcp.config=target/test-config/config.edn" "-Dhive.kg.backend=datascript"]
-   :main-opts ["-m" "cognitect.test-runner"
+   :main-opts ["-m" "hive-mcp.test-runner" "-e" ":integration" "-e" ":e2e"
                "-r" "^hive-mcp\\.(?!backends\\.).*-test$"]}
 
   ;; CI-friendly: Run only unit tests (excludes tests requiring Emacs)
@@ -460,11 +468,30 @@
                 ;; must not be able to fail at load.
                 io.github.hive-agi/hive-schemas {:mvn/version "0.2.2"}}
    :jvm-opts ["-Xmx2g" "-Dhive.test=true" "-Dhive.mcp.config=target/test-config/config.edn" "-Dhive.kg.backend=datascript"]
-   :main-opts ["-m" "cognitect.test-runner" "-e" ":integration"
+   :main-opts ["-m" "hive-mcp.test-runner" "-e" ":integration" "-e" ":e2e"
                "-r" "^hive-mcp\\.(?!backends\\.).*-test$"]
    :exec-fn cognitect.test-runner.api/test
-   :exec-args {:excludes [:integration]
+   :exec-args {:excludes [:integration :e2e]
                :patterns ["^hive-mcp\\.(?!backends\\.).*-test$"]}}
+
+  ;; THE E2E TIER: suites that need a real service. They live in test-e2e/
+  ;; (never on the default tier's path, so the default runner cannot even load
+  ;; them) and each builds its own sandbox: a throwaway docker container on a
+  ;; random loopback port (Chroma, NATS), or an operator-named config file
+  ;; (-Dhive.e2e.recall.config=... for the live recall tier). None of them
+  ;; points at the live instance by default.
+  ;;   clojure -M:test-e2e                      ; every e2e suite (needs docker)
+  ;;   clojure -M:test-e2e -n hive-mcp.e2e.memory-chroma-test
+  :test-e2e
+  {:extra-paths ["test" "test/resources" "test-e2e"]
+   :extra-deps {io.github.cognitect-labs/test-runner
+                {:git/tag "v0.5.1" :git/sha "dfb30dd"}
+                org.clojure/test.check {:mvn/version "1.1.3"}
+                io.github.hive-agi/hive-test {:mvn/version "0.5.2"}
+                io.github.hive-agi/hive-schemas {:mvn/version "0.2.2"}}
+   :jvm-opts ["-Xmx2g" "-Dhive.test=true" "-Dhive.mcp.config=target/test-config/config.edn" "-Dhive.kg.backend=datascript"]
+   :main-opts ["-m" "cognitect.test-runner" "-d" "test-e2e" "-i" ":e2e"
+               "-r" "^hive-mcp\\..*-test$"]}
 
   ;; Focused run: one or more namespaces, nothing else. cognitect.test-runner
   ;; UNIONS -n with -r (a namespace runs when it is named OR matches a regex),
