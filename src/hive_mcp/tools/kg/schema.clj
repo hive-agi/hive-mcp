@@ -74,7 +74,8 @@
    [:direction {:optional true} (loose [:maybe [:enum "outgoing" "incoming" "both" :incoming :both]])]
    [:relations {:optional true} Relations]
    [:max_depth {:optional true} Depth]
-   [:scope {:optional true} ScopeText]])
+   [:scope {:optional true} ScopeText]
+   [:limit {:optional true} (loose [:maybe [:int {:min 0 :max 10}]])]])
 
 (def ImpactParams
   [:map

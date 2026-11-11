@@ -3,7 +3,7 @@
   {:type "text",
    :text "start_node must be a non-empty string",
    :isError true},
-  :in ({:direction :both, :scope nil})},
+  :in ({:direction :both, :limit 1})},
  :case-1
  {:out
   {:type "text",
@@ -14,13 +14,14 @@
     :direction :both,
     :relations nil,
     :max_depth nil,
-    :scope "hive-mcp:agora"})},
+    :scope nil,
+    :limit nil})},
  :case-2
  {:out
   {:type "text",
    :text "start_node must be a non-empty string",
    :isError true},
-  :in ({:direction nil, :max_depth 1, :scope nil})},
+  :in ({:direction nil, :max_depth 1, :limit nil})},
  :case-3
  {:out
   {:type "text",
@@ -38,16 +39,16 @@
   {:type "text",
    :text "start_node must be a non-empty string",
    :isError true},
-  :in ({:direction nil, :max_depth 4, :scope "global"})},
+  :in ({:direction nil, :max_depth 4, :scope nil, :limit 0})},
  :case-6
  {:out
   {:type "text",
    :text "start_node must be a non-empty string",
    :isError true},
-  :in ({:relations #{:implements}, :scope "global"})},
+  :in ({:relations #{:implements}, :scope nil, :limit 2})},
  :case-7
  {:out
   {:type "text",
    :text "start_node must be a non-empty string",
    :isError true},
-  :in ({:relations nil, :max_depth 2})}}
+  :in ({:relations nil, :max_depth 2, :limit 7})}}

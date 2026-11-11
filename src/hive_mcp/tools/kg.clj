@@ -606,7 +606,7 @@
                                         :enum ["delete" "demote"]
                                         :description "cleanup-synthetics: action on sub-threshold synthetics (default: delete)"}
                               "limit" {:type "integer"
-                                       :description "cleanup-synthetics: max synthetics per cycle (default: 50)"}
+                                       :description "traverse: max rows to return (the answer then carries truncated? and total-count); cleanup-synthetics: max synthetics per cycle (default: 50)"}
                               "dry_run" {:type "boolean"
                                          :description "cleanup-synthetics: preview without mutating (default: false)"}}
                  :required ["command"]}

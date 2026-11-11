@@ -68,12 +68,30 @@
            (when scope (str ", scope=" scope))
            ")."))))
 
+(defn- refuse-limit
+  "An MCP error for a `limit` that is present but not a positive integer, or
+   nil. A limit is a row cap; zero or a negative number would silently answer
+   nothing, so it is refused with what to send instead."
+  [limit]
+  (when (and (some? limit) (not (pos-int? limit)))
+    (mcp-error (str "limit must be a positive integer (got " (pr-str limit)
+                    "); omit it to get every row"))))
+
+(defn- cap-rows
+  "Take at most `limit` of `rows`. Returns [kept total truncated?]."
+  [limit rows]
+  (let [total (count rows)
+        kept  (if limit (vec (take limit rows)) (vec rows))]
+    [kept total (< (count kept) total)]))
+
 (defn handle-kg-traverse
-  "Walk graph from a starting node via BFS."
-  [{:keys [start_node direction relations max_depth scope]}]
-  (log/info "kg_traverse" {:start start_node :direction direction})
+  "Walk graph from a starting node via BFS. `limit` caps the rows answered;
+   a capped answer carries :truncated? true and :total-count."
+  [{:keys [start_node direction relations max_depth scope limit]}]
+  (log/info "kg_traverse" {:start start_node :direction direction :limit limit})
   (try
     (or (refuse-node-id start_node "start_node")
+        (refuse-limit limit)
         (let [dir-kw (case direction
                        (:incoming "incoming") :incoming
                        (:both "both")         :both
@@ -83,7 +101,7 @@
                      rel-set (assoc :relations rel-set)
                      max_depth (assoc :max-depth max_depth)
                      scope (assoc :scope scope))
-              results (queries/traverse start_node opts)
+              [results total truncated?] (cap-rows limit (queries/traverse start_node opts))
               response (cond-> {:success true
                                 :start-node start_node
                                 :result-count (count results)
@@ -94,6 +112,9 @@
                                                   :depth depth
                                                   :path path})
                                                results)}
+                         truncated?
+                         (assoc :truncated? true :total-count total)
+
                          (empty? results)
                          (assoc :hint (traverse-empty-hint start_node opts)))]
           (mcp-json response)))
@@ -265,7 +286,9 @@
                                "max_depth" {:type "integer"
                                             :description "Maximum traversal depth (default: 3)"}
                                "scope" {:type "string"
-                                        :description "Limit to edges visible from this scope"}}
+                                        :description "Limit to edges visible from this scope"}
+                               "limit" {:type "integer"
+                                        :description "Max rows to return; a capped answer carries truncated? and total-count"}}
                   :required ["start_node"]}
     :handler handle-kg-traverse}
 
