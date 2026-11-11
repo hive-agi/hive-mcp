@@ -55,6 +55,37 @@
                                      handler)]))
           commands)))
 
+(defn- current-at
+  "The node PATH names in the handlers map SYM resolves to RIGHT NOW, every
+   level read through `dispatch/current` (a var holding a subtree is walked
+   into); nil when SYM does not resolve or PATH leaves the tree."
+  [sym path]
+  (try
+    (reduce (fn [node seg] (when (map? node) (dispatch/current (get node seg))))
+            (some-> (requiring-resolve sym) dispatch/current)
+            path)
+    (catch Throwable _unresolvable nil)))
+
+(defn- late-bound
+  "LEAF of the handlers map named by SYM, at PATH, as a handler that looks itself
+   up when called. A subtree (a map, or a var holding one) stays a map, so the
+   tree keeps its shape. A value that is not a handler is kept as it is. When the
+   lookup finds no handler, the one read at load time answers."
+  [sym path leaf]
+  (let [node (dispatch/current leaf)]
+    (cond
+      (map? node)
+      (into {} (map (fn [[k v]] [k (late-bound sym (conj path k) v)])) node)
+
+      (dispatch/handler? leaf)
+      (with-meta
+        (fn late-bound-handler [& args]
+          (let [current (current-at sym path)]
+            (apply (if (dispatch/handler? current) current leaf) args)))
+        (meta leaf))
+
+      :else leaf)))
+
 (defn lazy-resolve-handlers
   "Lazily resolve a consolidated tool's `handlers` map by fully-qualified
    symbol, triggering ns load on first access (DIP).
@@ -65,11 +96,20 @@
    moving / renaming a subdomain consolidator no longer breaks compile,
    it just yields an empty handler tree at runtime.
 
+   The tree's SHAPE is read once, here; every handler in it resolves SYM again
+   when called (`late-bound`). The link from a domain root to its subdomain is
+   invisible to a namespace reload (the root has no :require on it), so a root
+   holding the handlers it read at load time kept calling the old namespace's
+   code after the subdomain reloaded: `project kanban plan-to-kanban` ran the
+   pre-reload handler (friction 20261110235404-7305c23d). A verb the reload
+   ADDED is not in the shape until the root itself reloads; a verb it removed
+   answers from the handler read at load time.
+
    Returns the handlers tree on success, `{}` on miss. Caller merges
    into its canonical-handlers tree the same way the literal reference
    would have."
   [sym]
-  (or (try (some-> (requiring-resolve sym) deref)
+  (or (try (some->> (requiring-resolve sym) dispatch/current (late-bound sym []))
            (catch Throwable _ nil))
       {}))
 
