@@ -190,12 +190,24 @@
 
 (m/=> chroma-available? [:=> [:cat] [:maybe :boolean]])
 
+(defn provider-spec
+  "Build the embedding space spec for a provider, including its resolved host
+   when present. Return nil when the provider has no configured model."
+  [provider-type model provider]
+  (when model
+    (cond-> {:impl provider-type :model (str model)}
+      (:host provider) (assoc :host (str (:host provider))))))
+
+(m/=> provider-spec
+      [:=> [:cat :keyword :any [:maybe [:map [:host {:optional true} :any]]]]
+       [:maybe [:map
+                [:impl :keyword]
+                [:model :string]
+                [:host {:optional true} :string]]]])
+
 (defn reinitialize-embeddings!
-  "Fix hot-reload protocol mismatch by reloading namespaces and reinitializing.
-   Ollama callers may inject :host and :executor-fn (the provider's transport
-   port); production defaults and other providers are unchanged."
-  [& {:keys [provider-type host executor-fn]
-      :or {provider-type :ollama}}]
+  "Fix hot-reload protocol mismatch by reloading namespaces and reinitializing."
+  [& {:keys [provider-type] :or {provider-type :ollama}}]
   (log/info "Reinitializing embeddings due to protocol mismatch...")
 
   (remove-ns 'hive-mcp.embeddings.ollama)
@@ -217,29 +229,15 @@
     (registry-init))
 
   (let [config-value (requiring-resolve 'hive-mcp.config.core/get-config-value)
-        opts         (cond-> {}
-                       (and (= :ollama provider-type) host)
-                       (assoc :host host)
-
-                       (and (= :ollama provider-type) executor-fn)
-                       (assoc :executor-fn executor-fn)
-
-                       :always
-                       (merge (when-let [model (config-value (str "embeddings." (name provider-type) ".model"))]
-                                {:model model})))
+        opts         (if-let [model (config-value (str "embeddings." (name provider-type) ".model"))]
+                       {:model model}
+                       {})
         provider (case provider-type
                    :ollama ((resolve 'hive-mcp.embeddings.ollama/->provider) opts)
                    :openai ((resolve 'hive-mcp.embeddings.openai/->provider) opts)
                    :openrouter ((resolve 'hive-mcp.embeddings.openrouter/->provider) opts))]
-    (emb/set-embedding-provider! provider (when-let [model (:model opts)]
-                                            (let [spec {:impl provider-type :model (str model)}]
-                                              ;; Carry the provider's resolved :host (OllamaEmbedder
-                                              ;; records carry it; other providers lack it) so the
-                                              ;; digest resolver asks the right server, not
-                                              ;; http://localhost:11434 by default.
-                                              (if-let [host (:host provider)]
-                                                (assoc spec :host (str host))
-                                                spec))))
+    (emb/set-embedding-provider! provider
+                                 (provider-spec provider-type (:model opts) provider))
 
     (let [fixed? (satisfies? emb/EmbeddingProvider provider)]
       (if fixed?

@@ -46,12 +46,23 @@
 
 (def ^:private ^:dynamic *transport* nil)
 
+(defn- connection-caches []
+  {:collection @@#'conn/collection-cache
+   :named @@#'conn/named-collection-cache
+   :legacy-warned @@#'conn/legacy-warned})
+
+(defn- restore-connection-caches! [caches]
+  (reset! @#'conn/collection-cache (:collection caches))
+  (reset! @#'conn/named-collection-cache (:named caches))
+  (reset! @#'conn/legacy-warned (:legacy-warned caches)))
+
 (defn- stub-ports [f]
-  (let [prior-t     (client/transport)
-        prior-p     (active/get-embedding-provider)
-        prior-spec  (active/get-embedding-provider-spec)
-        resolver-fn @(deref #'service/digest-resolver)
-        t           (transport/->transport)]
+  (let [prior-t      (client/transport)
+        prior-p      (active/get-embedding-provider)
+        prior-spec   (active/get-embedding-provider-spec)
+        prior-caches (connection-caches)
+        resolver-fn  @(deref #'service/digest-resolver)
+        t            (transport/->transport)]
     (client/set-transport! t)
     (active/set-embedding-provider! (fixtures/->MockEmbedder dim))
     (conn/reset-collection-cache!)
@@ -66,7 +77,7 @@
       (finally
         (mi/unstrument! {:filters [(mi/-filter-var contracted)]})
         (service/set-digest-resolver! resolver-fn)
-        (conn/reset-collection-cache!)
+        (restore-connection-caches! prior-caches)
         (registry/clear-cache!)
         (client/set-transport! prior-t)
         (if prior-p
