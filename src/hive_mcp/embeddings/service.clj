@@ -751,24 +751,49 @@
           (string? t)  t
           :else        (pr-str t))))
 
+(defn- spec->space
+  "The space of provider `spec` at `dimension`, or nil when the spec does not
+   name an impl, a model and a dimension."
+  [spec dimension extra]
+  (when (and (:impl spec) (:model spec) dimension)
+    (space/->space (merge {:provider           (:impl spec)
+                           :model              (str (:model spec))
+                           :digest             (resolve-digest spec)
+                           :dimension          dimension
+                           :query-template-rev (query-template-rev)
+                           :doc-serializer-rev doc-serializer-rev}
+                          (select-keys spec [:metric :normalized?])
+                          extra))))
+
+(defn default-space
+  "The EmbeddingSpace of the global provider, whose vectors land in the
+   default (unnamed) collection: the spec it was set with (impl, model, exact
+   digest), its own dimension and the same revisions as `space-for-resolved`,
+   plus `extra` from the vector store. Nil when no global provider is set or
+   it was set without a spec, whose space nobody can name."
+  ([] (default-space nil))
+  ([extra]
+   (when-let [provider (chroma/get-embedding-provider)]
+     (spec->space (chroma/get-embedding-provider-spec)
+                  (chroma/embedding-dimension provider)
+                  extra))))
+
+(m/=> default-space [:function
+                     [:=> [:cat] [:maybe space/EmbeddingSpace]]
+                     [:=> [:cat [:maybe [:map-of :keyword :any]]] [:maybe space/EmbeddingSpace]]])
+
 (defn space-for-resolved
   "The EmbeddingSpace the vectors of `resolved` (a `resolve-provider-for-type`
    map) live in: provider impl, model, exact digest, dimension, query-template
    and document-serializer revisions, plus `extra` from the vector store (its
-   :metric, :normalized?). Nil when the provider comes from no configured spec
-   (the global fallback), whose space nobody can name."
+   :metric, :normalized?). The global fallback answers `default-space`. Nil
+   when the provider comes from no spec, whose space nobody can name."
   ([resolved] (space-for-resolved resolved nil))
   ([{:keys [provider-key dimension]} extra]
-   (when-let [spec (get-in (embedder-config) [:providers provider-key])]
-     (when (and (:impl spec) (:model spec) (or dimension (:dimension spec)))
-       (space/->space (merge {:provider           (:impl spec)
-                              :model              (str (:model spec))
-                              :digest             (resolve-digest spec)
-                              :dimension          (or dimension (:dimension spec))
-                              :query-template-rev (query-template-rev)
-                              :doc-serializer-rev doc-serializer-rev}
-                             (select-keys spec [:metric :normalized?])
-                             extra))))))
+   (if (= :fallback provider-key)
+     (default-space extra)
+     (when-let [spec (get-in (embedder-config) [:providers provider-key])]
+       (spec->space spec (or dimension (:dimension spec)) extra)))))
 
 (m/=> space-for-resolved [:function
                           [:=> [:cat [:map-of :keyword :any]] [:maybe space/EmbeddingSpace]]

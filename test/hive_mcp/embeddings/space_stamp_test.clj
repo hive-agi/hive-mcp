@@ -40,6 +40,8 @@
 (def ^:private contracted
   #{#'space/space->metadata #'space/metadata->space #'space/admit
     #'conn/get-or-create-named-collection #'service/space-for-resolved
+    #'conn/get-or-create-collection #'service/default-space
+    #'active/set-embedding-provider! #'active/get-embedding-provider-spec
     #'ollama/digest-in-tags})
 
 (def ^:private ^:dynamic *transport* nil)
@@ -47,6 +49,7 @@
 (defn- stub-ports [f]
   (let [prior-t (client/transport)
         prior-p (active/get-embedding-provider)
+        prior-s (active/get-embedding-provider-spec)
         t       (transport/->transport)]
     (client/set-transport! t)
     (active/set-embedding-provider! (fixtures/->MockEmbedder dim))
@@ -66,7 +69,7 @@
         (registry/clear-cache!)
         (client/set-transport! prior-t)
         (if prior-p
-          (active/set-embedding-provider! prior-p)
+          (active/set-embedding-provider! prior-p prior-s)
           (active/reset-embedding-provider!))))))
 
 (use-fixtures :each stub-ports)
@@ -184,6 +187,67 @@
   (is (= ["e1"] (mapv :id (search/search-similar "alpha" :type "note" :limit 3)))))
 
 ;; =============================================================================
+;; Default (unnamed) collection and the batch path
+;; =============================================================================
+
+(def ^:private global-spec
+  {:impl :ollama :model "stub-embed" :host "http://stub.invalid"})
+
+(defn- default-name [] (:collection-name (conn/get-config)))
+
+(defn- name-global-provider! []
+  (active/set-embedding-provider! (fixtures/->MockEmbedder dim) global-spec))
+
+(def ^:private batch
+  [{:id "b1" :type "note" :content "alpha"} {:id "b2" :type "note" :content "beta"}])
+
+(deftest default-collection-is-stamped
+  (testing "a global provider set with a spec names the default space"
+    (is (nil? (service/default-space {:metric :l2})) "no spec, no nameable space")
+    (name-global-provider!)
+    (is (= (space-of {}) (service/default-space {:metric :l2}))))
+  (testing "the unguarded accessor stamps the collection it creates"
+    (is (= (default-name) (:name (conn/get-or-create-collection))))
+    (is (= (space-of {}) (space/metadata->space (stored-metadata (default-name))))))
+  (testing "the guarded arity admits the stamped space and refuses another"
+    (is (some? (conn/get-or-create-collection (space-of {}))))
+    (let [data (thrown-data #(conn/get-or-create-collection (space-of {:model "other-embed"})))]
+      (is (= :embedding-space-mismatch (:error data)))
+      (is (= (default-name) (:collection data))))))
+
+(deftest default-collection-of-an-unnamed-provider-stays-unstamped
+  (is (= (default-name) (:name (conn/get-or-create-collection))))
+  (is (nil? (space/metadata->space (stored-metadata (default-name))))))
+
+(deftest batch-index-stamps-on-create
+  (name-global-provider!)
+  (is (= ["b1" "b2"] (crud/index-memory-entries! batch)))
+  (is (= (space-of {}) (space/metadata->space (stored-metadata (default-name))))
+      "the batch that creates the default collection stamps it")
+  (is (= 2 (transport/record-count *transport*))))
+
+(deftest batch-index-refuses-a-mismatched-space
+  (name-global-provider!)
+  (crud/index-memory-entries! batch)
+  (reset! digest "sha256:bbbb")
+  (service/set-digest-resolver! (fn [_spec] @digest))
+  (testing "refused through the cached collection and after the cache is dropped"
+    (doseq [drop-cache? [false true]]
+      (when drop-cache? (conn/reset-collection-cache!))
+      (let [data (thrown-data #(crud/index-memory-entries! [{:id "b3" :type "note" :content "gamma"}]))]
+        (is (= :embedding-space-mismatch (:error data)))
+        (is (= [:digest] (:differs-on data)))
+        (is (= (default-name) (:collection data))))))
+  (is (= 2 (transport/record-count *transport*)) "nothing was written"))
+
+(deftest batch-index-admits-a-legacy-default-collection
+  (gate/deref-write (client/create-collection (default-name) :metadata {:dimension dim}))
+  (name-global-provider!)
+  (is (= ["b1" "b2"] (crud/index-memory-entries! batch)))
+  (is (nil? (space/metadata->space (stored-metadata (default-name))))
+      "admitting a legacy collection never rewrites it"))
+
+;; =============================================================================
 ;; Space of a resolved provider; Ollama digest
 ;; =============================================================================
 
@@ -193,8 +257,12 @@
     (testing "a declared digest wins over the port"
       (cfg/with-config (assoc-in embedder-config [:embedder :providers :stub-8 :digest] "sha256:decl")
         (is (= "sha256:decl" (:digest (service/space-for-resolved resolved))))))
-    (testing "the global fallback has no nameable space"
-      (is (nil? (service/space-for-resolved {:provider-key :fallback :dimension dim}))))))
+    (testing "the global fallback has no nameable space until its provider is set with a spec"
+      (is (nil? (service/space-for-resolved {:provider-key :fallback :dimension dim})))
+      (active/set-embedding-provider! (fixtures/->MockEmbedder dim)
+                                      {:impl :ollama :model "stub-embed" :host "http://stub.invalid"})
+      (is (= (space-of {})
+             (service/space-for-resolved {:provider-key :fallback :dimension dim} {:metric :l2}))))))
 
 (deftest ollama-digest-from-tags
   (let [tags {:models [{:name "qwen3-embedding:4b" :model "qwen3-embedding:4b" :digest "d4b"}
