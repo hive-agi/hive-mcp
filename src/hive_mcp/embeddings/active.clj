@@ -36,6 +36,10 @@
   [provider]
   (proto/embedding-dimension provider))
 
+;; Provider is the value-object schema defined in embeddings.protocol, so the
+;; dispatch type is left loose exactly as the sibling delegates do.
+(m/=> embedding-dimension [:=> [:cat :any] :int])
+
 (defonce ^:private embedding-provider (atom nil))
 (defonce ^:private embedding-provider-spec (atom nil))
 

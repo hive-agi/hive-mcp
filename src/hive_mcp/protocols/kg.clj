@@ -128,6 +128,14 @@
   (and (store-set?)
        (spi/temporal-store? (get-store))))
 
+(m/=> ensure-conn! [:=> [:cat :any] :any])
+(m/=> reset-conn! [:=> [:cat :any] :any])
+(m/=> close! [:=> [:cat :any] :any])
+(m/=> delete-database! [:=> [:cat :any :any] :any])
+(m/=> history-db [:=> [:cat :any] :any])
+(m/=> as-of-db [:=> [:cat :any :any] :any])
+(m/=> since-db [:=> [:cat :any :any] :any])
+
 ;; Metered data-path methods: the store input is loose (protocol dispatch
 ;; rejects a non-store); answers are backend values.
 (m/=> transact! [:=> [:cat :any :any] :any])

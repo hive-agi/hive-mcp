@@ -110,6 +110,15 @@
   []
   (->NoopVessel))
 
+;; IVessel method delegates: the vessel input is loose (protocol dispatch
+;; rejects a non-vessel); answers are the port's documented types.
+(m/=> vessel-id [:=> [:cat :any] :keyword])
+(m/=> capabilities [:=> [:cat :any] [:set :keyword]])
+(m/=> resolve-context [:=> [:cat :any :any] [:maybe [:map]]])
+(m/=> addon [:=> [:cat :any :any] :any])
+(m/=> initialize! [:=> [:cat :any :any] :any])
+(m/=> shutdown! [:=> [:cat :any] :any])
+
 (def Vessel
   "Any value satisfying hive-addon.vessel/IVessel; generates NoopVessels."
   [:fn {:gen/schema :nil :gen/fmap (fn [_] (->NoopVessel))}

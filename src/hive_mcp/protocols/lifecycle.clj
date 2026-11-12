@@ -8,7 +8,8 @@
    `satisfies?` must be called on the ports vars, never on these aliases:
    an alias holds a snapshot, so an impl added later via extend-protocol
    would be invisible to it."
-  (:require [hive-spi.lifecycle.ports :as ports]))
+  (:require [hive-spi.lifecycle.ports :as ports]
+            [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -45,3 +46,16 @@
 (def IShutdownBudget ports/IShutdownBudget)
 (defn shutdown-timeout-ms "Delegates to `ports/shutdown-timeout-ms`." [budget]
   (ports/shutdown-timeout-ms budget))
+
+;; Port-method delegates: the participant input is loose (protocol dispatch
+;; rejects a non-implementer); answers are the ports' documented types.
+(m/=> shutdown-priority [:=> [:cat :any] :int])
+(m/=> shutdown-name [:=> [:cat :any] :string])
+(m/=> shutdown! [:=> [:cat :any [:map]] :any])
+(m/=> sweep-interval-s [:=> [:cat :any] :int])
+(m/=> sweep-name [:=> [:cat :any] :string])
+(m/=> sweep! [:=> [:cat :any [:map]] :any])
+(m/=> owner-id [:=> [:cat :any] :any])
+(m/=> owned-resources [:=> [:cat :any] [:or [:map] [:sequential :any]]])
+(m/=> release-all! [:=> [:cat :any] :any])
+(m/=> shutdown-timeout-ms [:=> [:cat :any] :int])

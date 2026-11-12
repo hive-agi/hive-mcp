@@ -4,7 +4,8 @@
    The protocol itself lives in hive-spi; every historical
    hive-mcp.embeddings.protocol/* name still resolves here. `satisfies?`
    must be called on the ports vars, never on these aliases."
-  (:require [hive-spi.embeddings.ports :as ports]))
+  (:require [hive-spi.embeddings.ports :as ports]
+            [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -20,6 +21,14 @@
   (ports/embed-batch provider texts))
 (defn embedding-dimension "Delegates to `ports/embedding-dimension`." [provider]
   (ports/embedding-dimension provider))
+
+;; Port-method delegates. The provider input is loose here (protocol dispatch
+;; rejects a non-provider) and malli arrives late, so these stay :any on both
+;; sides; the typed Provider\/Vector pair lives with the value-object schemas
+;; below, which this ns loads after them.
+(m/=> embed-text [:=> [:cat :any :string] [:sequential number?]])
+(m/=> embed-batch [:=> [:cat :any [:sequential :string]] [:sequential [:sequential number?]]])
+(m/=> embedding-dimension [:=> [:cat :any] :int])
 
 ;; =============================================================================
 ;; Value-object schemas for the port (shared by every embeddings namespace)

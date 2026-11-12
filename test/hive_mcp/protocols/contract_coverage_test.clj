@@ -42,9 +42,9 @@
 
 (deftest the-gate-is-not-vacuous
   (let [report (coverage/coverage {:paths ["src/hive_mcp/protocols"] :exempt {}})]
-    ;; 128: event-backbone/backbone-status (inbox slice S1').
-    (is (= 128 (count (:universe report))) "every public defn of the tree")
-    (is (= 128 (count (:covered report))))))
+    ;; 151: the protocol re-export delegate sweep (kg/lifecycle/vessel).
+    (is (= 151 (count (:universe report))) "every public defn of the tree")
+    (is (= 151 (count (:covered report))))))
 
 (deftest every-port-method-re-export-is-contracted
   (let [fs (get (m/function-schemas) 'hive-mcp.protocols.memory)]
