@@ -374,6 +374,35 @@
         (parse-long d)
         legacy-dimension))))
 
+(def impl->options
+  "Provider :impl -> (fn [secret spec] options-map). The open table that
+   replaced build-resolved's `case impl` ladder: a new provider kind adds one
+   entry here instead of a new case arm. `secret` is the secret-lookup port
+   (keyword -> value), so a caller injects it rather than this table naming
+   hive-mcp.config.core.
+
+   :ollama's :num-ctx is the provider's declared :max-tokens. Ollama sizes the
+   KV cache from it at load time, so a model loaded far above what it will be
+   asked to embed spills out of VRAM."
+  {:ollama     (fn [_secret spec]
+                 {:host    (get spec :host "http://localhost:11434")
+                  :num-ctx (:max-tokens spec)
+                  :vram-mb (:vram-mb spec)})
+   :openrouter (fn [secret _spec] {:api-key (secret :openrouter-api-key)})
+   :openai     (fn [secret _spec] {:api-key (secret :openai-api-key)})
+   :venice     (fn [secret _spec] {:api-key (secret :venice-api-key)})})
+
+(defn provider-options
+  "The EmbeddingConfig options for a provider SPEC, read through the SECRET
+   lookup port. An :impl with no entry in `impl->options` gets {} and never
+   touches the port."
+  [secret spec]
+  (if-let [build (get impl->options (:impl spec))]
+    (build secret spec)
+    {}))
+
+(m/=> provider-options [:=> [:cat fn? [:map [:impl :keyword]]] [:map]])
+
 (defn- build-resolved
   "Resolved-provider map for an explicit provider-key (or the global provider
    fallback when the key has no configured spec). Shared by the type resolver
@@ -388,17 +417,7 @@
             dimension (:dimension provider-spec)
             max-toks  (:max-tokens provider-spec)
             cpt       (:chars-per-token provider-spec)
-            options   (case impl
-                        ;; :num-ctx is the provider's declared :max-tokens. Ollama
-                        ;; sizes the KV cache from it at load time, so a model loaded
-                        ;; far above what it will be asked to embed spills out of VRAM.
-                        :ollama     {:host    (get provider-spec :host "http://localhost:11434")
-                                     :num-ctx max-toks
-                                     :vram-mb (:vram-mb provider-spec)}
-                        :openrouter {:api-key (global-config/get-secret :openrouter-api-key)}
-                        :openai     {:api-key (global-config/get-secret :openai-api-key)}
-                        :venice     {:api-key (global-config/get-secret :venice-api-key)}
-                        {})
+            options   (provider-options global-config/get-secret provider-spec)
             emb-cfg   (config/->EmbeddingConfig impl model dimension options)]
         (cond-> {:provider        (registry/get-provider emb-cfg)
                  :dimension       dimension
@@ -751,24 +770,59 @@
           (string? t)  t
           :else        (pr-str t))))
 
+(defn- spec->space
+  "The space of provider `spec` at `dimension`, or nil when the spec does not
+   name an impl, a model and a dimension."
+  [spec dimension extra]
+  (when (and (:impl spec) (:model spec) dimension)
+    (space/->space (merge {:provider           (:impl spec)
+                           :model              (str (:model spec))
+                           :digest             (resolve-digest spec)
+                           :dimension          dimension
+                           :query-template-rev (query-template-rev)
+                           :doc-serializer-rev doc-serializer-rev}
+                          (select-keys spec [:metric :normalized?])
+                          extra))))
+
+(defn default-space
+  "The EmbeddingSpace of the global provider, whose vectors land in the
+   default (unnamed) collection: the spec it was set with (impl, model, exact
+   digest), its own dimension and the same revisions as `space-for-resolved`,
+   plus `extra` from the vector store. Nil when no global provider is set,
+   it was set without a spec (whose space nobody can name), or an Ollama
+   digest could not be resolved. Providers without a digest concept keep
+   their unrecorded digest and still name a space."
+  ([] (default-space nil))
+  ([extra]
+   (when-let [provider (chroma/get-embedding-provider)]
+     (let [spec  (chroma/get-embedding-provider-spec)
+           space (spec->space spec
+                              (chroma/embedding-dimension provider)
+                              extra)]
+       ;; An Ollama tag without its served digest cannot name an exact space:
+       ;; leave the default collection unstamped until resolution succeeds.
+       ;; Remote providers have no digest concept; their nil digest is the
+       ;; meaningful "unrecorded" value they had before this guard.
+       (when (or (not= :ollama (:impl spec))
+                 (:digest space))
+         space)))))
+
+(m/=> default-space [:function
+                     [:=> [:cat] [:maybe space/EmbeddingSpace]]
+                     [:=> [:cat [:maybe [:map-of :keyword :any]]] [:maybe space/EmbeddingSpace]]])
+
 (defn space-for-resolved
   "The EmbeddingSpace the vectors of `resolved` (a `resolve-provider-for-type`
    map) live in: provider impl, model, exact digest, dimension, query-template
    and document-serializer revisions, plus `extra` from the vector store (its
-   :metric, :normalized?). Nil when the provider comes from no configured spec
-   (the global fallback), whose space nobody can name."
+   :metric, :normalized?). The global fallback answers `default-space`. Nil
+   when the provider comes from no spec, whose space nobody can name."
   ([resolved] (space-for-resolved resolved nil))
   ([{:keys [provider-key dimension]} extra]
-   (when-let [spec (get-in (embedder-config) [:providers provider-key])]
-     (when (and (:impl spec) (:model spec) (or dimension (:dimension spec)))
-       (space/->space (merge {:provider           (:impl spec)
-                              :model              (str (:model spec))
-                              :digest             (resolve-digest spec)
-                              :dimension          (or dimension (:dimension spec))
-                              :query-template-rev (query-template-rev)
-                              :doc-serializer-rev doc-serializer-rev}
-                             (select-keys spec [:metric :normalized?])
-                             extra))))))
+   (if (= :fallback provider-key)
+     (default-space extra)
+     (when-let [spec (get-in (embedder-config) [:providers provider-key])]
+       (spec->space spec (or dimension (:dimension spec)) extra)))))
 
 (m/=> space-for-resolved [:function
                           [:=> [:cat [:map-of :keyword :any]] [:maybe space/EmbeddingSpace]]

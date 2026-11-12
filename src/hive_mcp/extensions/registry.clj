@@ -304,7 +304,8 @@
   "Register a full MCP tool definition for dynamic discovery.
    Tool-def must have :handler (ifn?) and satisfy the MCP root tool contract
    (`hive-addon.tool-contract/RootToolDef`): non-blank :name and :description,
-   :inputSchema of type \"object\" with at least one property. Throws ex-info
+   :inputSchema of type \"object\" with a :properties map, which may be empty
+   for a zero-argument tool (hive-addon 1.1.11). Throws ex-info
    {:type :hive-addon/root-tool-contract} otherwise; nothing is registered.
    Thread-safe, idempotent. Last-write-wins by tool name."
   [tool-def]

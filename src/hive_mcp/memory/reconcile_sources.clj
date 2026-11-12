@@ -57,7 +57,11 @@
   (vector-ids [_]
     (let [l (read-all vector-page page-size max-pages)]
       (swap! listings assoc :vector l)
-      (:ids l))))
+      (:ids l)))
+  rec/IListingCompleteness
+  (listings-complete? [_]
+    (let [{:keys [store vector]} @listings]
+      (boolean (and (:exhausted? store) (:exhausted? vector))))))
 
 (defn paged-sources
   "An IReconcileSources over STORE-PAGE and VECTOR-PAGE, each a
@@ -78,10 +82,10 @@
 
 (defn exhausted?
   "True when the last `report` over SOURCES read BOTH listings to their end,
-   so its orphan and unindexed ids are complete. False before any read."
+   so its orphan and unindexed ids are complete. False before any read.
+   The same answer as the `IListingCompleteness` port of paged sources."
   [sources]
-  (let [{:keys [store vector]} @(:listings sources)]
-    (boolean (and (:exhausted? store) (:exhausted? vector)))))
+  (rec/listings-complete? sources))
 
 (defrecord ScanSources [listing]
   rec/IReconcileSources

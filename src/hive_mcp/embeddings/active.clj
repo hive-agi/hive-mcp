@@ -30,19 +30,50 @@
   (proto/embed-batch (shared/gated-provider provider) texts))
 
 (m/=> embed-batch [:=> [:cat proto/Provider [:sequential :string]] [:sequential proto/Vector]])
-(def embedding-dimension proto/embedding-dimension)
+(defn embedding-dimension
+  "Delegates to `proto/embedding-dimension` at call time, so an impl added by
+   a later `extend` is seen."
+  [provider]
+  (proto/embedding-dimension provider))
+
+;; Provider is the value-object schema defined in embeddings.protocol, so the
+;; dispatch type is left loose exactly as the sibling delegates do.
+(m/=> embedding-dimension [:=> [:cat :any] :int])
 
 (defonce ^:private embedding-provider (atom nil))
+(defonce ^:private embedding-provider-spec (atom nil))
+
+(def ProviderSpec
+  "What names the model behind a provider: enough to tell its vector space
+   from another's. :host is where an :ollama model is served."
+  [:map
+   [:impl :keyword]
+   [:model :string]
+   [:host {:optional true} [:maybe :string]]
+   [:digest {:optional true} [:maybe :string]]])
 
 (defn set-embedding-provider!
   "Set the global embedding provider through the same gated port as the
-   registry. Wrapping is idempotent for registry-sourced providers."
-  [provider]
-  (reset! embedding-provider (some-> provider shared/gated-provider))
-  (log/info "Embedding provider set:" (type provider)))
+   registry. Wrapping is idempotent for registry-sourced providers. `spec`
+   declares the model behind it; without one the provider's vector space is
+   unnamed."
+  ([provider] (set-embedding-provider! provider nil))
+  ([provider spec]
+   (reset! embedding-provider (some-> provider shared/gated-provider))
+   (reset! embedding-provider-spec (when provider spec))
+   (log/info "Embedding provider set:" (type provider))))
 
 ;; nil clears the provider; the body ends in log/info, which returns nil.
-(m/=> set-embedding-provider! [:=> [:cat [:maybe proto/Provider]] :nil])
+(m/=> set-embedding-provider! [:function
+                               [:=> [:cat [:maybe proto/Provider]] :nil]
+                               [:=> [:cat [:maybe proto/Provider] [:maybe ProviderSpec]] :nil]])
+
+(defn get-embedding-provider-spec
+  "The spec the current embedding provider was set with, or nil."
+  []
+  @embedding-provider-spec)
+
+(m/=> get-embedding-provider-spec [:=> [:cat] [:maybe ProviderSpec]])
 
 (defn embedding-configured?
   "Check if an embedding provider is configured."
@@ -62,6 +93,7 @@
   "Reset the embedding provider atom."
   []
   (reset! embedding-provider nil)
+  (reset! embedding-provider-spec nil)
   (log/info "Embedding provider reset (was:" (type @embedding-provider) ")"))
 
 (m/=> reset-embedding-provider! [:=> [:cat] :nil])

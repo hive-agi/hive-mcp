@@ -42,7 +42,8 @@
    [:spawn-mode :keyword]
    [:model [:maybe :string]]
    [:token-budget :any]
-   [:turn-budget {:optional true} :any]])
+   [:turn-budget {:optional true} :any]
+   [:time-budget-ms {:optional true} :any]])
 
 (def LingValue
   "A Ling record, as `->ling` builds it. The six identity fields are always
@@ -64,7 +65,8 @@
            :spawn-mode (or (:ling/spawn-mode slave) :claude)
            :model (:ling/model slave)
            :token-budget (:ling/token-budget slave)}
-    (:ling/turn-budget slave) (assoc :turn-budget (:ling/turn-budget slave))))
+    (:ling/turn-budget slave) (assoc :turn-budget (:ling/turn-budget slave))
+    (:ling/time-budget-ms slave) (assoc :time-budget-ms (:ling/time-budget-ms slave))))
 
 (m/=> slave->ling-opts [:=> [:cat [:maybe :map]] LingOpts])
 
@@ -172,6 +174,7 @@
      :ling-id (:id ling)
      :token-budget (:token-budget ling)
      :turn-budget (:turn-budget ling)
+     :time-budget-ms (:time-budget-ms ling)
      :max-budget-usd (or (:max-budget-usd opts) (:max-budget-usd ling))
      :grant (:grant opts)
      :task (:task opts)}))
@@ -403,7 +406,7 @@
       :else nil)))
 
 (defn- stamp-spawn-metadata!
-  [{:keys [mode effective-model token-budget turn-budget] :as plan} slave-id headless?]
+  [{:keys [mode effective-model token-budget turn-budget time-budget-ms] :as plan} slave-id headless?]
   (let [now (System/currentTimeMillis)
         provider (provider-name plan)]
     (spawn-store/update-slave! (spawn-store/get-store)
@@ -417,6 +420,8 @@
                                  (assoc :ling/token-budget token-budget)
                                  (some? turn-budget)
                                  (assoc :ling/turn-budget turn-budget)
+                                 (some? time-budget-ms)
+                                 (assoc :ling/time-budget-ms time-budget-ms)
                                  provider
                                  (assoc :ling/provider provider)
                                  headless?
@@ -473,23 +478,44 @@
                             :effective-model effective-model
                             :enriched-task enriched-task})))
 
+(def ^:private overlay-contributor-ns
+  "Namespace of the extension keys that name further spawn-overlay contributors."
+  "spawn.opts-overlay")
+
+(defn- spawn-overlay-fns
+  "The spawn-overlay contributors in application order: the function under
+   :spawn/opts-overlay first, then every function registered under a key in
+   the `spawn.opts-overlay` namespace (e.g. :spawn.opts-overlay/router),
+   sorted by key name."
+  []
+  (let [single (ext/get-extension :spawn/opts-overlay)
+        extra  (->> (ext/registered-keys)
+                    (filter #(and (keyword? %)
+                                  (= overlay-contributor-ns (namespace %))))
+                    (sort-by name)
+                    (keep ext/get-extension))]
+    (cond->> (vec extra)
+      single (into [single]))))
+
 (defn- apply-spawn-overlay
   "Generic spawn-opts extension seam. Strips the internal :spawn/request key
-   from opts, then applies any extension registered under :spawn/opts-overlay
-   as (f opts ctx) -> opts'. Fail-soft: nil or a throw falls back to the
-   stripped opts. Applied once in spawn! so plan + executor both see merged opts."
+   from opts, then applies each contributor of `spawn-overlay-fns` in order as
+   (f opts ctx) -> opts', each seeing the opts the one before it returned.
+   Fail-soft per contributor: nil or a throw keeps the opts it was given.
+   Applied once in spawn! so plan + executor both see merged opts."
   [opts ling]
   (let [req  (:spawn/request opts)
         opts (dissoc opts :spawn/request)]
-    (if-let [f (ext/get-extension :spawn/opts-overlay)]
-      (or (r/rescue nil
-            (f opts {:request req
-                     :cwd (:cwd ling)
-                     :project-id (:project-id ling)
-                     :task (:task opts)
-                     :kanban-task-id (:kanban-task-id opts)}))
-          opts)
-      opts)))
+    (reduce (fn [acc f]
+              (or (r/rescue nil
+                    (f acc {:request req
+                            :cwd (:cwd ling)
+                            :project-id (:project-id ling)
+                            :task (:task acc)
+                            :kanban-task-id (:kanban-task-id acc)}))
+                  acc))
+            opts
+            (spawn-overlay-fns))))
 
 (defn- execute-spawn-plan!
   "Execute spawn effects: catchup enrichment, store pre-registration, strategy
@@ -759,6 +785,7 @@
                  (:provider opts)           (assoc :provider (:provider opts))
                  (:token-budget opts)       (assoc :token-budget (:token-budget opts))
                  (:turn-budget opts)        (assoc :turn-budget (:turn-budget opts))
+                 (:time-budget-ms opts)     (assoc :time-budget-ms (:time-budget-ms opts))
                  (some? (:kg-compress? opts)) (assoc :kg-compress? (:kg-compress? opts))
                  (some? (:verbose? opts))   (assoc :verbose? (:verbose? opts))
                  (:llm-retries opts)        (assoc :llm-retries (:llm-retries opts))

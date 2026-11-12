@@ -54,6 +54,7 @@
   {:paths ["src/hive_mcp/memory/domain.clj"
            "src/hive_mcp/memory/ids.clj"
            "src/hive_mcp/memory/ingest_search.clj"
+           "src/hive_mcp/memory/shadow_retrieval.clj"
            "src/hive_mcp/memory/synthesis_protection.clj"
            "src/hive_mcp/memory/temporal.clj"
            "src/hive_mcp/memory/type_registry.clj"

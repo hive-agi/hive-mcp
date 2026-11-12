@@ -107,6 +107,8 @@
   (let [out (reactive/refresh-surface! "analysis")]
     (is (false? (:composite out)) "nothing contributed, nothing to build")
     (is (vector? (:schema-tools out)))
+    (is (vector? (:multi-dispatch out))
+        "the multi dispatch reconcile reports the tools it re-seated")
     (is (= :surface/refresh-unavailable (get-in out [:server-tools :error]))
         "no server context must be an explicit failed Result")))
 

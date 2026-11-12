@@ -433,6 +433,112 @@
 
 (m/=> handle-reload-all [:=> [:cat [:maybe :map]] tc/McpResponse])
 
+(defn flag?
+  "Pure. Is the boolean param V set? true or \"true\", as reload-call-opts reads force."
+  [v]
+  (contains? #{true "true"} v))
+
+(m/=> flag? [:=> [:cat :any] :boolean])
+
+(defn inject-undo-gate
+  "Pure. Whether `hot inject` may mount given UNDO (eject-fallback/undo-report)
+   and the caller's flags: {:refuse msg} or {:warning msg-or-nil}.
+
+   Refused before anything is mounted when:
+     - require_undo is set and the undo would not go through hive-addon's
+       eject!/plug-out! (:mode :bridge: registry, surface and dir claims
+       released, drained, cascading). No mode undoes the classpath or the
+       loaded namespaces; :hot/undo :retains says so in every answer;
+     - the image cannot undo it at all (:mode :none) and force is not set.
+   Otherwise it proceeds, and a fallback-only undo is stated as :warning.
+   Flags are true or \"true\" (`flag?`)."
+  [undo {:keys [require_undo force]}]
+  (cond
+    (and (flag? require_undo) (not= :bridge (:mode undo)))
+    {:refuse (str "inject refused before mounting (require_undo needs hive-addon's "
+                  "eject!/plug-out!): " (:message undo))}
+
+    (and (not (:undoable? undo)) (not (flag? force)))
+    {:refuse (str "inject refused before mounting: " (:message undo)
+                  ". Pass force=true to inject anyway and restart to remove it.")}
+
+    (= :bridge (:mode undo)) {:warning nil}
+    :else                    {:warning (:message undo)}))
+
+(m/=> inject-undo-gate [:=> [:cat eject-fallback/UndoReport [:maybe :map]]
+                        [:or [:map [:refuse :string]] [:map [:warning [:maybe :string]]]]])
+
+(def InjectPorts
+  "What `run-inject` reaches the image through. Stubbed in tests, so a default
+   suite never mounts anything (convention 20261111105238-0ceaa524)."
+  [:map
+   [:inject! [:maybe ifn?]]
+   [:host ifn?]
+   [:specs ifn?]
+   [:undo ifn?]
+   [:hot-init! ifn?]
+   [:reload-opts ifn?]
+   [:refresh! ifn?]])
+
+(defn default-inject-ports
+  "The InjectPorts the tool runs on, resolved now, each local one through its var."
+  []
+  {:inject!     (soft 'hive-addon.hot.inject/inject!)
+   :host        #'host
+   :specs       #'effective-specs
+   :undo        #'eject-fallback/undo-preflight
+   :hot-init!   (fn [h specs] (when (seq specs)
+                                (ensure-hot-init! ((soft 'hive-addon.hot/plan) h specs))))
+   :reload-opts #'reload-opts
+   :refresh!    #'surface-refreshed!})
+
+(m/=> default-inject-ports [:=> [:cat] InjectPorts])
+
+(defn run-inject
+  "`hot inject` over PORTS: preflight the undo (`inject-undo-gate`) and refuse
+   BEFORE inject! is called, or mount and answer the report with :hot/undo
+   (the undo report), :hot/undo-mode (its mode keyword, the shape older
+   callers read) and, for a fallback-only undo, :warning."
+  [{:keys [inject!] :as ports} {:keys [path resolve_deps] :as params}]
+  {:pre [(m/validate InjectPorts ports)]}
+  (if-not inject!
+    (mcp-error (str "hive-addon.hot.inject is not on the classpath — injection ships in "
+                    "hive-addon >= 0.3.8; bump the pin (or point local.deps.edn at "
+                    "../hive-addon) and restart the server."))
+    (let [specs ((:specs ports))
+          h     ((:host ports))]
+      (if (nil? h)
+        (mcp-error "mount-host adapter unavailable")
+        (let [undo ((:undo ports) h)
+              gate (inject-undo-gate undo params)]
+          (if-let [refusal (:refuse gate)]
+            (do (log/info "hot inject refused by undo preflight" {:path path :undo (:mode undo)})
+                (mcp-json {:ok? false :hot/refused? true :reason "hot/undo-unavailable"
+                           :message refusal :hot/undo undo :hot/undo-mode (:mode undo)
+                           :path path}))
+            (let [hot-init ((:hot-init! ports) h specs)
+                  opts     (cond-> ((:reload-opts ports))
+                             (flag? resolve_deps) (assoc :resolve-deps? true))
+                  report   (inject! h specs path opts)
+                  surface  ((:refresh! ports))
+                  result   (report-with-surface
+                            (cond-> (assoc (select-keys report inject-report-keys)
+                                           :mounted (mapv #(select-keys % mount-result-keys)
+                                                          (:mounted report))
+                                           :hot/undo undo
+                                           :hot/undo-mode (:mode undo)
+                                           :hive-hot hot-init)
+                              (:warning gate) (assoc :warning (:warning gate)))
+                            surface)]
+              (log/info "hot inject" {:path path
+                                      :ok? (:ok? result)
+                                      :undo (:mode undo)
+                                      :injected (:hot/injected report)
+                                      :already (:hot/already-mounted report)})
+              (mcp-json result))))))))
+
+(m/=> run-inject [:=> [:cat :map [:maybe :map]] tc/McpResponse])
+
 (defn handle-inject
   "Mount an addon that was NOT on the classpath at boot.
 
@@ -442,43 +548,21 @@
    with the same config resolver the boot used, registered with hive-hot, and
    advertised on the MCP surface. An addon already mounted is left alone.
 
+   Before mounting, an undo PREFLIGHT reads how this image could take the
+   inject back (`eject-fallback/undo-preflight`) and `inject-undo-gate`
+   decides (see `run-inject`, which this runs over `default-inject-ports`).
+
    The classpath is extended on the highest DynamicClassLoader above this
    thread; a thread without one refuses rather than mounting code the next
    require could not find. Surface failures are reported separately from mount."
-  [{:keys [path resolve_deps]}]
+  [{:keys [path] :as params}]
   (cond
     (not (bridge-available?)) (mcp-error unavailable-msg)
 
     (nil? path)
     (mcp-error "path is required — a project dir (deps.edn :paths), a source dir, or a jar")
 
-    :else
-    (if-let [inject! (soft 'hive-addon.hot.inject/inject!)]
-      (let [specs (effective-specs)
-            h     (host)]
-        (if (nil? h)
-          (mcp-error "mount-host adapter unavailable")
-          (let [hot-init (when (seq specs)
-                           (ensure-hot-init! ((soft 'hive-addon.hot/plan) h specs)))
-                opts     (cond-> (reload-opts)
-                           resolve_deps (assoc :resolve-deps? true))
-                report   (inject! h specs path opts)
-                surface  (surface-refreshed!)
-                result   (report-with-surface
-                          (assoc (select-keys report inject-report-keys)
-                                 :mounted (mapv #(select-keys % mount-result-keys)
-                                                (:mounted report))
-                                 :hot/undo (eject-fallback/undo-mode)
-                                 :hive-hot hot-init)
-                          surface)]
-            (log/info "hot inject" {:path path
-                                    :ok? (:ok? result)
-                                    :injected (:hot/injected report)
-                                    :already (:hot/already-mounted report)})
-            (mcp-json result))))
-      (mcp-error (str "hive-addon.hot.inject is not on the classpath — injection ships in "
-                      "hive-addon >= 0.3.8; bump the pin (or point local.deps.edn at "
-                      "../hive-addon) and restart the server.")))))
+    :else (run-inject (default-inject-ports) params)))
 
 (m/=> handle-inject [:=> [:cat [:maybe :map]] tc/McpResponse])
 
@@ -1164,7 +1248,10 @@
         "roots even when disk is unchanged), reload-all (every "
         "mounted addon with reloadable source, in dependency order; the rest are "
         "reported under :skipped with a reason), inject (mount an addon that was NOT on "
-        "the classpath at boot: a project dir, source dir or jar), eject (plug an addon "
+        "the classpath at boot: a project dir, source dir or jar; it first checks how the image could "
+        "undo it and answers :hot/undo (what an eject would retain until a restart), refusing when "
+        "nothing can undo it unless force, or when require_undo asks for hive-addon's eject! and the "
+        "image lacks it), eject (plug an addon "
         "OUT by id or by the path it was injected from; refused with :hot/blocking while "
         "mounted addons depend on it unless cascade, which remounts them without it; what "
         "cannot be removed, e.g. classpath URLs, is reported as retained), unmount (eject on "
@@ -1203,10 +1290,12 @@
              :description "[inject/eject/unmount] Absolute path of the addon: a project dir (its deps.edn :paths go on the classpath), a source dir, or a jar. inject mounts its META-INF/hive-addons manifests (addons already mounted are left alone); eject plugs out what was injected from it."}
      "resolve_deps" {:type "boolean"
                      :description "[inject] Also hand the project's deps.edn :deps to clojure.repl.deps/add-libs before mounting (needs a tools.deps basis in the running image). Default false."}
+     "require_undo" {:type "boolean"
+                     :description "[inject] Refuse before mounting unless hive-addon's eject!/plug-out! can take the inject back out (registry, surface and hive-hot dir claims released, drained, cascading). No undo removes classpath entries or loaded namespaces: :hot/undo :retains lists what stays until a restart. Without it an inject that only the host-native fallback can undo proceeds with a :warning, and one nothing can undo is refused unless force. true or \"true\". Every inject answer carries :hot/undo {mode undoable? drains? cascades? retains restart-required? message} and :hot/undo-mode."}
      "cascade" {:type "boolean"
                 :description "[eject/unmount] Also tear down the mounted addons that depend on the target and remount them without it. Default false: such an eject is refused."}
      "force" {:type "boolean"
-              :description "[reload] Re-read every file under the addon's source roots, and reload their dependents, even when nothing changed on disk: repairs an image that diverged from its mounted source (a load-file from another checkout). [eject/unmount] Plug out even when calls are still in flight after drain_ms (the report says :forced?). [evict] Also evict a pinned or eager addon. [pin] Allow :lazy on an addon with no surface a stub could advertise. Default false."}
+              :description "[reload] Re-read every file under the addon's source roots, and reload their dependents, even when nothing changed on disk: repairs an image that diverged from its mounted source (a load-file from another checkout). [eject/unmount] Plug out even when calls are still in flight after drain_ms (the report says :forced?). [evict] Also evict a pinned or eager addon. [pin] Allow :lazy on an addon with no surface a stub could advertise. [inject] Mount even when this image cannot undo the inject (only a restart removes it). Default false."}
      "drain_ms" {:type "integer"
                  :description "[eject/unmount] How long to wait for the addon's calls in flight before teardown; new calls are refused meanwhile. Still running after it: refused as busy (nothing torn down) unless force. Default 30000."}
      "policy" {:type "string"
