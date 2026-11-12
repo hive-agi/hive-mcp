@@ -123,17 +123,27 @@
 
 (m/=> refresh-agent-tools! [:=> [:cat] AgentRefresh])
 
+(defn reconcile-multi-dispatch!
+  "Re-seat the `multi` dispatch entries that still hold a :multi/core seed the
+   advertised surface has replaced (an addon claim or a rebuilt composite with
+   no :multi/tool hook of its own). Resolved at call time: multi.registry is
+   not a load-time dependency of this namespace. Returns the re-seated names."
+  []
+  (vec (rescue [] ((requiring-resolve 'hive-mcp.multi.registry/reconcile-core-dispatch!)))))
+
 (defn refresh-surface!
   "Bring the advertised surface up to date after a contribution to
    `tool-name` (nil: no composite to rebuild): rebuild its composite, re-drain
    schema-extensions, refresh every tool surface and the delegation registry
-   from the one table. Each leg is rescued on its own; returns what each did,
-   including an explicit failed agent-tools report when the refresh aborts."
+   from the one table, then re-seat `multi` dispatch onto that same table.
+   Each leg is rescued on its own; returns what each did, including an
+   explicit failed agent-tools report when the refresh aborts."
   [tool-name]
-  {:composite    (some? (rescue nil (rebuild-composite! tool-name)))
-   :schema-tools (rescue [] (redrain-schema-extensions!))
-   :server-tools (refresh-server-tools!)
-   :agent-tools  (refresh-agent-tools!)})
+  (let [out {:composite    (some? (rescue nil (rebuild-composite! tool-name)))
+             :schema-tools (rescue [] (redrain-schema-extensions!))
+             :server-tools (refresh-server-tools!)
+             :agent-tools  (refresh-agent-tools!)}]
+    (assoc out :multi-dispatch (reconcile-multi-dispatch!))))
 
 (m/=> refresh-surface!
       [:=> [:cat [:maybe :string]]
@@ -141,7 +151,10 @@
         [:composite :boolean]
         [:schema-tools [:vector :string]]
         [:server-tools SurfaceRefresh]
-        [:agent-tools AgentRefresh]]])
+        [:agent-tools AgentRefresh]
+        [:multi-dispatch [:vector :string]]]])
+
+(m/=> reconcile-multi-dispatch! [:=> [:cat] [:vector :string]])
 
 (defn on-contribution
   "The contribution listener: bring the surface up to date for the tool the
