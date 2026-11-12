@@ -28,7 +28,8 @@
             [hive-mcp.dsl.param-domain :as pd]
             [hive.events.multi :as ev-multi]
             [hive-mcp.tools.op-outcome :as op-outcome]
-            [malli.core :as m]))
+            [malli.core :as m]
+            [hive-mcp.batch.ref-contract :as ref-contract]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -335,7 +336,12 @@
                   (if-let [parsed (parse-ref v)]
                     (let [resolved (resolve-ref parsed results-by-id)]
                       (cond
-                        (identical? resolved ref-not-found)
+                        ;; By property, not identity: each :bx/c provider owns
+                        ;; its own namespaced ::ref-not-found (hive-knowledge's
+                        ;; is not this ns's), so `identical?` let a missing op
+                        ;; run with the literal "$ref:..." string.
+                        (or (identical? resolved ref-not-found)
+                            (ref-contract/not-found-sentinel? resolved))
                         (swap! refs conj {:ref v :reason :unresolved})
                         (nil? resolved)
                         (swap! refs conj {:ref v :reason :nil-resolved})
