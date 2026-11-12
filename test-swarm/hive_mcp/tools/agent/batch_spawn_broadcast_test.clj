@@ -132,6 +132,40 @@
               (is (not (:isError resp)) (:text resp))
               (is (= 2 (count (hb/calls-of b :spawn!)))))))))))
 
+(deftest a-watermark-crossed-mid-batch-defers-the-later-members
+  ;; kanban 20261014203049-18f1d5f2 (COV-OPS-heap): the soft watermark must be
+  ;; re-measured on EVERY spawn of a batch, not once per batch. The governor is
+  ;; a stub through the :agent/heap-sample port, so op 1 passes and then the
+  ;; heap is "at 93%": ops 2 and 3 must be deferred and never reach a backend.
+  (let [b      (hb/->backend :test-headless)
+        pcts   (atom [10.0 93.0 93.0])
+        sample (fn [_ _] (let [p (or (first @pcts) 93.0)]
+                           (swap! pcts #(vec (rest %)))
+                           {:level (if (>= p 90.0) :soft :ok) :heap-pct p}))]
+    (hb/with-backend :test-headless b
+      (with-extension :bx/j on-fresh-threads
+        (fn []
+          (with-extension :agent/heap-sample sample
+            (fn []
+              (let [resp (agent/handle-agent
+                          {:command "batch-spawn" :_caller_id caller
+                           :operations [(assoc base :name "heap-1")
+                                        (assoc base :name "heap-2")
+                                        (assoc base :name "heap-3")]})
+                    rows (mapv (fn [r] (json/read-str (:text (if (sequential? r) (first r) r))
+                                                      :key-fn keyword))
+                               (mapv :result
+                                     (:results (json/read-str (:text resp) :key-fn keyword))))]
+                (is (not (:isError resp)) (:text resp))
+                (testing "the first member spawned normally"
+                  (is (:success (first rows)) (pr-str (first rows)))
+                  (is (= 1 (count (hb/calls-of b :spawn!))) "only op 1 reached the backend"))
+                (testing "later members deferred on the freshly re-read watermark"
+                  (doseq [r (rest rows)]
+                    (is (:deferred r) (pr-str r))
+                    (is (= "heap-pressure" (:reason r)) (pr-str r))
+                    (is (= "soft" (:level r)) (pr-str r))))))))))))
+
 (deftest with-no-gate-contributed-core-spawns-as-before
   (let [b (hb/->backend :test-headless)]
     (hb/with-backend :test-headless b

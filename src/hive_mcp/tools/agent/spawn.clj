@@ -28,7 +28,8 @@
             [malli.core :as m]
             [hive-mcp.tools.result-bridge :as rb]
             [hive-mcp.context.request :as request-ctx]
-            [hive-mcp.agent.ling.spawn :as spawn-impl]))
+            [hive-mcp.agent.ling.spawn :as spawn-impl]
+            [hive-mcp.extensions.registry :as ext]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -63,6 +64,21 @@
        "to spawn agents on your behalf."))
 
 
+(defn- heap-sample
+  "Sample the JVM's heap pressure: the governor's own `check` (`nil` watermark,
+   resolved lazily so hive-mcp still carries no static dependency on hive-cache),
+   or nil when no governor is on the classpath.
+
+   The :agent/heap-sample extension wins when one is registered, the same way
+   :agent/spawn-gate does, so a test injects a stub through the port instead of
+   driving a real JVM into pressure. Either way the sample is taken afresh on
+   EVERY spawn, which is what lets a later member of a batch defer once an
+   earlier member's launch has crossed the soft watermark."
+  []
+  (if-let [sample (ext/get-extension :agent/heap-sample)]
+    sample
+    (requiring-resolve 'hive-cache.mem-guard/check)))
+
 (defn- heap-pressure-defer
   "Layer 4 OOM backpressure: best-effort heap-headroom admission check.
    Returns a {:level :heap-pct} map when a new spawn should be DEFERRED
@@ -90,7 +106,7 @@
                                         :env "HIVE_MCP_SWARM_HEAP_ADMISSION_DISABLED"
                                         :parse #(Boolean/parseBoolean %)
                                         :default false)
-      (when-let [check (requiring-resolve 'hive-cache.mem-guard/check)]
+      (when-let [check (heap-sample)]
         (let [soft (config/get-service-value :swarm :heap-admission-soft
                                              :env "HIVE_MCP_SWARM_HEAP_ADMISSION_SOFT"
                                              :parse parse-double
