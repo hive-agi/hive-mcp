@@ -139,12 +139,20 @@
                (when-let [f (requiring-resolve 'hive-mcp.tools.registry/advertised-tool-defs)]
                  (f)))))
 
+(defn- handler-value
+  "The fn a handler names: a var compares by the value it holds, so the seed
+   (which registers `@v`) and an advertised surface carrying the var itself
+   are the same handler."
+  [h]
+  (if (var? h) @h h))
+
 (defn dispatch-divergences
   "Coherence check between the advertised tool surface and the multi dispatch
    registry. Returns a vector of {:tool name :advertised-handler h :dispatch-owner o}
    for every tool whose multi-dispatch entry is still :multi/core-owned while its
    advertised handler differs from that seed — an addon override that never reached
-   `multi` (no reconciling :multi/tool hook).
+   `multi` (no reconciling :multi/tool hook). Handlers compare by value: a var
+   and the fn it holds are the same handler.
 
    Zero-arity reads `advertised-surface`, the surface the server actually serves,
    so a name an addon CLAIMS over core is compared with the addon's handler.
@@ -158,7 +166,7 @@
                  (let [entry (dispatch-lookup name)]
                    (when (and entry
                               (= :multi/core (:owner entry))
-                              (not= handler (:handler entry)))
+                              (not= (handler-value handler) (handler-value (:handler entry))))
                      {:tool name
                       :advertised-handler handler
                       :dispatch-owner (:owner entry)}))))
@@ -181,6 +189,25 @@
      divs)))
 
 (m/=> check-dispatch-coherence! [:function [:=> [:cat] [:vector :map]] [:=> [:cat [:sequential :map]] [:vector :map]]])
+
+(defn reconcile-core-dispatch!
+  "Re-seat every divergence (see dispatch-divergences) so `multi` dispatches the
+   handler the server advertises. The entry stays :multi/core-owned, so an
+   addon's own :multi/tool hook still overrides it. Addon-owned entries and
+   tools multi never seeded are left alone. Zero-arity reconciles against
+   `advertised-surface`. Returns the re-seated tool names; never throws."
+  ([] (reconcile-core-dispatch! (advertised-surface)))
+  ([advertised-tools]
+   (rescue []
+           (into []
+                 (keep (fn [{:keys [tool advertised-handler]}]
+                         (when (#{:ok :replaced}
+                                (r-tools/register! :multi/core tool
+                                                   {:handler (handler-value advertised-handler)}))
+                           tool)))
+                 (dispatch-divergences advertised-tools)))))
+
+(m/=> reconcile-core-dispatch! [:function [:=> [:cat] [:vector :string]] [:=> [:cat [:sequential :map]] [:vector :string]]])
 
 (defn lookup-batchable-or-default
   "Return the explicit Batchable record for a tool, or a DefaultBatchableAdapter

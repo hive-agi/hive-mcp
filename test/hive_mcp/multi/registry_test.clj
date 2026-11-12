@@ -120,6 +120,47 @@
                    [{:name "reconciled" :handler :addon-fn}] lookup))
           "an addon-owned dispatch entry is never a divergence"))))
 
+(defn- core-handler-fixture [_params] :core)
+
+(deftest dispatch-divergences-compares-vars-by-their-value
+  (testing "A var advertised for the fn the seed dispatches is the same handler, not a divergence"
+    (let [lookup {"same-var" {:owner :multi/core :handler core-handler-fixture}
+                  "var-seed" {:owner :multi/core :handler #'core-handler-fixture}}]
+      (is (empty? (registry/dispatch-divergences
+                   [{:name "same-var" :handler #'core-handler-fixture}
+                    {:name "var-seed" :handler core-handler-fixture}]
+                   lookup))
+          "var and deref'd fn on either side compare equal")
+      (is (= ["same-var"]
+             (mapv :tool (registry/dispatch-divergences
+                          [{:name "same-var" :handler (constantly :addon)}] lookup)))
+          "a genuinely different handler is still flagged"))))
+
+(deftest reconcile-core-dispatch-reseats-diverging-core-entries
+  (testing "Every divergence is re-seated under :multi/core with the advertised handler, so multi dispatches what the server advertises and an addon :multi/tool can still override it"
+    (with-fresh-registry
+      (fn []
+        (r-tools/reset-for-test!)
+        (r-tools/register! :multi/core "shadowed" {:handler (constantly :core)})
+        (r-tools/register! :multi/core "same" {:handler core-handler-fixture})
+        (r-tools/register! "some.addon" "owned" {:handler (constantly :owned)})
+        (let [addon-fn (constantly :addon)
+              out (registry/reconcile-core-dispatch!
+                   [{:name "shadowed" :handler addon-fn}
+                    {:name "same" :handler #'core-handler-fixture}
+                    {:name "owned" :handler (constantly :other)}
+                    {:name "unseeded" :handler addon-fn}])]
+          (is (= ["shadowed"] out) "only the diverging core entry is re-seated")
+          (is (= :addon ((:handler (r-tools/lookup "shadowed")) {})) "multi now dispatches the advertised handler")
+          (is (= :multi/core (:owner (r-tools/lookup "shadowed"))) "still core-owned, so still overridable")
+          (is (= :owned ((:handler (r-tools/lookup "owned")))) "an addon-owned entry is never touched")
+          (is (nil? (r-tools/lookup "unseeded")) "nothing is seeded for a tool multi never had")
+          (is (empty? (registry/dispatch-divergences
+                       [{:name "shadowed" :handler addon-fn}]))
+              "no divergence is left after the reconcile")
+          (is (= :replaced (r-tools/register! "hive.agent" "shadowed" {:handler (constantly :late)}))
+              "a later addon :multi/tool still overrides the re-seated entry"))))))
+
 (deftest check-dispatch-coherence-returns-divergences
   (testing "check-dispatch-coherence! (1-arg) returns the divergence vector using the live registry lookup"
     (with-fresh-registry
