@@ -185,8 +185,8 @@
 
 (deftest system-gate-is-not-vacuous
   (let [report (coverage/coverage {:paths ["src/hive_mcp/system"]})]
-    (is (= 55 (count (:universe report))) "every public defn of the tree")
-    (is (= 55 (count (:covered report))))))
+    (is (= 56 (count (:universe report))) "every public defn of the tree")
+    (is (= 56 (count (:covered report))))))
 
 (deftest every-system-contract-generates-both-sides
   (doseq [ns-sym '[hive-mcp.system.registry hive-mcp.system.addon-hot hive-mcp.system.keepalive

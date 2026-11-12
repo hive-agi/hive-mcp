@@ -24,7 +24,8 @@
             [hive-mcp.batch :as batch]
             [hive-mcp.batch.ref-contract :as contract]
             [hive-mcp.test.stub.batch-extensions :as stub]
-            [hive-schemas.test :refer [deftrifecta-from-schema]]))
+            [hive-schemas.test :refer [deftrifecta-from-schema]]
+            [hive-mcp.extensions.registry :as ext]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -135,6 +136,28 @@
         (is (identical? batch/ref-not-found
                         (batch/resolve-ref {:op-id "missing" :path ["data"]}
                                            contract/sample-results)))))))
+
+(deftest missing-op-is-broken-whatever-sentinel-the-provider-returns
+  (testing "classify-op-refs marks a $ref to a missing op :unresolved even when the installed :bx/c answers with ITS OWN namespaced sentinel — hive-knowledge.agent.multi-batch returns :hive-knowledge.agent.multi-batch/ref-not-found, and an identity check against batch/ref-not-found let that op run with the literal \"$ref:...\" string in its params (kanban 20260729122005-6b70ccd0)"
+    (stub/with-batch-extensions
+      (fn []
+        (let [foreign  :hive-knowledge.agent.multi-batch/ref-not-found
+              prior    (ext/get-extension :bx/c)
+              classify @#'batch/classify-op-refs]
+          (try
+            (ext/register! :bx/c (fn [{:keys [op-id] :as parsed} results]
+                                   (if (contains? results op-id)
+                                     (stub/resolve-ref parsed results)
+                                     foreign)))
+            (is (= {:broken-refs [{:ref "$ref:missing.data.id" :reason :unresolved}]}
+                   (classify {:id "b" :tool "memory" :command "get"
+                              :entry_id "$ref:missing.data.id"}
+                             contract/sample-results)))
+            (testing "a ref to a present op is still not broken"
+              (is (nil? (classify {:id "b" :tool "memory" :command "get"
+                                   :entry_id "$ref:a.data.id"}
+                                  contract/sample-results))))
+            (finally (ext/register! :bx/c prior))))))))
 
 ;; =============================================================================
 ;; :bx/f — collect-ref-op-ids

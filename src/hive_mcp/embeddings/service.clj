@@ -374,6 +374,35 @@
         (parse-long d)
         legacy-dimension))))
 
+(def impl->options
+  "Provider :impl -> (fn [secret spec] options-map). The open table that
+   replaced build-resolved's `case impl` ladder: a new provider kind adds one
+   entry here instead of a new case arm. `secret` is the secret-lookup port
+   (keyword -> value), so a caller injects it rather than this table naming
+   hive-mcp.config.core.
+
+   :ollama's :num-ctx is the provider's declared :max-tokens. Ollama sizes the
+   KV cache from it at load time, so a model loaded far above what it will be
+   asked to embed spills out of VRAM."
+  {:ollama     (fn [_secret spec]
+                 {:host    (get spec :host "http://localhost:11434")
+                  :num-ctx (:max-tokens spec)
+                  :vram-mb (:vram-mb spec)})
+   :openrouter (fn [secret _spec] {:api-key (secret :openrouter-api-key)})
+   :openai     (fn [secret _spec] {:api-key (secret :openai-api-key)})
+   :venice     (fn [secret _spec] {:api-key (secret :venice-api-key)})})
+
+(defn provider-options
+  "The EmbeddingConfig options for a provider SPEC, read through the SECRET
+   lookup port. An :impl with no entry in `impl->options` gets {} and never
+   touches the port."
+  [secret spec]
+  (if-let [build (get impl->options (:impl spec))]
+    (build secret spec)
+    {}))
+
+(m/=> provider-options [:=> [:cat fn? [:map [:impl :keyword]]] [:map]])
+
 (defn- build-resolved
   "Resolved-provider map for an explicit provider-key (or the global provider
    fallback when the key has no configured spec). Shared by the type resolver
@@ -388,17 +417,7 @@
             dimension (:dimension provider-spec)
             max-toks  (:max-tokens provider-spec)
             cpt       (:chars-per-token provider-spec)
-            options   (case impl
-                        ;; :num-ctx is the provider's declared :max-tokens. Ollama
-                        ;; sizes the KV cache from it at load time, so a model loaded
-                        ;; far above what it will be asked to embed spills out of VRAM.
-                        :ollama     {:host    (get provider-spec :host "http://localhost:11434")
-                                     :num-ctx max-toks
-                                     :vram-mb (:vram-mb provider-spec)}
-                        :openrouter {:api-key (global-config/get-secret :openrouter-api-key)}
-                        :openai     {:api-key (global-config/get-secret :openai-api-key)}
-                        :venice     {:api-key (global-config/get-secret :venice-api-key)}
-                        {})
+            options   (provider-options global-config/get-secret provider-spec)
             emb-cfg   (config/->EmbeddingConfig impl model dimension options)]
         (cond-> {:provider        (registry/get-provider emb-cfg)
                  :dimension       dimension
