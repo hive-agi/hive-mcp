@@ -20,7 +20,10 @@
 (def IPersistentKGStore spi/IPersistentKGStore)
 (def ITemporalKGStore   spi/ITemporalKGStore)
 
-(def ensure-conn!   spi/ensure-conn!)
+;; Protocol methods are defn delegates, not `def` aliases: an alias captures the
+;; method fn at load time and misses any impl registered later by `extend`.
+(defn ensure-conn! "Delegates to `spi/ensure-conn!`." [store]
+  (spi/ensure-conn! store))
 
 (defn transact!
   "`hive-spi.kg.protocol/transact!`, metered as [:store/kg <backend> :transact!]."
@@ -57,12 +60,18 @@
   [store]
   (sm/kg-timed store :db-snapshot (spi/db-snapshot store)))
 
-(def reset-conn!    spi/reset-conn!)
-(def close!         spi/close!)
-(def delete-database! spi/delete-database!)
-(def history-db     spi/history-db)
-(def as-of-db       spi/as-of-db)
-(def since-db       spi/since-db)
+(defn reset-conn! "Delegates to `spi/reset-conn!`." [store]
+  (spi/reset-conn! store))
+(defn close! "Delegates to `spi/close!`." [store]
+  (spi/close! store))
+(defn delete-database! "Delegates to `spi/delete-database!`." [store confirm]
+  (spi/delete-database! store confirm))
+(defn history-db "Delegates to `spi/history-db`." [store]
+  (spi/history-db store))
+(defn as-of-db "Delegates to `spi/as-of-db`." [store tx-or-time]
+  (spi/as-of-db store tx-or-time))
+(defn since-db "Delegates to `spi/since-db`." [store tx-or-time]
+  (spi/since-db store tx-or-time))
 
 (def kg-store?         spi/kg-store?)
 (def persistent-store? spi/persistent-store?)

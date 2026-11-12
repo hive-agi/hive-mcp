@@ -30,7 +30,11 @@
   (proto/embed-batch (shared/gated-provider provider) texts))
 
 (m/=> embed-batch [:=> [:cat proto/Provider [:sequential :string]] [:sequential proto/Vector]])
-(def embedding-dimension proto/embedding-dimension)
+(defn embedding-dimension
+  "Delegates to `proto/embedding-dimension` at call time, so an impl added by
+   a later `extend` is seen."
+  [provider]
+  (proto/embedding-dimension provider))
 
 (defonce ^:private embedding-provider (atom nil))
 (defonce ^:private embedding-provider-spec (atom nil))

@@ -10,11 +10,16 @@
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
 
-(do
-  (def EmbeddingProvider ports/EmbeddingProvider)
-  (def embed-text ports/embed-text)
-  (def embed-batch ports/embed-batch)
-  (def embedding-dimension ports/embedding-dimension))
+(def EmbeddingProvider ports/EmbeddingProvider)
+
+;; Methods are defn delegates, not `def` aliases: an alias captures the method
+;; fn at load time and misses any impl registered later by map-based `extend`.
+(defn embed-text "Delegates to `ports/embed-text`." [provider text]
+  (ports/embed-text provider text))
+(defn embed-batch "Delegates to `ports/embed-batch`." [provider texts]
+  (ports/embed-batch provider texts))
+(defn embedding-dimension "Delegates to `ports/embedding-dimension`." [provider]
+  (ports/embedding-dimension provider))
 
 ;; =============================================================================
 ;; Value-object schemas for the port (shared by every embeddings namespace)

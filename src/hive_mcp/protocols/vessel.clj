@@ -35,14 +35,22 @@
 
 ;; Implementations: EmacsVessel (vessel/emacs.clj), NoopVessel (below),
 ;; TmuxVessel (hive-tmux).
-(do
-  (def IVessel vessel/IVessel)
-  (def vessel-id vessel/vessel-id)
-  (def capabilities vessel/capabilities)
-  (def resolve-context vessel/resolve-context)
-  (def addon vessel/addon)
-  (def initialize! vessel/initialize!)
-  (def shutdown! vessel/shutdown!))
+(def IVessel vessel/IVessel)
+
+;; Methods are defn delegates, not `def` aliases: an alias captures the method
+;; fn at load time and misses any impl registered later by map-based `extend`.
+(defn vessel-id "Delegates to `hive-addon.vessel/vessel-id`." [v]
+  (vessel/vessel-id v))
+(defn capabilities "Delegates to `hive-addon.vessel/capabilities`." [v]
+  (vessel/capabilities v))
+(defn resolve-context "Delegates to `hive-addon.vessel/resolve-context`." [v agent-id]
+  (vessel/resolve-context v agent-id))
+(defn addon "Delegates to `hive-addon.vessel/addon`." [v capability]
+  (vessel/addon v capability))
+(defn initialize! "Delegates to `hive-addon.vessel/initialize!`." [v config]
+  (vessel/initialize! v config))
+(defn shutdown! "Delegates to `hive-addon.vessel/shutdown!`." [v]
+  (vessel/shutdown! v))
 
 ;;; ============================================================================
 ;;; Vessel Registry (Multiple Active Vessels)
