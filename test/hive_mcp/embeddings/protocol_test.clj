@@ -29,7 +29,8 @@
 (deftest p2-chroma-alias-is-same-protocol
   (testing "active provider surface uses the relocated protocol"
     (is (identical? proto/EmbeddingProvider chroma-emb/EmbeddingProvider))
-    (is (identical? proto/embedding-dimension chroma-emb/embedding-dimension))
+    ;; embedding-dimension is a defn delegate, not an identical alias, so a
+    ;; later `extend` stays visible: behaviour is compared below instead.
     (let [calls (atom [])
           stub (reify proto/EmbeddingProvider
                  (embed-text [_ text] (swap! calls conj text) [1.0])
@@ -37,6 +38,7 @@
                  (embedding-dimension [_] 1))]
       (is (= [1.0] (chroma-emb/embed-text stub "one")))
       (is (= [[1.0]] (chroma-emb/embed-batch stub ["two"])))
+      (is (= 1 (proto/embedding-dimension stub) (chroma-emb/embedding-dimension stub)))
       (is (= ["one" "two"] @calls)))))
 
 (deftest p3-embedder-records-implement-new-protocol
