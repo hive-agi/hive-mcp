@@ -1,7 +1,9 @@
 (ns hive-mcp.system.keepalive
   "Integrant key :hive/keepalive — blocks the main thread until shutdown.
 
-   Two modes, selected by :mode config:
+   Two modes, selected by `resolve-mode`: `:signal :sigterm` selects :promise
+   (a headless profile adds it on top of system.edn's {:mode :stdio}),
+   otherwise :mode, otherwise :stdio:
      :stdio   — Desktop/Emacs: blocks on MCP stdio server's join promise.
                 When stdin EOF occurs, the MCP pipeline delivers :done.
      :promise — K8s headless: blocks on a promise-chan that receives :shutdown
@@ -37,6 +39,21 @@
 ;; Helpers
 ;; =============================================================================
 
+(defn resolve-mode
+  "The wait a merged :hive/keepalive config selects. `:signal :sigterm` names
+   the headless wait and wins over `:mode`: system.edn carries {:mode :stdio}
+   for every profile, and a headless profile only ADDS {:signal :sigterm}, so
+   the merge always still holds :mode :stdio. Otherwise :mode, else :stdio."
+  [{:keys [mode signal]}]
+  (cond (= signal :sigterm) :promise
+        mode                mode
+        :else               :stdio))
+
+(m/=> resolve-mode [:=> [:cat [:maybe [:map
+                                       [:mode {:optional true} [:maybe [:enum :stdio :promise]]]
+                                       [:signal {:optional true} [:maybe :keyword]]]]]
+                    [:enum :stdio :promise]])
+
 (defn- register-sigterm-hook!
   "Registers a JVM shutdown hook that delivers `value` to `promise-ch`.
    Returns the Thread so halt-key! can remove it (avoid leak on REPL reset)."
@@ -54,8 +71,8 @@
 ;; =============================================================================
 
 (defmethod ig/init-key :hive/keepalive
-  [_ {:keys [mode] :as config}]
-  (let [mode (or mode :stdio)]
+  [_ config]
+  (let [mode (resolve-mode config)]
     (log/info ":hive/keepalive init — mode" mode)
     (case mode
       ;; ── :stdio mode ──────────────────────────────────────────────────
