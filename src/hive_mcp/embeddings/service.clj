@@ -401,6 +401,8 @@
     (build secret spec)
     {}))
 
+(m/=> provider-options [:=> [:cat fn? [:map [:impl :keyword]]] [:map]])
+
 (defn- build-resolved
   "Resolved-provider map for an explicit provider-key (or the global provider
    fallback when the key has no configured spec). Shared by the type resolver

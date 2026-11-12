@@ -62,6 +62,8 @@
    {:live-endpoint "an ollama :api-url literal; preflight is exercised with stubbed probes"}
    "test/hive_mcp/embeddings/env_config_test.clj"
    {:live-endpoint "asserts the parsed default ollama host string; no connection"}
+   "test/hive_mcp/embeddings/provider_options_test.clj"
+   {:live-endpoint "asserts provider option maps, including the default ollama host literal; the secret port is a stub map, nothing dials it"}
    "test/hive_mcp/server/config_reload_test.clj"
    {:live-endpoint "an ollama host literal inside a config map under reload; no connection"}
    "test/hive_mcp/tools/consolidated/config_test.clj"
@@ -74,6 +76,9 @@
    {:nats-url "asserts set-backbone! REJECTS a nats:// string; nothing connects"}
    "test/hive_mcp/logback_test_config_test.clj"
    {:live-config "docstring/fixture text naming the live log path this test proves the test config avoids"}})
+   {:live-endpoint "asserts the parsed default ollama host string; no connection"}
+   "test/hive_mcp/embeddings/provider_options_test.clj"
+   {:live-endpoint "asserts provider option maps, including the default ollama host literal; the secret port is a stub map, nothing dials it"}
 
 (defn- test-files []
   (->> (file-seq (io/file "test"))
