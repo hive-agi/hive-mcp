@@ -21,8 +21,12 @@
 
 (defn defadt
   "Rewrite (defadt TypeName ?docstring & variants) into a `do` block of
-   four `def` forms so clj-kondo registers the generated names. Variants
-   themselves aren't validated here — the runtime macro still does that."
+   `def` forms so clj-kondo registers the generated names: TypeName,
+   TypeNameMalli, the constructor, the predicate and the coercer. Variants
+   themselves aren't validated here — the runtime macro still does that.
+   Bodies are calls whose result type kondo cannot narrow (`map?`, `merge`,
+   `get`), never a literal nil: a nil predicate body made every
+   `(is (type-name? v))` a constant-false condition."
   [{:keys [node]}]
   (let [[_ type-sym & body] (:children node)
         type-name (api/sexpr type-sym)]
@@ -32,8 +36,10 @@
           ctor-sym         (symbol kebab)
           pred-sym         (symbol (str kebab "?"))
           coerce-sym       (symbol (str "->" kebab))
+          malli-sym        (symbol (str (name type-name) "Malli"))
           loc              (meta type-sym)
           mk-token         (fn [s] (with-meta (api/token-node s) loc))
+          mk-list          (fn [xs] (api/list-node (vec xs)))
           ;; Walk body to keep variant exprs visible to kondo so any embedded
           ;; symbol/predicate references still get analyzed.
           variant-uses     (api/list-node
@@ -43,24 +49,33 @@
                                             [(mk-token 'do) c]))
                                          body)))
           rewritten
-          (api/list-node
+          (mk-list
            [(mk-token 'do)
-            (api/list-node
-             [(mk-token 'def) (mk-token type-name) (mk-token nil)])
-            (api/list-node
+            (mk-list [(mk-token 'def) (mk-token type-name)
+                      (mk-list [(mk-token 'clojure.core/hash-map)])])
+            (mk-list [(mk-token 'def) (mk-token malli-sym)
+                      (mk-list [(mk-token 'clojure.core/vector)])])
+            (mk-list
              [(mk-token 'defn) (mk-token ctor-sym)
-              (api/list-node
-               [(api/vector-node [(mk-token '_variant)]) (mk-token nil)])
-              (api/list-node
-               [(api/vector-node [(mk-token '_variant) (mk-token '_data)])
-                (mk-token nil)])])
-            (api/list-node
+              (mk-list [(api/vector-node [(mk-token 'variant)])
+                        (mk-list [(mk-token 'clojure.core/hash-map)
+                                  (api/keyword-node :adt/variant)
+                                  (mk-token 'variant)])])
+              (mk-list [(api/vector-node [(mk-token 'variant) (mk-token 'data)])
+                        (mk-list [(mk-token 'clojure.core/merge)
+                                  (mk-token 'data)
+                                  (mk-list [(mk-token 'clojure.core/hash-map)
+                                            (api/keyword-node :adt/variant)
+                                            (mk-token 'variant)])])])])
+            (mk-list
              [(mk-token 'defn) (mk-token pred-sym)
-              (api/vector-node [(mk-token '_x)])
-              (mk-token nil)])
-            (api/list-node
+              (api/vector-node [(mk-token 'x)])
+              (mk-list [(mk-token 'clojure.core/map?) (mk-token 'x)])])
+            (mk-list
              [(mk-token 'defn) (mk-token coerce-sym)
-              (api/vector-node [(mk-token '_kw)])
-              (mk-token nil)])
+              (api/vector-node [(mk-token 'kw)])
+              (mk-list [(mk-token 'clojure.core/get)
+                        (mk-token type-name)
+                        (mk-token 'kw)])])
             variant-uses])]
       {:node rewritten})))
