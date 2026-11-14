@@ -10,9 +10,10 @@
 
    Stubs work at the protocol boundary: we register a mock IMemoryStore
    via mem-proto/register-store! and inject behaviour in the defrecord's
-   search-similar. Each test sets a unique :default store and restores
-   any pre-existing default in a fixture-free try/finally pattern to
-   stay thread-safe across the suite."
+   search-similar. Each test sets the :default store under
+   with-restored-store-registry, which refuses a running addon server and
+   restores the prior registry atomically. Run these tests in a dedicated
+   sequential test JVM."
   (:require [clojure.test :refer [deftest is testing]]
             [clojure.data.json :as json]
             [hive-mcp.tools.memory.search :as search]
@@ -21,7 +22,8 @@
             [hive-mcp.project.scope :as kg-scope]
             [hive-mcp.context.request :as ctx]
             [hive-mcp.plan.plans :as plans]
-            [hive-mcp.memory.ingest-search :as ingest-search]))
+            [hive-mcp.memory.ingest-search :as ingest-search]
+            [hive-mcp.test-support.registry-isolation :as isolation]))
 
 ;; =============================================================================
 ;; Stub IMemoryStore
@@ -47,17 +49,14 @@
   (reset-store!             [_]))
 
 (defn- with-stub-store*
-  "Register `store` as the :default memory store, run f, then restore
-   whatever store (if any) was registered before. Never leaks state."
+  "Register `store` as :default under the shared isolation fixture.
+   Refuse a running addon server and restore the exact prior slot map
+   atomically on exit, including when f throws."
   [store f]
-  (let [prior (get (mem-proto/registered-stores) :default)]
-    (try
+  (isolation/with-restored-store-registry
+    (fn []
       (mem-proto/register-store! :default store)
-      (f)
-      (finally
-        (if prior
-          (mem-proto/register-store! :default prior)
-          (mem-proto/unregister-store! :default))))))
+      (f))))
 
 (defmacro with-stub-store [store & body]
   `(with-stub-store* ~store (fn [] ~@body)))
