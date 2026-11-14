@@ -156,3 +156,23 @@
           (is (false? @called-crt)              "no create when dim matches")
           (is (false? @called-del)              "no delete when dim matches")
           (is (= existing @@collection-cache)   "existing collection cached"))))))
+
+(deftest transition-status-test
+  (testing "the machine advances one edge at a time"
+    (is (true? (:ok? (plans/transition-status "draft" "active"))))
+    (is (true? (:ok? (plans/transition-status "active" "completed"))))
+    (is (= :advanced (:reason (plans/transition-status "draft" "active")))))
+  (testing "idempotent re-application is a noop, not a failure"
+    (is (true? (:ok? (plans/transition-status "active" "active"))))
+    (is (= :noop (:reason (plans/transition-status "active" "active")))))
+  (testing "anything can be superseded"
+    (is (true? (:ok? (plans/transition-status "draft" "superseded"))))
+    (is (true? (:ok? (plans/transition-status "completed" "superseded")))))
+  (testing "terminal states do not reopen"
+    (is (false? (:ok? (plans/transition-status "completed" "active"))))
+    (is (= :illegal-transition (:reason (plans/transition-status "completed" "active")))))
+  (testing "unknown status is refused"
+    (is (false? (:ok? (plans/transition-status "draft" "bogus"))))
+    (is (= :invalid-status (:reason (plans/transition-status "draft" "bogus")))))
+  (testing "a missing stored status reads as draft"
+    (is (= "draft" (:from (plans/transition-status nil "active"))))))
