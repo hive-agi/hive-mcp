@@ -31,7 +31,7 @@
 
 (def ^:private late-bound-roots
   "Roots whose value is a whole subtree re-read per call, not a leaf."
-  #{:kg :migration})
+  #{:kg :migration :plan})
 
 (defn- leaves
   "MAP's entries without the late-bound subdomain roots."
