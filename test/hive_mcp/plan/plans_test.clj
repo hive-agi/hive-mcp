@@ -156,3 +156,19 @@
           (is (false? @called-crt)              "no create when dim matches")
           (is (false? @called-del)              "no delete when dim matches")
           (is (= existing @@collection-cache)   "existing collection cached"))))))
+
+(deftest reindex-plans!-test
+  (testing "plans are indexed, non-plans and failures are skipped, not fatal"
+    (let [indexed (atom [])]
+      (with-redefs [plans/index-plan! (fn [e]
+                                        (if (= "bad" (:id e))
+                                          (throw (ex-info "boom" {}))
+                                          (swap! indexed conj (:id e))))]
+        (is (= {:indexed 2 :skipped 2}
+               (plans/reindex-plans!
+                [{:id "p1" :type "plan" :content "1. a"}
+                 {:id "p2" :type "plan" :content "1. b"}
+                 {:id "n1" :type "note"}
+                 {:id "bad" :type "plan" :content "1. c"}])))
+        (is (= ["p1" "p2"] @indexed)
+            "only successful plans were indexed")))))

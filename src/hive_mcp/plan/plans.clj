@@ -54,7 +54,16 @@
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
 
-(def ^:private collection-name "hive-mcp-plans")
+(def ^:private collection-name
+  "The plan index collection.
+
+   NOT `hive-mcp-plans`: that collection was migrated from Chroma with the
+   memory schema (top-level status columns, no `metadata` column), while the
+   vector-store port writes one JSON `metadata` column. Reusing the name made
+   every index write fail against a collection the adapter could resolve but
+   not insert into. `-index` is a fresh port-native collection; the old one is
+   left untouched as the backup of the records it holds."
+  "hive-mcp-plan-index")
 
 (def high-abstraction-types
   "Memory types routed to OpenRouter-backed plans collection.
@@ -421,6 +430,30 @@
                  :statuses (frequencies (map :plan-status plans))
                  :projects (frequencies (map :project-id plans)))))
       base)))
+
+(defn reindex-plans!
+  "Re-index every entry in `entries` into the plan collection.
+
+   Used after a collection-name/schema move, where the source of truth (the
+   memory store) is intact but the index is not. Skips entries that are not
+   type plan; returns {:indexed n :skipped n}. A failed entry is logged and
+   counted as skipped rather than aborting the rest."
+  [entries]
+  (reduce (fn [acc {:keys [type] :as entry}]
+            (if (= type "plan")
+              (try
+                (index-plan! entry)
+                (update acc :indexed inc)
+                (catch Throwable t
+                  (log/warn "Plan reindex failed:" (:id entry) (ex-message t))
+                  (update acc :skipped inc)))
+              (update acc :skipped inc)))
+          {:indexed 0 :skipped 0}
+          entries))
+
+(m/=> reindex-plans!
+      [:=> [:cat [:sequential :map]]
+       [:map [:indexed :int] [:skipped :int]]])
 
 ;; =============================================================================
 ;; Function Contracts (m16 coverage batch)
