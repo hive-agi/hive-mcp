@@ -31,6 +31,40 @@
       :memory/get    (mem/handle-mcp-memory-get-full params)
       :memory/get-metadata (mem/handle-mcp-memory-get-metadata params))))
 
+;; The four read verbs are DEFS, not inline `fn`s in the table. They route
+;; through `dispatch-memory-read` rather than naming a handler, so there was no
+;; var to quote — but an inline `fn` in the map is still a captured value: a
+;; reload of the table's own namespace rebinds nothing for it to follow, and
+;; anything that census-checks the table for captured entries has to special-case
+;; these four. Naming them makes every entry in `handlers` a var, which is the
+;; invariant `hive-mcp.tools.consolidated.memory-var-seam-test` holds.
+
+(defn- read-query
+  "`query`: the structured read path."
+  [params]
+  (dispatch-memory-read :memory/query params))
+
+(defn- read-metadata
+  "`metadata` is an alias onto the QUERY path, which cannot consume an :id
+   (handle-query's destructuring drops it) — so an id-bearing call must be
+   routed to the by-id RETRIEVAL path instead, or it degrades into an
+   unfiltered in-scope scan that answers with unrelated entries."
+  [{:keys [id] :as params}]
+  (if (some? id)
+    (dispatch-memory-read :memory/get-metadata params)
+    (dispatch-memory-read :memory/query
+                          (assoc params :verbosity "metadata"))))
+
+(defn- read-get
+  "`get`: retrieval by id."
+  [params]
+  (dispatch-memory-read :memory/get params))
+
+(defn- read-search
+  "`search`: the semantic retrieval path."
+  [params]
+  (dispatch-memory-read :memory/search params))
+
 (def handlers
   "The `memory` verbs, stored as VARS so a reload of `hive-mcp.tools.memory`
    reaches this table (20260817195749-0d407e9c). Almost every entry there is
@@ -39,22 +73,17 @@
    and the facade's own alias defs are a separate freeze, converted with the
    rest of them rather than ad hoc.
 
-   The four read verbs keep their inline `fn`: they route through
-   `dispatch-memory-read` rather than naming a handler, so there is no var to
-   quote and the indirection is already at call time."
+   The four read verbs are the exception in ORIGIN, not in KIND: they route
+   through `dispatch-memory-read` rather than naming a handler, so there is no
+   existing var to quote — hence the `read-*` defns above, one per verb, so
+   that every value in this table is a var and no reader has to special-case
+   four entries. See `read-metadata` for why the id-bearing form is not simply
+   an alias onto the query path."
   {:add         #'mem/handle-mcp-memory-add
-   :query       (fn [params] (dispatch-memory-read :memory/query params))
-   ;; `metadata` is an alias onto the QUERY path, which cannot consume an :id
-   ;; (handle-query's destructuring drops it) — so an id-bearing call must be
-   ;; routed to the by-id RETRIEVAL path instead, or it degrades into an
-   ;; unfiltered in-scope scan that answers with unrelated entries.
-   :metadata    (fn [{:keys [id] :as params}]
-                  (if (some? id)
-                    (dispatch-memory-read :memory/get-metadata params)
-                    (dispatch-memory-read :memory/query
-                                          (assoc params :verbosity "metadata"))))
-   :get         (fn [params] (dispatch-memory-read :memory/get params))
-   :search      (fn [params] (dispatch-memory-read :memory/search params))
+   :query       #'read-query
+   :metadata    #'read-metadata
+   :get         #'read-get
+   :search      #'read-search
    :duration    #'mem/handle-mcp-memory-set-duration
    :promote     #'mem/handle-mcp-memory-promote
    :demote      #'mem/handle-mcp-memory-demote
@@ -217,17 +246,51 @@
 
 (declare handle-memory)
 
+;; The batch verbs are BUILT (one closure per target command), so like the four
+;; read verbs they have no existing var to quote. Each gets its own private def,
+;; for the same reason: the table then holds only vars, and a reload of this
+;; namespace rebinds the var the table points at instead of leaving the table
+;; holding a closure built by the previous load.
+
+(def ^:private batch-add-handler
+  (make-single-command-batch :add))
+
+(def ^:private batch-feedback-handler
+  (make-single-command-batch :feedback))
+
+;; PR4.3 — additional batch siblings via the same iterator pattern.
+;; A real single-store-call optimization for these is PR5+ work.
+(def ^:private batch-tags-handler
+  (make-single-command-batch :tags))
+
+(def ^:private batch-duration-handler
+  (make-single-command-batch :duration))
+
+(def ^:private batch-promote-handler
+  (make-single-command-batch :promote))
+
+(def ^:private batch-demote-handler
+  (make-single-command-batch :demote))
+
+(def ^:private batch-handler
+  (make-bare-batch-handler #'handle-memory))
+
 (def canonical-handlers
+  "The full `memory` handler tree: `handlers` plus the batch verbs.
+
+   Every LEAF here is a VAR, so a reload of any handler namespace reaches
+   dispatch without this namespace being reloaded in the same pass (see
+   `handlers`). `:kg` and `:migration` are the two exceptions in kind: each is a
+   whole subtree that `composite/lazy-resolve-handlers` re-reads per call, so
+   their leaves are late-bound individually rather than var-quoted here."
   (merge handlers
-         {:batch-add      (make-single-command-batch :add)
-          :batch-feedback (make-single-command-batch :feedback)
-          ;; PR4.3 — additional batch siblings via the same iterator pattern.
-          ;; A real single-store-call optimization for these is PR5+ work.
-          :batch-tags     (make-single-command-batch :tags)
-          :batch-duration (make-single-command-batch :duration)
-          :batch-promote  (make-single-command-batch :promote)
-          :batch-demote   (make-single-command-batch :demote)
-          :batch          (make-bare-batch-handler #'handle-memory)
+         {:batch-add      #'batch-add-handler
+          :batch-feedback #'batch-feedback-handler
+          :batch-tags     #'batch-tags-handler
+          :batch-duration #'batch-duration-handler
+          :batch-promote  #'batch-promote-handler
+          :batch-demote   #'batch-demote-handler
+          :batch          #'batch-handler
           ;; Nested subdomains resolved lazily via composite/lazy-resolve-handlers
           ;; — drops the static `c-kg`/`c-mig` :requires that previously
           ;; coupled this ns to those consolidators (DIP).
