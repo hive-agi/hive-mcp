@@ -14,13 +14,12 @@
    These tests pin the correct behavior against regression using
    hive-test mutation testing and golden snapshots."
   (:require [clojure.test :refer [deftest is testing use-fixtures]]
-            [clojure.string :as str]
             [clojure.data.json :as json]
             [hive-mcp.vectordb.facade :as facade]
-            [hive-mcp.protocols.memory :as proto]
             [hive-test.mutation :as mutation]
             [hive-test.golden :as golden]
             [hive-mcp.memory.ids :as ids]
+            [hive-mcp.test-support.registry-isolation :as isolation]
             [hive-mcp.test.stub.memory-store :as mem-stub]))
 
 ;; =============================================================================
@@ -34,12 +33,14 @@
 (def ^:dynamic *test-collection* "hive-mcp-kanban-regression-test")
 
 (defn with-mock-store-fixture
-  "Set up in-memory mock store for each test.
-   Saves and restores the active store so tests don't clobber the real backend.
-   The store is the contract-only memory stub: it implements IMemoryStore over
-   an atom and names no backend."
+  "Install a fresh in-memory contract-only stub as :default for each test.
+   Refuse a running addon server and restore the exact prior slot map
+   atomically on exit, including when the test throws."
   [f]
-  (mem-stub/with-stub-store f))
+  (isolation/with-restored-store-registry
+    (fn []
+      (mem-stub/install! (mem-stub/->stub))
+      (f))))
 
 (use-fixtures :each with-mock-store-fixture)
 
