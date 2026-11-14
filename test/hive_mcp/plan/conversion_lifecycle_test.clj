@@ -41,7 +41,7 @@
 (defn- port-fixture
   "Register a recording kanban write port, then restore whatever was there."
   [f]
-  (let [prior (kanban-registry/registered? :IKanbanWrite)]
+  (let [prior (kanban-registry/provider :IKanbanWrite)]
     (reset! created [])
     (kanban-registry/register!
      :IKanbanWrite
@@ -53,9 +53,7 @@
     (try (f)
          (finally
            (reset! created [])
-           (if prior
-             (kanban-registry/register! :IKanbanWrite prior)
-             (kanban-registry/unregister! :IKanbanWrite))))))
+           (kanban-registry/register! :IKanbanWrite prior)))))
 
 (use-fixtures :each port-fixture)
 
