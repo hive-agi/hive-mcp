@@ -77,9 +77,86 @@
   [type]
   (contains? high-abstraction-types type))
 
+(def plan-statuses
+  "Plan statuses in lifecycle order.
+
+   `draft -> active -> completed` is the happy path, walked one step at a time:
+   `active` is set by plan-to-kanban (the work is now dispatched) and
+   `completed` by the plan itself being finished. `superseded` is terminal and
+   reachable from any non-terminal state (a plan replaced before it finished).
+   Both `completed` and `superseded` are therefore sinks, which is what makes
+   `completed -> active` a refusal rather than a reopen: nothing in the machine
+   owns a backwards edge."
+  ["draft" "active" "completed" "superseded"])
+
 (def ^:private valid-plan-statuses
-  "Valid plan-status values."
-  #{"draft" "active" "completed" "superseded"})
+  "Valid plan-status values, as a set for membership tests."
+  (set plan-statuses))
+
+(defn plan-status?
+  "True when STATUS is one of the four plan statuses."
+  [status]
+  (contains? valid-plan-statuses status))
+
+(def TransitionResult
+  "What `transition-status` answers: the verdict, the edge it judged, and a
+   sentence a caller can hand straight back to an LLM."
+  [:map
+   [:ok? :boolean]
+   [:from [:string {:gen/elements ["draft" "active" "completed" "superseded"]}]]
+   ;; nil when TO was not a status at all (an unknown request, echoed back).
+   [:to [:maybe [:string {:gen/elements ["draft" "active" "completed" "superseded" nil]}]]]
+   [:reason [:enum :noop :advanced :completed :superseded :invalid-status :illegal-transition]]
+   [:message [:string {:min 1}]]])
+
+(def ^:private allowed-transitions
+  "The forward edges of the machine. `superseded` is handled separately because
+   it is reachable from every non-terminal state."
+  #{["draft" "active"] ["active" "completed"]})
+
+(defn- transition-message [from to reason]
+  (case reason
+    :noop (str "plan is already " to)
+    :advanced (str from " -> " to)
+    :completed (str "plan completed (" from " -> completed)")
+    :superseded (str "plan superseded (" from " -> superseded)")
+    :invalid-status (str "unknown plan status: " (pr-str to)
+                         "; valid: " (str/join ", " plan-statuses))
+    :illegal-transition (str "refused: " from " -> " to
+                             " is not an edge of the plan machine"
+                             (when (= to "active")
+                               " (completed and superseded are terminal)"))))
+
+(defn transition-status
+  "Pure: judge a plan status transition FROM -> TO.
+
+   The machine is `draft -> active -> completed`, plus anything -> `superseded`
+   (a plan can be replaced before or after it finished). Re-applying the
+   current status is a NOOP and succeeds — the verbs are idempotent, so
+   completing twice is one completion, not an error. Everything else is
+   refused, including `completed -> active` (active is not a reopen edge).
+
+   FROM is the stored status; a plan that carries none is a `draft`, which is
+   what the index and the write path both default it to. Returns a
+   TransitionResult: `:ok? false` is a refusal, never a throw, so callers can
+   answer it as an MCP error with `:message` intact."
+  [from to]
+  (let [from (if (contains? valid-plan-statuses from) from "draft")
+        reason (cond
+                 (not (contains? valid-plan-statuses to)) :invalid-status
+                 (= from to) :noop
+                 (= to "superseded") :superseded
+                 (contains? allowed-transitions [from to]) (if (= to "completed") :completed :advanced)
+                 :else :illegal-transition)
+        ok? (contains? #{:noop :advanced :completed :superseded} reason)]
+    {:ok? ok?
+     :from from
+     :to to
+     :reason reason
+     :message (transition-message from to reason)}))
+
+(m/=> plan-status? [:=> [:cat :any] :boolean])
+(m/=> transition-status [:=> [:cat [:maybe :string] :any] TransitionResult])
 
 (defonce ^:private collection-cache (atom nil))
 
