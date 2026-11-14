@@ -332,7 +332,12 @@
    plans index is what `plan list` and a `plan-status` filter read."
   [plan-id]
   (facade/update-entry! plan-id {:plan-status "active"})
-  (plans/update-plan-status! plan-id "active"))
+  ;; The index mirror is best-effort: the store is authoritative and has the
+  ;; status, and a degraded index must not abort a conversion the board needs.
+  (try
+    (plans/update-plan-status! plan-id "active")
+    (catch Throwable t
+      (log/warn "Plan index status mirror failed for" plan-id ":" (ex-message t)))))
 
 (defn- plan-index-payload
   "The plans-index document for ENTRY with the conversion folded in.
@@ -368,7 +373,11 @@
   (let [task-ids (vec task-ids)
         waves (or waves {})]
     (facade/update-entry! (:id entry) {:task-ids task-ids :waves waves})
-    (plans/index-plan! (plan-index-payload entry task-ids waves))))
+    (try
+      (plans/index-plan! (plan-index-payload entry task-ids waves))
+      (catch Throwable t
+        (log/warn "Plan re-index after conversion failed for" (:id entry)
+                  "(conversion recorded, index stale):" (ex-message t))))))
 
 (defn plan-to-kanban
   "Convert a plan memory entry (or file) to kanban tasks with KG edges.

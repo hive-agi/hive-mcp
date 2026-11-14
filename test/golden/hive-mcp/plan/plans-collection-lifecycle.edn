@@ -29,7 +29,7 @@
    :decision-id nil}],
  :after-delete ["p2"],
  :status
- {:collection "hive-mcp-plans",
+ {:collection "hive-mcp-plan-index",
   :chroma-configured? true,
   :count 2,
   :statuses {"completed" 1, "active" 1},
