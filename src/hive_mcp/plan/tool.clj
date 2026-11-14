@@ -19,6 +19,7 @@
             [taoensso.timbre :as log]
             [hive-mcp.plan.schema :as schema]
             [hive-mcp.plan.plans :as plans]
+            [hive-mcp.plan.status :as status]
             [hive-spi.schema.derive :as derive]
             [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
@@ -300,10 +301,9 @@
   (= "plan" (some-> (:type entry) name)))
 
 (defn- plan-status
-  "The entry's plan-status, defaulted: an entry stored before the status
-   machine existed reads as `draft`."
+  "The entry's plan-status through the tag/field reader."
   [entry]
-  (or (:plan-status entry) "draft"))
+  (status/status-of entry))
 
 (defn- already-converted-response
   "Answer a repeat convert of an ACTIVE plan with what the first one made.
@@ -313,14 +313,15 @@
    safe. `:already-converted` marks the response so a caller can tell the noop
    from a conversion."
   [entry]
-  (mcp-json {:success true
-             :already-converted true
-             :plan-id (:id entry)
-             :plan-source :memory
-             :plan-status "active"
-             :task-ids (:task-ids entry)
-             :task-count (count (:task-ids entry))
-             :waves (:waves entry)}))
+  (let [task-ids (status/task-ids-of entry)]
+    (mcp-json {:success true
+               :already-converted true
+               :plan-id (:id entry)
+               :plan-source :memory
+               :plan-status "active"
+               :task-ids task-ids
+               :task-count (count task-ids)
+               :waves (status/waves-of entry)})))
 
 (defn- mark-plan-active!
   "Stamp `active` on the plan entry BEFORE any task is created.
@@ -331,7 +332,9 @@
    stores are written: the memory store is what a later convert reads back, the
    plans index is what `plan list` and a `plan-status` filter read."
   [plan-id]
-  (facade/update-entry! plan-id {:plan-status "active"})
+  (let [entry (facade/get-entry-by-id plan-id)]
+    (facade/update-entry! plan-id {:plan-status "active"
+                                   :tags (status/with-status (:tags entry) "active")}))
   ;; The index mirror is best-effort: the store is authoritative and has the
   ;; status, and a degraded index must not abort a conversion the board needs.
   (try
@@ -372,7 +375,11 @@
   [entry task-ids waves]
   (let [task-ids (vec task-ids)
         waves (or waves {})]
-    (facade/update-entry! (:id entry) {:task-ids task-ids :waves waves})
+    (facade/update-entry! (:id entry)
+                          {:task-ids task-ids :waves waves
+                           :tags (status/with-status
+                                     (status/with-conversion (:tags entry) task-ids waves)
+                                     "active")})
     (try
       (plans/index-plan! (plan-index-payload entry task-ids waves))
       (catch Throwable t
@@ -433,7 +440,8 @@
         (mcp-error (str "Plan " plan-memory-id " is " (plan-status entry)
                         " — already converted. Pass force=true to convert again."))
 
-        (and entry (= "active" (plan-status entry)) (seq (:task-ids entry)) (not force))
+        (and entry (= "active" (plan-status entry))
+             (seq (status/task-ids-of entry)) (not force))
         (already-converted-response entry)
 
         :else

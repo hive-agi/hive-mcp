@@ -48,7 +48,10 @@
                   plans/update-plan-status! (fn [id to] (swap! mirror conj [id to]))]
       (let [out (body (plan/handle-plan-update {:id "p1" :status "active"}))]
         (is (true? (:changed out)))
-        (is (= [["p1" {:plan-status "active"}]] @writes))
+        (let [[id fields] (first @writes)]
+          (is (= "p1" id))
+          (is (= "active" (:plan-status fields)))
+          (is (some #{"plan-status:active"} (:tags fields))))
         (is (= [["p1" "active"]] @mirror))))))
 
 (deftest plan-update-noop-does-not-write

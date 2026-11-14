@@ -170,9 +170,12 @@
                 updates (:updates @log)]
             (is (true? (:success b)))
             (testing "the first write is the status, ahead of any task"
-              (is (= ["p1" {:plan-status "active"}] (first updates))))
+              (let [[id fields] (first updates)]
+                (is (= "p1" id))
+                (is (= "active" (:plan-status fields)))
+                (is (some #{"plan-status:active"} (:tags fields)))))
             (testing "both stores get the status"
-              (is (= 2 (count (filter #(= {:plan-status "active"} (second %)) updates)))))
+              (is (= 2 (count (filter #(= "active" (:plan-status (second %))) updates)))))
             (testing "task-ids are a vector and waves are the step->wave map"
               (let [[id fields] (last updates)]
                 (is (= "p1" id))

@@ -263,7 +263,7 @@
   "Convert plan entry to searchable document string.
    Includes structured metadata header for better semantic search."
   [{:keys [type content tags project-id plan-status steps-count decision-id]}]
-  (let [entry-type (or type "plan")
+  (let [entry-type (or (some-> type name) "plan")
         label (str "Plan Entry [" (or plan-status "draft") "]")]
     (str label "\n"
          "Type: " entry-type "\n"
@@ -281,8 +281,10 @@
   [content]
   (when content
     (let [numbered (count (re-seq #"(?m)^\s*\d+[\.\)]\s+" content))
-          step-headers (count (re-seq #"(?m)^#+\s*[Ss]tep\s+\d+" content))]
-      (max numbered step-headers))))
+          step-headers (count (re-seq #"(?m)^#+\s*[Ss]tep\s+\d+" content))
+          ;; EDN plans carry no numbered lines; their steps are :id entries.
+          edn-steps (count (re-seq #":id\s+\"step-" content))]
+      (max numbered step-headers edn-steps))))
 
 (defn- extract-entry-metadata
   "Extract metadata from plan entry map.
@@ -290,7 +292,7 @@
   [{:keys [type content tags project-id duration expires content-hash
            steps-count decision-id wave-count plan-status
            abstraction-level knowledge-gaps agent-id]}]
-  (let [entry-type (or type "plan")
+  (let [entry-type (or (some-> type name) "plan")
         is-plan? (= entry-type "plan")
         auto-steps (when is-plan? (or steps-count (count-plan-steps content)))]
     (cond-> {:type entry-type
@@ -438,10 +440,14 @@
                                       type (assoc :type type)
                                       project-id (assoc :project-id project-id)
                                       plan-status (assoc :plan-status plan-status))
+                       ;; The port's `where` is a post-filter over an
+                       ;; arbitrary vendor-ordered page, so asking for exactly
+                       ;; LIMIT rows can return none after filtering. Read a
+                       ;; wide page and take LIMIT after the filter.
                        results (vp/-get (vp/require-store) coll
                                         {:where where-clause
                                          :include #{:metadatas :documents}
-                                         :limit limit})]
+                                         :limit (max limit 1000)})]
                    (->> results
                         (map (fn [{:keys [id metadata document]}]
                                {:id id
@@ -476,11 +482,13 @@
                          ". Valid: " (str/join ", " valid-plan-statuses))
                     {:type :invalid-plan-status
                      :status new-status})))
+  ;; Re-index the whole row rather than sending a metadata-only update: the
+  ;; Milvus adapter's update is an upsert of the record it is given, so a
+  ;; partial record would ship an empty document and vector. `index-plan!`
+  ;; re-embeds the same document and replaces the row by id.
   (result/rescue nil
-                 (let [coll (get-or-create-collection)]
-                   (vp/-update (vp/require-store) coll
-                               [{:id plan-id
-                                 :metadata {:plan-status new-status}}])
+                 (when-let [plan (get-plan plan-id)]
+                   (index-plan! (assoc plan :plan-status new-status))
                    (log/info "Updated plan status:" plan-id "->" new-status)
                    plan-id)))
 
@@ -517,7 +525,7 @@
    counted as skipped rather than aborting the rest."
   [entries]
   (reduce (fn [acc {:keys [type] :as entry}]
-            (if (= type "plan")
+            (if (= "plan" (some-> type name))
               (try
                 (index-plan! entry)
                 (update acc :indexed inc)

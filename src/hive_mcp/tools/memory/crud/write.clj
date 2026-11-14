@@ -9,6 +9,7 @@
             [hive-mcp.tools.core :as core :refer [mcp-json mcp-error coerce-vec!]]
             [hive-mcp.protocols.memory :as mem-proto]
             [hive-mcp.plan.plans :as plans]
+            [hive-mcp.plan.status :as plan-status]
             [hive-mcp.plan.gate :as plan-gate]
             [clojure.edn :as edn]
             [hive-mcp.knowledge-graph.connection :as kg-conn]
@@ -440,7 +441,9 @@
                     :abstraction-level abstraction-level
                     :knowledge-gaps knowledge-gaps}
         entry (if (= type "plan")
-                (cond-> (assoc base-entry :plan-status "draft")
+                (cond-> (assoc base-entry
+                               :plan-status "draft"
+                               :tags (plan-status/with-status tags-with-scope "draft"))
                   (plans/count-plan-steps content)
                   (assoc :steps-count (plans/count-plan-steps content)))
                 base-entry)
@@ -668,7 +671,8 @@
                            (scope/get-current-project-id directory))
             agent-id (or agent_id (ctx/current-agent-id)
                          (System/getenv "CLAUDE_SWARM_SLAVE_ID"))
-            tags-with-scope (build-entry-tags tags-vec agent-id (ctx/current-attribution agent-id) kg-vecs project-id)
+            tags-with-scope (cond-> (build-entry-tags tags-vec agent-id (ctx/current-attribution agent-id) kg-vecs project-id)
+                              (= type "plan") (plan-status/with-status "draft"))
             store (mem-proto/get-store store-key)
             content-hash (mem-proto/content-hash content)
             duration-str (or duration "long")

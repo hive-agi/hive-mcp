@@ -26,6 +26,7 @@
    fail the verb."
   (:require [clojure.string :as str]
             [hive-mcp.plan.plans :as plans]
+            [hive-mcp.plan.status :as status]
             [hive-mcp.tools.core :as tcore :refer [mcp-error mcp-json]]
             [hive-mcp.vectordb.facade :as facade]
             [malli.core :as m]))
@@ -40,6 +41,11 @@
    each surviving id still costs a store read to hydrate, so an uncapped limit
    turns one listing into hundreds of round trips."
   100)
+
+(def ^:private status-limit
+  "Row cap for the status count. Counts hydrate nothing, so this may exceed the
+   listing cap; 500 is under the store's query ceiling."
+  500)
 
 (def ^:private preview-chars
   "Characters of content a non-`get` row carries."
@@ -77,7 +83,8 @@
    place of the content."
   [entry]
   (cond-> (select-keys entry [:id :type :tags :project-id :duration
-                              :plan-status :steps-count :created :updated])
+                              :steps-count :created :updated])
+    true (assoc :plan-status (status/status-of entry))
     (preview (:content entry)) (assoc :preview (preview (:content entry)))))
 
 (defn- limit-of
@@ -118,7 +125,9 @@
    mirror. Returns the re-read entry with the new status, or the entry unchanged
    when it vanished between the read and the write."
   [entry to]
-  (facade/update-entry! (:id entry) {:plan-status to})
+  (facade/update-entry! (:id entry)
+                       {:plan-status to
+                        :tags (status/with-status (:tags entry) to)})
   ;; Best-effort: the store already has it, so an index failure must not turn
   ;; this verb into an error and provoke a retry that re-writes the store.
   (plans/update-plan-status! (:id entry) to)
@@ -168,7 +177,7 @@
   (let [counts (frequencies (keep :plan-status
                                   (plans/query-plans :type "plan"
                                                      :project-id (project-scope params)
-                                                     :limit max-limit)))]
+                                                     :limit status-limit)))]
     (mcp-json {:project-id (project-scope params)
                :counts (into (sorted-map)
                              (map (fn [s] [s (get counts s 0)]))
@@ -182,10 +191,11 @@
   (if-let [bad (missing-id params)]
     bad
     (if-let [entry (hydrate (param params :id :id))]
-      (let [{:keys [ok? message reason]} (plans/transition-status (:plan-status entry) to)]
+      (let [from (status/status-of entry)
+            {:keys [ok? message reason]} (plans/transition-status from to)]
         (if-not ok?
           (mcp-error (str "Plan " (:id entry) ": " message))
-          (cond-> {:plan-status to :previous-status (:plan-status entry) :reason reason}
+          (cond-> {:plan-status to :previous-status from :reason reason}
             (= :noop reason) (assoc :changed false)
             (not= :noop reason) (assoc :changed true
                                        :plan (apply-status! entry to)))))

@@ -33,7 +33,7 @@
   :chroma-configured? true,
   :count 2,
   :statuses {"completed" 1, "active" 1},
-  :projects {nil 1, "other" 1}},
+  :projects {"proj" 1, "other" 1}},
  :after-update "completed",
  :query-tags ["p1" "p2"],
  :update-invalid :invalid-plan-status,
