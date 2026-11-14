@@ -42,6 +42,7 @@
     (mapv #(emb/embed-text this %) texts))
   (embedding-dimension [_] dimension))
 
+#_{:clj-kondo/ignore [:redefined-var]}
 (defn ->MockEmbedder
   "Create a mock embedder for testing (not for production use).
    Generates deterministic embeddings based on text hash."

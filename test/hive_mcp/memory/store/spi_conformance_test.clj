@@ -23,7 +23,6 @@
             [hive-mcp.config.test-support :as cfg]
             [hive-mcp.embeddings.active :as active]
             [hive-mcp.memory.store.chroma :as chroma-store]
-            [hive-mcp.test-fixtures :as fixtures]
             [hive-mcp.test.stub.chroma-transport :as transport]
             [hive-mcp.test.stub.memory-store :as stub]
             [clojure.string]
