@@ -32,8 +32,7 @@
    Reading direction: `apply-kg-calls` (Build) calls `call-with-timeout`
    (Process) which calls `kg-call-timeout-ms` (Collect); warnings flow
    back up through `warning-tag` (Plan)."
-  (:require [clojure.string :as str]
-            [hive-di.core :as di]
+  (:require [hive-di.core :as di]
             [hive-dsl.result :as r]
             [hive-mcp.config.core :as config]
             [hive-weave.safe :as weave-safe]
@@ -151,14 +150,6 @@
                         vec)]
     {:edges     ok-edges
      :warnings  warnings
-     ;; A call that timed out may have enqueued its writes before the budget
-     ;; ran out: its edges are queued, not lost, and nothing here can read
-     ;; their ids. with-durability reports that as pending.
-     :timed-out (->> results
-                     (keep (fn [[label res]]
-                             (when (and (r/err? res) (= :weave/timeout (:error res)))
-                               label)))
-                     vec)
      :degraded? (boolean (seq warnings))}))
 
 (defn with-durability
@@ -179,16 +170,9 @@
              a `kg-pending:` warning says so. Not degraded: nothing is lost.
 
    A throwing `readable?` counts as not readable yet. Never throws."
-  [{:keys [edges timed-out] :as kg-result} readable?]
+  [{:keys [edges] :as kg-result} readable?]
   (if (empty? edges)
-    (if (seq timed-out)
-      ;; every edge call timed out: no ids to read back, but the writes may
-      ;; still be queued. Pending, not 'zero edges'.
-      (-> kg-result
-          (assoc :pending? true)
-          (update :warnings conj
-                  (str "kg-pending:calls-timed-out:" (str/join "," timed-out))))
-      (assoc kg-result :pending? false))
+    (assoc kg-result :pending? false)
     (let [timeout-ms (kg-call-timeout-ms)
           deadline   (+ (System/currentTimeMillis) timeout-ms)
           last-id    (peek edges)
@@ -199,17 +183,8 @@
                          (readable?) true
                          (>= (System/currentTimeMillis) deadline) false
                          :else (do (Thread/sleep 10) (recur))))]
-      (cond
-        (and landed? (empty? timed-out))
+      (if landed?
         (assoc kg-result :pending? false)
-
-        landed?
-        (-> kg-result
-            (assoc :pending? true)
-            (update :warnings conj
-                    (str "kg-pending:calls-timed-out:" (str/join "," timed-out))))
-
-        :else
         (-> kg-result
             (assoc :pending? true)
             (update :warnings conj
