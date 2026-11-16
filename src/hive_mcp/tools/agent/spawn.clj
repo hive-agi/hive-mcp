@@ -633,6 +633,11 @@
 
 (m/=> editor-preflight-refusal [:=> [:cat SpawnMode helpers/Port] [:maybe :string]])
 
+(m/=> resolve-spawn-mode
+      [:=> [:cat [:maybe [:or :string :keyword]] helpers/Port]
+       [:map [:mode :keyword] [:resolved-by [:enum :explicit :primary :fallback]]
+        [:skipped [:vector :map]]]])
+
 (m/=> spawn-brief [:=> [:cat SpawnParams] [:maybe :string]])
 
 (m/=> spawn-grant [:=> [:cat [:maybe :string] :any] GrantDecision])
