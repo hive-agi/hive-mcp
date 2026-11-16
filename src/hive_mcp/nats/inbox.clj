@@ -107,11 +107,47 @@
 
 (m/=> decode [:=> [:cat bytes? :int] Delivered])
 
-(defn- check-id! [id]
-  (when-not (valid-inbox-id? id)
-    (throw (ex-info (str "invalid inbox id " (pr-str id)
-                         ": use 1-64 chars of letters, digits, '-' or '_'")
-                    {:error :inbox/invalid-id :inbox id}))))
+(defn encode-inbox-id
+  "Pure: the canonical inbox id for `id`. The coordinator lane spells its
+   session `coordinator:<pid>`; ':' is no subject-token character, so every
+   ':' becomes '-' (`coordinator:134462` -> `coordinator-134462`). A valid id
+   is returned unchanged, so encoding is idempotent. `valid-inbox-id?` stays
+   the one strict grammar: an id that still fails it after encoding throws
+   :inbox/invalid-id naming the given and the encoded form."
+  [id]
+  (let [encoded (if (string? id) (str/replace id ":" "-") id)]
+    (if (valid-inbox-id? encoded)
+      encoded
+      (throw (ex-info (str "invalid inbox id " (pr-str id)
+                           (when (and (string? id) (not= id encoded))
+                             (str " (encoded " (pr-str encoded) ")"))
+                           ": use 1-64 chars of letters, digits, '-' or '_'"
+                           " (a ':' is written '-')")
+                      {:error :inbox/invalid-id :inbox id :encoded encoded})))))
+
+(m/=> encode-inbox-id [:=> [:cat :any] :string])
+
+(defn decode-inbox-id
+  "Pure: the coordinator-lane spelling of a canonical id. Reverses
+   `encode-inbox-id` for `coordinator-<digits>` only (`coordinator-134462`
+   -> `coordinator:134462`); every other id is returned as given, because a
+   '-' elsewhere is a plain dash."
+  [id]
+  (let [prefix "coordinator-"
+        pid    (when (and (string? id) (str/starts-with? id prefix))
+                 (subs id (count prefix)))]
+    (if (and (seq pid) (every? #(Character/isDigit ^char %) pid))
+      (str "coordinator:" pid)
+      id)))
+
+(m/=> decode-inbox-id [:=> [:cat :any] :any])
+
+(defn safe-encode-inbox-id
+  "`encode-inbox-id`, or nil when `id` cannot be made a valid inbox id."
+  [id]
+  (try (encode-inbox-id id) (catch clojure.lang.ExceptionInfo _ nil)))
+
+(m/=> safe-encode-inbox-id [:=> [:cat :any] [:maybe :string]])
 
 ;; =============================================================================
 ;; Boundary
@@ -151,9 +187,9 @@
    is lost. A first arm delivers what was sent to the inbox before it existed
    (still inside the stream's 7 day max-age)."
   [^Connection conn id]
-  (check-id! id)
-  (ensure-stream! conn)
-  (let [existed? (some? (consumer-info conn id))
+  (let [id       (encode-inbox-id id)
+        _        (ensure-stream! conn)
+        existed? (some? (consumer-info conn id))
         cfg (-> (ConsumerConfiguration/builder)
                 (.durable (durable id))
                 (.filterSubject (subject id))
@@ -174,9 +210,10 @@
   "Publish one message to inbox `to` with a broker ack. Returns the stream
    seq. The inbox need not be armed yet: the stream keeps the message."
   [^Connection conn {:keys [to] :as msg}]
-  (check-id! to)
-  (ensure-stream! conn)
-  (let [env (envelope msg)
+  (let [to  (encode-inbox-id to)
+        msg (assoc msg :to to)
+        _   (ensure-stream! conn)
+        env (envelope msg)
         pa  (.publish (.jetStream conn) ^String (subject to)
                       (.getBytes ^String (json/write-str env) "UTF-8")
                       (-> (PublishOptions/builder) (.messageId (:id env)) (.build)))]
@@ -190,12 +227,12 @@
    ack each one as it is returned. `wait-ms` (default 0) waits that long for a
    first message when none is pending. Throws :inbox/not-armed."
   ([conn id] (read! conn id nil))
-  ([^Connection conn id {:keys [n wait-ms]}]
-   (check-id! id)
-   (when-not (consumer-info conn id)
-     (throw (ex-info (str "inbox " id " is not armed: run `inbox arm` first")
-                     {:error :inbox/not-armed :inbox id})))
-   (let [n    (-> (or n 10) long (max 1) (min 256))
+  ([^Connection conn raw-id {:keys [n wait-ms]}]
+   (let [id   (encode-inbox-id raw-id)
+         _    (when-not (consumer-info conn id)
+                (throw (ex-info (str "inbox " id " is not armed: run `inbox arm` first")
+                                {:error :inbox/not-armed :inbox id})))
+         n    (-> (or n 10) long (max 1) (min 256))
          wait (-> (or wait-ms 0) long (max 0) (min 30000))
          b    (-> (FetchConsumeOptions/builder) (.maxMessages (int n)))
          opts (.build (if (pos? wait) (.noWaitExpiresIn b wait) (.noWait b)))
@@ -218,7 +255,8 @@
   "Status of inbox `id`, or of every armed inbox when `id` is nil."
   [^Connection conn id]
   (if id
-    (do (check-id! id) (info->status id (consumer-info conn id)))
+    (let [id (encode-inbox-id id)]
+      (info->status id (consumer-info conn id)))
     (let [jsm (.jetStreamManagement conn)
           names (try (vec (.getConsumerNames jsm stream-name))
                      (catch JetStreamApiException e (if (not-found? e) [] (throw e))))]
