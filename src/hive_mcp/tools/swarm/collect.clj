@@ -32,11 +32,17 @@
   :strategy/emacs
   :strategy/jvm)
 
-(defn- select-strategy
-  "Determine the poll strategy. Pure selector — reads Emacs availability flag."
-  []
-  (poll-strategy
-   (if (core/swarm-addon-available?) :strategy/emacs :strategy/jvm)))
+(defn select-strategy
+  "Determine the poll strategy. Pure selector. The default is :strategy/jvm:
+   results land in the JVM event journal whether or not an Emacs daemon runs,
+   so the JVM poll needs no vessel. The Emacs poll is taken only when the
+   caller asks for it (`requested` \"emacs\" or :strategy/emacs) AND the swarm
+   addon answers through `emacs-available?`."
+  ([requested] (select-strategy requested core/swarm-addon-available?))
+  ([requested emacs-available?]
+   (let [want-emacs? (contains? #{"emacs" :emacs :strategy/emacs} requested)]
+     (poll-strategy
+      (if (and want-emacs? (emacs-available?)) :strategy/emacs :strategy/jvm)))))
 
 ;; =============================================================================
 ;; Response builders — one level of abstraction, one concern each (SRP)
@@ -212,7 +218,7 @@
    Phase 2 — strategy dispatch via PollStrategy ADT (compile-time exhaustive).
      :strategy/emacs  → Emacs swarm addon poll (existing Emacs path, unchanged)
      :strategy/jvm    → bounded-atom backoff poll (headless / Emacs-absent)"
-  [{:keys [task_id timeout_ms]}]
+  [{:keys [task_id timeout_ms strategy]}]
   (let [timeout-ms (or timeout_ms 300000)
         start-time (System/currentTimeMillis)]
     ;; Phase 1: immediate hit — bypasses all polling
@@ -221,7 +227,7 @@
         (log/info "Task" task_id "found in event journal (immediate)")
         (build-journal-response task_id ev start-time "journal-immediate"))
       ;; Phase 2: closed dispatch over PollStrategy variants
-      (adt-case PollStrategy (select-strategy)
+      (adt-case PollStrategy (select-strategy strategy)
                 :strategy/emacs (emacs-poll-loop task_id timeout-ms start-time)
                 :strategy/jvm   (jvm-poll-loop   task_id timeout-ms start-time)))))
 
@@ -238,5 +244,10 @@
   [:map [:run_id [:maybe :string]] [:tip [:maybe :int]] [:resumable :boolean]])
 
 (m/=> chat-point->response [:=> [:cat [:maybe ChatPoint]] ChatPointResponse])
+
+(m/=> select-strategy
+      [:function
+       [:=> [:cat :any] :map]
+       [:=> [:cat :any [:=> [:cat] :any]] :map]])
 
 (m/=> handle-swarm-collect [:=> [:cat [:maybe :map]] core/SwarmResponse])

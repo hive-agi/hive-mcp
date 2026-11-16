@@ -33,6 +33,7 @@
                 :retry {:attempts 1 :backoff-ms [0]}
                 :probe-interval-ms 5000}
    :spawn      {:chain [:headless :tmux :vterm]}
+   :repl       {:chain [:headless-nrepl :emacs-cider]}
    :git-editor {:chain [:hive-git :emacs]}
    ;; a dispatch starts an agent and is not idempotent: one attempt per adapter
    :task-dispatch {:chain [:hive-agent-swarm :local-headless]
