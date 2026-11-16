@@ -35,7 +35,7 @@
                                        #(when (= 2 (swap! polls inc))
                                           (channel/record-task-result!
                                            task-id {:status "completed" :result "done" :slave-id "w"})))
-                      #(collect/handle-swarm-collect {:task_id task-id :timeout_ms 10000}))]
+                      #(collect/handle-swarm-collect {:task_id task-id :timeout_ms 10000 :strategy "emacs"}))]
       (is (not (:isError resp)))
       (is (= "completed" (:status (body resp))))
       (is (= "done" (:result (body resp))))
@@ -61,7 +61,7 @@
             _       (when dispatched? (channel/record-dispatched-task! task-id))
             resp    (with-host
                       (emacs-answering "{\"status\":\"error\",\"error\":\"Task crashed\"}" (fn []))
-                      #(collect/handle-swarm-collect {:task_id task-id :timeout_ms 5000}))]
+                      #(collect/handle-swarm-collect {:task_id task-id :timeout_ms 5000 :strategy "emacs"}))]
         (is (= "error" (:status (body resp))))
         (is (= "Task crashed" (:error (body resp))))))))
 

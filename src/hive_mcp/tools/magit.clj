@@ -10,6 +10,7 @@
             [hive-mcp.tools.core :as core :refer [mcp-success mcp-error emacs-timeout-ms]]
             [hive-mcp.tools.git-local-root :as local-root]
             [hive-mcp.context.request :as ctx]
+            [hive-mcp.transport.registry :as reg]
             [taoensso.timbre :as log]
             [clojure.string :as str]
             [hive-spi.editor.services :as svc]
@@ -477,8 +478,9 @@
                       (and (re-find handshake-race (str error))
                            (or retried? (>= elapsed-ms *handshake-race-ms*))))))))
 
-(defn- dispatch->result
-  "Run a closed magit operation and convert its answer to Result.
+(defn- emacs-dispatch->result
+  "The :emacs adapter body of the :git-editor chain: run a closed magit
+   operation and convert its answer to Result.
    Remote ops (push, pull, fetch) run on the git CLI. Every other op goes to
    the editor vessel first (one retry on a handshake race, see
    `invoke-with-handshake-retry`) and fails over to the git CLI in :directory
@@ -520,6 +522,122 @@
         :else (result/err :magit/dispatch-failed
                           {:message (str (scrub error) "\nThe editor answered an error; this is not a bridge outage. "
                                          "Next: fix the cause above and re-run the call.")})))))
+
+(defn- cli-envelope
+  "A `cli-op` answer (a Result, or nil for an op with no plain-git twin) as the
+   editor capability envelope {:success :result :error :timed-out}, the shape
+   hive-emacs answers, plus :category (the Result's error category) on a
+   failure. This is what makes the :hive-git provider interchangeable with the
+   :vessel one."
+  [r]
+  (cond
+    (nil? r)
+    {:success false :timed-out false :category :magit/unsupported
+     :error ":magit/unsupported - no plain-git twin for this op"}
+
+    (find r :ok)
+    {:success true :timed-out false :result (:ok r)}
+
+    :else
+    (let [msg (str (get r :message (get r :error)))]
+      {:success false
+       :timed-out (str/includes? msg " timed out after ")
+       :category (:error r)
+       :error msg})))
+
+(defn- hive-git-dispatch
+  "The :dispatch capability of the :hive-git provider: one closed :magit/* op
+   run on plain git in :directory, no editor. Same contract as the :vessel
+   provider: (dispatch op timeout-ms) => {:success :result :error :timed-out}.
+   Throws only when git cannot be started at all."
+  [op timeout-ms]
+  (cli-envelope (cli-op op timeout-ms)))
+
+(defn- envelope->result
+  "A provider envelope {:success :result :error :timed-out :category} as the
+   Result the :git-editor chain judges. A capability that is not registered is
+   an availability failure, so the chain moves on. Any other failure means the
+   provider RAN the op and it failed: that is the op's own error, never a
+   health verdict, so it is marked :addressing (no retry, no fallback, adapter
+   not degraded) and a commit is never run twice."
+  [{:keys [success result error category] :as envelope}]
+  (cond
+    success
+    (result/ok result)
+
+    (or (= :editor/capability-unavailable error) (= :magit/unsupported category))
+    (result/err :transport/unavailable
+                {:error/kind :unavailable :message (str "capability unavailable: " (pr-str envelope))})
+
+    :else
+    (result/err (or category :magit/dispatch-failed)
+                {:error/kind :addressing :message (str error)})))
+
+(defn- hive-git-adapter-call
+  "Chain call fn of the :hive-git adapter. OP is {:op <magit op map> :timeout-ms n}."
+  [{:keys [op timeout-ms]}]
+  (envelope->result (svc/invoke :hive-git :dispatch op timeout-ms)))
+
+(defn- hive-git-probe
+  "Cheap liveness probe of the :hive-git adapter: git answers --version."
+  []
+  (let [{:keys [exit out]} (git! (System/getProperty "user.dir") ["--version"])]
+    (if (zero? exit)
+      (result/ok (str/trim out))
+      (result/err :transport/unavailable
+                  {:error/kind :unavailable :message (str "git --version failed: " (str/trim out))}))))
+
+(defn- emacs-adapter-call
+  "Chain call fn of the :emacs adapter. Its failures are the op's own (the
+   editor path already fails over to plain git inside), so they are marked
+   :addressing and never retried."
+  [{:keys [op timeout-ms]}]
+  (let [r (emacs-dispatch->result op timeout-ms)]
+    (if (find r :ok)
+      r
+      (assoc r :error/kind :addressing))))
+
+(defn- skipped-note
+  "One line naming the adapters the :git-editor chain skipped and why."
+  [skipped]
+  (str/join "; " (map (fn [{:keys [adapter reason error]}]
+                        (str (name adapter) " " (name reason)
+                             (when-let [m (:message error)] (str " (" m ")"))))
+                      skipped)))
+
+(defn- chain-result
+  "The :git-editor chain's annotated Result ({:ok {:value :via ..}}) as the
+   plain Result the handlers consume: the served value on success, the op's own
+   error on failure, and a message naming every skipped adapter when the chain
+   was exhausted. A fallback is logged, never silent."
+  [r]
+  (if-let [entry (find r :ok)]
+    (let [{:keys [value via resolved-by skipped]} (val entry)]
+      (when (= :fallback resolved-by)
+        (log/info "magit op served by a fallback adapter" {:via via :skipped skipped}))
+      (result/ok value))
+    (cond-> (dissoc r :via :skipped)
+      (nil? (:message r))
+      (assoc :message (str ":magit/dispatch-failed - no git-editor adapter answered ("
+                           (skipped-note (:skipped r)) ")")))))
+
+(defn- dispatch->result
+  "Run a closed magit operation through the :git-editor transport chain
+   (config.edn [:transports :git-editor :chain], shipped [:hive-git :emacs])
+   and answer a Result. :hive-git runs the op on plain git, no editor, so the
+   verbs work with no Emacs daemon; :emacs is the editor vessel with its own
+   failover. An op that ran and failed is that op's error and is never retried
+   on the other adapter, so a commit cannot run twice."
+  [op timeout-ms]
+  (chain-result (reg/call! :git-editor {:op op :timeout-ms timeout-ms})))
+
+(defmethod reg/open-adapter [:git-editor :hive-git] [_ _]
+  {:call #'hive-git-adapter-call :probe #'hive-git-probe})
+
+(defmethod reg/open-adapter [:git-editor :emacs] [_ _]
+  {:call #'emacs-adapter-call})
+
+(svc/register-services! :hive-git {:dispatch #'hive-git-dispatch})
 
 
 (defn- try-result

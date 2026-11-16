@@ -184,11 +184,33 @@
 
 (m/=> handle-wrap [:=> [:cat [:maybe :map]] tc/McpJsonResponse])
 
+(defn- auto-arm-coordinator-inbox!
+  "Bind a coordinator caller to its encoded inbox (`coordinator-<pid>`) so no
+   explicit `inbox arm` is needed. Off the request thread (arming talks to the
+   broker) and never throws: a missing bus or a non-coordinator caller is a
+   no-op."
+  [params]
+  (try
+    (let [caller (or (some-> (:_caller_id params) str not-empty)
+                     (ctx/current-caller-id))]
+      (when caller
+        (future
+          (try
+            (when-let [arm! (requiring-resolve 'hive-mcp.tools.consolidated.inbox/auto-arm!)]
+              (let [r (arm! caller)]
+                (log/debug "session-catchup: coordinator inbox auto-arm" r)))
+            (catch Throwable t
+              (log/debug t "session-catchup: coordinator inbox auto-arm failed"))))))
+    (catch Throwable t
+      (log/debug t "session-catchup: coordinator inbox auto-arm skipped"))))
+
 (defn handle-catchup
   "Restore session context from Chroma memory.
-   Delegates to catchup/handle-native-catchup which already returns MCP response."
+   Delegates to catchup/handle-native-catchup which already returns MCP response.
+   A coordinator caller is also auto-armed on its encoded inbox."
   [{:keys [directory] :as params}]
   (log/info "session-catchup" {:directory directory})
+  (auto-arm-coordinator-inbox! params)
   (let [r (rb/try-result :session/catchup-failed
                          #(result/ok (catchup/handle-native-catchup params)))]
     (if (result/ok? r)

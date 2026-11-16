@@ -40,13 +40,13 @@
                     (nil? out))))
    :num-tests 300})
 
-;; BUG (not fixed in this wave, reported): src/hive_mcp/tools/memory/decay.clj
-;; build-decay-plan reads (get entry :staleness-beta 1), which is nil when the
-;; key is PRESENT with nil, then (+ nil delta) throws. The contract (ms/Entry)
-;; admits a nil beta and the docstring promises a plan or nil.
-(deftest staleness-beta-nil-throws
-  (is (thrown? NullPointerException
-               (decay/build-decay-plan {:staleness-beta nil} {}))))
+;; COV-FACETS-FINDINGS-W1: a PRESENT-but-nil :staleness-beta used to throw an
+;; NPE ((get entry :staleness-beta 1) is nil when the key is there). The
+;; contract (ms/Entry) admits a nil beta, so nil now reads as the default 1.
+(deftest staleness-beta-nil-reads-as-the-default
+  (let [plan (decay/build-decay-plan {:id "n" :staleness-beta nil} {})]
+    (is (= 1 (:old-beta plan)))
+    (is (= plan (decay/build-decay-plan {:id "n"} {})))))
 
 (def ^:private entries
   "d1/d2 are scoped to the project the test directory resolves to

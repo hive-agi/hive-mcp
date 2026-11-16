@@ -1,0 +1,5 @@
+{:desktop :stdio,
+ :empty :stdio,
+ :explicit-promise :promise,
+ :k8s-merged :promise,
+ :signal-only :promise}

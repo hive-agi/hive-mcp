@@ -22,7 +22,7 @@
   {:sense/id id :sense/class cls :sense/agent "ling-a" :sense/project "hive"
    :sense/parent parent :sense/text (str cls) :sense/at 1})
 
-(deftest ^:integration senses-land-in-the-parent-inbox-once
+(deftest ^:e2e senses-land-in-the-parent-inbox-once
   (live/with-broker
     (fn [conn]
       (let [pub   (adapters/nats-inbox-publisher (constantly conn))
@@ -45,7 +45,7 @@
           (sr/republish! r (sense :sense/error "e1" "ling-parent"))
           (is (= ["sense-e1"] (mapv :id (:messages (inbox/read! conn "ling-parent"))))))))))
 
-(deftest ^:integration a-closed-connection-degrades
+(deftest ^:e2e a-closed-connection-degrades
   (live/with-broker
     (fn [conn]
       (let [state (atom conn)

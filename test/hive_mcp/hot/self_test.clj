@@ -7,7 +7,7 @@
             [clojure.string]
             [hive-mcp.dispatch.handler]
             [hive-mcp.hot.self :as self]
-            [hive-mcp.protocols.dispatch]
+            [hive-mcp.protocols.event-backbone]
             [hive-schemas.test :refer [deftrifecta-from-schema]]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
@@ -30,7 +30,7 @@
 (deftest a-namespace-that-defines-a-protocol-is-detected
   (is (self/defines-protocol? 'hive-mcp.hot.self-test)
       "this namespace defines ADefinedProtocol, so it must be protected")
-  (is (self/defines-protocol? 'hive-mcp.protocols.dispatch)
+  (is (self/defines-protocol? 'hive-mcp.protocols.event-backbone)
       "and so must a real core protocol namespace"))
 
 (deftest a-namespace-with-no-protocol-is-not-detected
@@ -52,7 +52,7 @@
     (testing "vacuity guard: an empty set would disable the interlock silently"
       (is (pos? (count nss))))
     (testing "it finds the real core protocol namespaces"
-      (is (contains? nss 'hive-mcp.protocols.dispatch)))
+      (is (contains? nss 'hive-mcp.protocols.event-backbone)))
     (testing "and nothing outside the prefix it was asked for"
       (is (every? #(clojure.string/starts-with? (str %) "hive-mcp.") nss))
       (is (empty? (self/protocol-namespaces "no.such.prefix."))
@@ -69,7 +69,7 @@
 ;; ---------------------------------------------------------------------------
 
 (def ^:private LoadedNs
-  [:enum 'hive-mcp.hot.self-test 'hive-mcp.protocols.dispatch 'hive-mcp.dispatch.handler
+  [:enum 'hive-mcp.hot.self-test 'hive-mcp.protocols.event-backbone 'hive-mcp.dispatch.handler
    'hive-mcp.hot.self 'clojure.string 'clojure.core])
 
 (defn- protocol-oracle
