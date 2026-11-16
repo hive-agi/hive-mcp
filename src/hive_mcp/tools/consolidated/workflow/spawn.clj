@@ -20,6 +20,7 @@
             [hive-mcp.config.core :as config]
             [hive-mcp.agent.budget-router :as budget-router]
             [hive-mcp.agent.spawn-mode-registry :as spawn-registry]
+            [hive-mcp.agent.grant :as grant]
             [hive-mcp.agent.ling.lifecycle :as lifecycle]
             [hive-mcp.agent.ling.headless-registry :as headless-reg]
             [hive-mcp.agent.ling.terminal-registry :as terminal-reg]
@@ -285,7 +286,7 @@
   [project-id agents-fn]
   (let [active-status #{:active :running :working :idle :spawning}
         project-lings (->> (agents-fn)
-                           (filter #(= 1 (:slave/depth %)))
+                           (filter grant/ling-row?)
                            (filter #(active-status (:slave/status %)))
                            (filter (fn [a] (if project-id
                                              (= project-id (:slave/project-id a))

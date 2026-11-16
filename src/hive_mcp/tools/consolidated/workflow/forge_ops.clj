@@ -11,6 +11,7 @@
             [hive-mcp.swarm.datascript.queries :as queries]
             [hive-mcp.agent.protocol :as proto]
             [hive-mcp.agent.ling :as ling]
+            [hive-mcp.agent.grant :as grant]
             [hive-mcp.tools.memory.scope :as scope]
             [hive-mcp.config.core :as config]
             [hive-mcp.agent.budget-router :as budget-router]
@@ -89,7 +90,7 @@
                       plan-ids plan-ids
                       (contains? opts :task_ids) (set task_ids))
          candidates (->> (agents-fn)
-                         (filter #(= 1 (:slave/depth %)))
+                         (filter grant/ling-row?)
                          (filter smitable?)
                          (filter #(if scoped?
                                     (and (= project-id (:slave/project-id %))
@@ -324,7 +325,7 @@
   [{:keys [directory]} forge-state]
   (let [state          @forge-state
         all-agents     (queries/get-all-slaves)
-        lings          (->> all-agents (filter #(= 1 (:slave/depth %))))
+        lings          (->> all-agents (filter grant/ling-row?))
         active-lings   (filter #(#{:active :running :idle :spawning} (:slave/status %)) lings)
         terminal-lings (filter #(terminal-statuses (:slave/status %)) lings)
         kanban-result  (result/rescue nil
