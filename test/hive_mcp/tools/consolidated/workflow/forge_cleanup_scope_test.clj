@@ -30,8 +30,10 @@
     {:ids @killed :result result}))
 
 (deftest scoped-cleanup-requires-project-and-task-ownership
-  (is (= ["owned"] (:ids (run-cleanup {:directory "/hive" :task_ids ["a"]}))))
-  (is (= ["owned" "other-task"]
+  ;; RRS-S5A: a grandchild (depth 2) is a ling too; a completed one in scope
+  ;; is reaped like its depth-1 parent (it used to be skipped by (= 1 depth)).
+  (is (= ["owned" "nested"] (:ids (run-cleanup {:directory "/hive" :task_ids ["a"]}))))
+  (is (= ["owned" "other-task" "nested"]
          (:ids (run-cleanup {:directory "/hive" :plan_id "plan"})))))
 
 (deftest whitelist-intersects-plan-and-empty-means-empty
@@ -48,7 +50,7 @@
     (is (thrown? clojure.lang.ExceptionInfo (run-cleanup opts)))))
 
 (deftest unscoped-cleanup-retains-project-compatibility
-  (is (= ["owned" "other-task" "unknown-project" "unknown-task"]
+  (is (= ["owned" "other-task" "unknown-project" "unknown-task" "nested"]
          (:ids (run-cleanup {:directory "/hive"})))))
 
 (deftest fsm-cleanup-forwards-explicit-scope

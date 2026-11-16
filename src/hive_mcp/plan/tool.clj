@@ -18,6 +18,8 @@
             [clojure.string :as str]
             [taoensso.timbre :as log]
             [hive-mcp.plan.schema :as schema]
+            [hive-mcp.plan.plans :as plans]
+            [hive-mcp.plan.status :as status]
             [hive-spi.schema.derive :as derive]
             [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
@@ -305,6 +307,102 @@
          :kg-pending? (:pending? kg-result)
          :kg-warnings (:warnings kg-result)}))))
 
+(def ^:private terminal-plan-statuses
+  "Statuses a plan is spent at: converting again would duplicate a board that
+   already finished (completed) or was replaced (superseded)."
+  #{"completed" "superseded"})
+
+(defn- plan-entry?
+  "True when `entry` is a plan record. The type may arrive as a keyword."
+  [entry]
+  (= "plan" (some-> (:type entry) name)))
+
+(defn- plan-status
+  "The entry's plan-status through the tag/field reader."
+  [entry]
+  (status/status-of entry))
+
+(defn- already-converted-response
+  "Answer a repeat convert of an ACTIVE plan with what the first one made.
+
+   Returning the existing ids instead of creating a duplicate set is the point:
+   a re-run (a retried tool call, an explorer ling completing twice) must be
+   safe. `:already-converted` marks the response so a caller can tell the noop
+   from a conversion."
+  [entry]
+  (let [task-ids (status/task-ids-of entry)]
+    (mcp-json {:success true
+               :already-converted true
+               :plan-id (:id entry)
+               :plan-source :memory
+               :plan-status "active"
+               :task-ids task-ids
+               :task-count (count task-ids)
+               :waves (status/waves-of entry)})))
+
+(defn- mark-plan-active!
+  "Stamp `active` on the plan entry BEFORE any task is created.
+
+   Order matters: the write lands first, so a conversion that then dies
+   half-way still reads as `active` — a partial board the caller can see —
+   rather than `draft`, which looks unconverted and invites a duplicate. Both
+   stores are written: the memory store is what a later convert reads back, the
+   plans index is what `plan list` and a `plan-status` filter read."
+  [plan-id]
+  (let [entry (facade/get-entry-by-id plan-id)]
+    (facade/update-entry! plan-id {:plan-status "active"
+                                   :tags (status/with-status (:tags entry) "active")}))
+  ;; The index mirror is best-effort: the store is authoritative and has the
+  ;; status, and a degraded index must not abort a conversion the board needs.
+  (try
+    (plans/update-plan-status! plan-id "active")
+    (catch Throwable t
+      (log/warn "Plan index status mirror failed for" plan-id ":" (ex-message t)))))
+
+(defn- plan-index-payload
+  "The plans-index document for ENTRY with the conversion folded in.
+
+   :wave-count is the only conversion fact the index metadata carries, so it is
+   derived here rather than left off: the index is derived state and must not
+   go on advertising a draft, wave-less plan after a conversion."
+  [entry task-ids waves]
+  (cond-> {:id (:id entry)
+           :type "plan"
+           :content (:content entry)
+           :tags (:tags entry)
+           :project-id (:project-id entry)
+           :duration (:duration entry)
+           :expires (:expires entry)
+           :content-hash (:content-hash entry)
+           :plan-status "active"
+           :wave-count (count waves)
+           :abstraction-level (:abstraction-level entry)
+           :knowledge-gaps (:knowledge-gaps entry)
+           :agent-id (:agent-id entry)}
+    (seq task-ids) (assoc :steps-count (count task-ids))))
+
+(defn- persist-conversion!
+  "Record what the conversion produced on the plan entry — the ids it created
+   and the waves it laid out — then re-index.
+
+   Without the ids the next convert cannot tell a converted plan from an
+   untouched one, and the double-convert noop above has nothing to answer with.
+   The store write propagates on failure (the board exists; a silently dropped
+   record is exactly what makes the next convert duplicate it)."
+  [entry task-ids waves]
+  (let [task-ids (vec task-ids)
+        waves (or waves {})]
+    (facade/update-entry! (:id entry)
+                          {:task-ids task-ids :waves waves
+                           :tags (status/with-status
+                                     (status/with-conversion (:tags entry) task-ids waves)
+                                     "active")})
+    (try
+      (plans/index-plan! (plan-index-payload entry task-ids waves))
+      (catch Throwable t
+        (log/warn "Plan re-index after conversion failed for" (:id entry)
+                  "(conversion recorded, index stale):" (ex-message t))))))
+
 (defn plan-to-kanban
   "Convert a plan memory entry (or file) to kanban tasks with KG edges.
 
@@ -315,65 +413,94 @@
    and delegates execution to an injected execute-fn that creates
    kanban tasks and KG edges.
 
+   Only the memory route carries lifecycle. A plan_id must name a type=plan
+   entry (anything else parses as prose and posts a junk board), a spent plan
+   refuses unless `force`, and the conversion is recorded on the entry. A
+   plan_path is a bare file — no entry to read a status from or write one to —
+   so it converts every time.
+
    Arguments:
      plan-memory-id - Memory entry ID containing the plan (nil when using plan-path)
      :directory     - Working directory for project scope (optional)
      :plan-path     - File path to slurp plan content from (alternative to memory ID)
      :auto-assign?  - Auto-assign tasks to lings (optional, not yet implemented)
+     :force         - Convert even when the plan is spent or already converted
 
    Returns:
-     {:task-ids [...] :kg-edges [...] :plan-id ...}
+     {:task-ids [...] :kg-edges [...] :plan-id ...}, or
+     {:success true :already-converted true :task-ids [...] :waves {...}} on a
+     noop, or an :isError envelope.
 
    Side effects:
+     - Marks the plan entry `active`, then records task-ids/waves on it
      - Creates kanban tasks in memory system
      - Creates KG edges: plan --depends-on--> tasks
      - Creates KG edges: task --depends-on--> task (based on step dependencies)"
-  [plan-memory-id & {:keys [directory plan-path]}]
-  (log/info "plan_to_kanban" {:plan-id plan-memory-id :plan-path plan-path :directory directory})
+  [plan-memory-id & {:keys [directory plan-path force]}]
+  (log/info "plan_to_kanban" {:plan-id plan-memory-id :plan-path plan-path
+                              :directory directory :force force})
   (try
     (let [directory (or directory (ctx/current-directory))
           agent-id (System/getenv "CLAUDE_SWARM_SLAVE_ID")
+          ;; Resolve the entry once: the memory route takes content, project and
+          ;; status off it, and writes the conversion back to it.
+          entry (when-not (str/blank? (str plan-memory-id))
+                  (facade/get-entry-by-id plan-memory-id))]
 
-          ;; Resolve content: file path takes priority over memory ID
-          [content project-id plan-id]
-          (if plan-path
-            (do (log/info "plan_to_kanban: loading plan from file" {:path plan-path})
-                [(slurp plan-path)
-                 (ctx/current-project-id)
-                 (str "file:" plan-path)])
-            (when-let [entry (facade/get-entry-by-id plan-memory-id)]
-              [(:content entry)
-               (:project-id entry)
-               plan-memory-id]))]
+      (cond
+        (and entry (not (plan-entry? entry)))
+        (mcp-error (str "Memory entry " plan-memory-id " is type="
+                        (pr-str (:type entry)) ", not plan. "
+                        "Store the plan as a type=plan memory."))
 
-      (if-not content
-        (mcp-error (str "Plan not found. Provide plan_id (memory entry) or plan_path (file). "
-                        (when plan-memory-id (str "Tried memory ID: " plan-memory-id))
-                        (when plan-path (str "Tried file: " plan-path))))
+        (and entry (contains? terminal-plan-statuses (plan-status entry)) (not force))
+        (mcp-error (str "Plan " plan-memory-id " is " (plan-status entry)
+                        " — already converted. Pass force=true to convert again."))
 
-        (let [plan-memory-id (or plan-id plan-memory-id)
-              execute-fn (build-execute-fn directory plan-memory-id project-id agent-id)
+        (and entry (= "active" (plan-status entry))
+             (seq (status/task-ids-of entry)) (not force))
+        (already-converted-response entry)
 
-              ;; Run Plan FSM: draft → validated → approved → executing
-              result (plan-fsm/run-plan-fsm
-                      {:content content :plan-id plan-memory-id}
-                      {:execute-fn execute-fn :directory directory})]
+        :else
+        (let [content (if plan-path
+                        (do (log/info "plan_to_kanban: loading plan from file" {:path plan-path})
+                            (slurp plan-path))
+                        (:content entry))
+              project-id (if plan-path (ctx/current-project-id) (:project-id entry))
+              plan-id (if plan-path (str "file:" plan-path) plan-memory-id)]
 
-          (mcp-json {:success true
-                     :plan-id plan-memory-id
-                     :plan-title (get-in result [:plan :title])
-                     :plan-source (if plan-path :file :memory)
-                     :decision-id (:decision-id result)
-                     :task-ids (:task-ids result)
-                     :task-count (count (:task-ids result))
-                     :waves (:waves result)
-                     :max-wave (when (seq (:waves result)) (apply max (vals (:waves result))))
-                     :kg-edges (:kg-edges result)
-                     :edge-count (count (:kg-edges result))
-                     :kg-degraded? (boolean (:kg-degraded? result))
-                     :kg-pending? (boolean (:kg-pending? result))
-                     :kg-warnings (:kg-warnings result)
-                     :step-mapping (:step-mapping result)}))))
+          (if-not content
+            (mcp-error (str "Plan not found. Provide plan_id (memory entry) or plan_path (file). "
+                            (when plan-memory-id (str "Tried memory ID: " plan-memory-id))
+                            (when plan-path (str "Tried file: " plan-path))))
+
+            (do
+              (when entry (mark-plan-active! plan-id))
+              (let [execute-fn (build-execute-fn directory plan-id project-id agent-id)
+
+                    ;; Run Plan FSM: draft → validated → approved → executing
+                    result (plan-fsm/run-plan-fsm
+                            {:content content :plan-id plan-id}
+                            {:execute-fn execute-fn :directory directory})]
+
+                (when entry
+                  (persist-conversion! entry (:task-ids result) (:waves result)))
+
+                (mcp-json {:success true
+                           :plan-id plan-id
+                           :plan-title (get-in result [:plan :title])
+                           :plan-source (if plan-path :file :memory)
+                           :decision-id (:decision-id result)
+                           :task-ids (:task-ids result)
+                           :task-count (count (:task-ids result))
+                           :waves (:waves result)
+                           :max-wave (when (seq (:waves result)) (apply max (vals (:waves result))))
+                           :kg-edges (:kg-edges result)
+                           :edge-count (count (:kg-edges result))
+                           :kg-degraded? (boolean (:kg-degraded? result))
+                           :kg-pending? (boolean (:pending? result))
+                           :kg-warnings (:kg-warnings result)
+                           :step-mapping (:step-mapping result)})))))))
 
     (catch clojure.lang.ExceptionInfo e
       (let [data (ex-data e)]
@@ -389,14 +516,16 @@
 
 (defn handle-plan-to-kanban
   "MCP tool handler for plan_to_kanban.
-   Accepts plan_id (memory entry) OR plan_path (file path). At least one required."
-  [{:keys [plan_id plan_path directory auto_assign]}]
+   Accepts plan_id (memory entry) OR plan_path (file path). At least one required.
+   force=true re-converts a plan that is already active, completed or superseded."
+  [{:keys [plan_id plan_path directory auto_assign force]}]
   (if (and (str/blank? plan_id) (str/blank? plan_path))
     (mcp-error "Either plan_id or plan_path is required")
     (plan-to-kanban plan_id
                     :directory directory
                     :plan-path plan_path
-                    :auto-assign? auto_assign)))
+                    :auto-assign? auto_assign
+                    :force (boolean force))))
 
 (defn- json-get
   "Read k from a JSON-Schema map whose keys may be keywords or strings."
@@ -480,6 +609,33 @@
 (m/=> compute-waves
       [:=> [:cat [:sequential :map]]
        [:map-of :string :int]])
+
+;; Lifecycle guards/persistence take an entry map and answer maps or booleans.
+;; Any-typed in: a backend entry is an open map.
+
+(m/=> plan-entry?
+      [:=> [:cat :any]
+       :boolean])
+
+(m/=> plan-status
+      [:=> [:cat :any]
+       :string])
+
+(m/=> already-converted-response
+      [:=> [:cat :map]
+       :map])
+
+(m/=> mark-plan-active!
+      [:=> [:cat :any]
+       :any])
+
+(m/=> plan-index-payload
+      [:=> [:cat :map [:sequential :any] :any]
+       :map])
+
+(m/=> persist-conversion!
+      [:=> [:cat :map [:sequential :any] :any]
+       :any])
 
 (m/=> plan-to-kanban
       [:=> [:cat :any [:* :any]] :map])

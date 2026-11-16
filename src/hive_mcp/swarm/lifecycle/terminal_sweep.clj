@@ -10,7 +10,8 @@
    fall back to a `kill -0 :slave/process-pid` check. A dead pid is a strong
    dead signal even when the addon channel is degraded — without this fallback
    ghost rows accumulate forever every time Emacs restarts."
-  (:require [hive-mcp.agent.ling.spawn :as ling]
+  (:require [hive-mcp.agent.grant :as grant]
+            [hive-mcp.agent.ling.spawn :as ling]
             [hive-mcp.agent.ling.terminal-registry :as terminal-reg]
             [hive-mcp.agent.protocol :as agent]
             [hive-mcp.protocols.lifecycle :as lifecycle]
@@ -27,7 +28,7 @@
 (defn- terminal-slave?
   [registered-terminals slave]
   (let [mode (:ling/spawn-mode slave)]
-    (and (= 1 (:slave/depth slave))
+    (and (grant/ling-row? slave)
          (not= false (:slave/alive? slave))
          (not= :zombie (:slave/status slave))
          (contains? registered-terminals mode))))

@@ -4,6 +4,7 @@
             [hive-mcp.tools.agent.helpers :as helpers]
             [hive-mcp.tools.agent.reconcile :as reconcile]
             [hive-spi.editor.services :as svc]
+            [hive-mcp.agent.grant :as grant]
             [hive-mcp.agent.ling :as ling]
             [hive-mcp.swarm.datascript.queries :as queries]
             [hive-mcp.swarm.registry :as registry]
@@ -59,7 +60,7 @@
           elisp-lings (or (helpers/query-elisp-lings) [])
           elisp-ids (set (map :slave/id elisp-lings))
           orphan-lings (->> ds-agents
-                            (filter #(= 1 (:slave/depth %)))
+                            (filter grant/ling-row?)
                             (filter #(sync/missing-from-emacs? (:slave/id %) elisp-ids))
                             (map :slave/id))
           removed (doall

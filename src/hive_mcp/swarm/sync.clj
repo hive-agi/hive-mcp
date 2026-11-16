@@ -29,6 +29,7 @@
    - `dispatch-event!`: Safe event dispatch with error handling
    - Handler functions use consistent field extraction pattern"
   (:require [hive-spi.swarm.protocol :as proto]
+            [hive-mcp.agent.grant :as grant]
             [hive-mcp.swarm.bootstrap.factory :as bootstrap]
             [hive-mcp.swarm.bootstrap.noop :as bootstrap-noop]
             [hive-mcp.swarm.datascript.registry :as registry]
@@ -251,8 +252,11 @@
   [event]
   (let [slave-id (get-field event :slave-id)
         name (get-field event :name slave-id)
-        depth (get-field event :depth 1)
         parent-id (get-field event :parent-id)
+        ;; No :depth on the event: a child of `parent-id` sits one below it
+        ;; (an unknown or coordinator parent is 0, so its child is 1).
+        depth (or (get-field event :depth)
+                  (inc (long (grant/depth-of grant/registry-get-slave parent-id))))
         cwd (get-field event :cwd)
         project-id (when cwd (project-scope/get-current-project-id cwd))
         reg (get-swarm-registry)
@@ -583,7 +587,10 @@
   (let [slave-id (:slave-id slave)
         status (some-> (:status slave) keyword)
         name (or (:name slave) slave-id)
-        depth (or (:depth slave) 1)
+        ;; A snapshot row without :depth: one below its parent when the parent
+        ;; is already restored, else 1 (no parent known yet).
+        depth (or (:depth slave)
+                  (inc (long (grant/depth-of grant/registry-get-slave (:parent-id slave)))))
         cwd (:cwd slave)
         project-id (or (:project-id slave)
                        (when cwd (project-scope/get-current-project-id cwd)))

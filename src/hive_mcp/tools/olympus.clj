@@ -7,7 +7,8 @@
    - olympus_focus: Focus/maximize specific ling
    - olympus_arrange: Trigger grid arrangement
    - olympus_tab: Navigate between tabs"
-  (:require [hive-mcp.emacs-ext.olympus :as olympus]
+  (:require [hive-mcp.agent.grant :as grant]
+            [hive-mcp.emacs-ext.olympus :as olympus]
             [hive-mcp.swarm.datascript.queries :as ds-queries]
             [hive-mcp.events.core :as ev]
             [clojure.edn :as edn] [hive-dsl.result :refer [rescue]]
@@ -21,11 +22,11 @@
 (defn- get-active-lings
   "Query all active lings from DataScript.
    Returns sequence of ling maps with :slave/id, :slave/name.
-   Filters to lings at depth=1 that aren't in error state."
+   Filters to lings (depth 1 or deeper) that aren't in error state."
   []
   (->> (ds-queries/get-all-slaves)
-       ;; Filter to lings (depth 1), excluding the hivemind (depth 0)
-       (filter #(= 1 (:slave/depth %)))
+       ;; Filter to lings at any lineage depth, excluding the hivemind (depth 0)
+       (filter grant/ling-row?)
        ;; Exclude errored slaves
        (filter #(not= :error (:slave/status %)))
        ;; Return only needed fields for Olympus
