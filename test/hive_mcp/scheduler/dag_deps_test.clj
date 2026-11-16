@@ -1,7 +1,7 @@
 (ns hive-mcp.scheduler.dag-deps-test
   "Where DAG dependencies come from: the card's own `dep:<task-id>` tags and
    the KG, never 'no dependencies' because a read failed."
-  (:require [clojure.test :refer [deftest is testing]]
+  (:require [clojure.test :refer [deftest is]]
             [hive-mcp.scheduler.dag-waves :as dag]
             [hive-mcp.knowledge-graph.edges :as kg-edges]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>

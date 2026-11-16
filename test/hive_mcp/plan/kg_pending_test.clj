@@ -5,7 +5,8 @@
             [hive-dsl.result :as r]
             [hive-mcp.plan.kg-degraded :as kg]
             [hive-mcp.plan.tool :as tool]
-            [hive-mcp.scheduler.dag-waves :as dag]))
+            [hive-mcp.scheduler.dag-waves :as dag]
+            [hive-spi.kanban.registry]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later

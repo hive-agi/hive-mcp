@@ -31,8 +31,9 @@
   (fn [id opts] (swap! spawned conj {:id id :opts opts}) id))
 
 ;; The open default satisfies the same conformance suite as the stub.
-(conf/defconformance local-headless
-  (fn [] {:dispatcher td/local-headless}))
+(deftest local-headless-passes-the-dispatcher-conformance-suite
+  (is (= conf/case-ids
+         (conf/run-conformance (fn [] {:dispatcher td/local-headless})))))
 
 (deftest local-headless-serves-when-no-hive-agent-is-loaded
   (let [spawned (atom [])]
