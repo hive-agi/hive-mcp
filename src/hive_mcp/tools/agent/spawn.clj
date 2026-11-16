@@ -17,7 +17,6 @@
             [hive-mcp.swarm.datascript.queries :as queries]
             [hive-mcp.knowledge-graph.scope :as kg-scope]
             [hive-spi.swarm.guards :as guards]
-            [hive-mcp.config.core :as config]
             [hive-mcp.schema.tools :as schema]
             [taoensso.timbre :as log]
             [clojure.string :as str]
@@ -28,7 +27,8 @@
             [malli.core :as m]
             [hive-mcp.tools.result-bridge :as rb]
             [hive-mcp.context.request :as request-ctx]
-            [hive-mcp.agent.ling.spawn :as spawn-impl]))
+            [hive-mcp.agent.ling.spawn :as spawn-impl]
+            [hive-mcp.system.heap-admission :as heap-admission]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -62,44 +62,37 @@
        "If you need parallel work, use hivemind_shout to request the coordinator\n"
        "to spawn agents on your behalf."))
 
+(defn- heap-refusal
+  "Layer 4: the spawn refusal for a hard-pressure `reading`
+   (`hive-mcp.system.heap-admission/hard-pressure`). Nothing is queued and
+   the brief is dropped, so it says so, with the measured figures and when to
+   retry."
+  [{:keys [level basis heap-pct now-pct post-gc-pct pool watermarks]}]
+  (let [hard-pct (some-> (:hard watermarks) double (* 100.0) Math/round int)
+        retry-s  heap-admission/retry-after-s]
+    {:success            false
+     :refused            true
+     :reason             "heap-pressure"
+     :level              (some-> level clojure.core/name)
+     :basis              (clojure.core/name (or basis :instant))
+     :heap_post_gc_pct   post-gc-pct
+     :heap_now_pct       now-pct
+     :hard_watermark_pct hard-pct
+     :retry_after_s      retry-s
+     :brief_kept         false
+     :message
+     (str "Spawn refused: heap pressure. "
+          (if (= :post-gc basis)
+            (str "The JVM heap is " heap-pct "% full after its last old-gen collection"
+                 (when pool (str " (" pool ")")) ", at or above the hard watermark of "
+                 hard-pct "% (" now-pct "% in use right now, counting uncollected garbage). ")
+            (str "The JVM heap is " heap-pct "% in use, at or above the hard watermark of "
+                 hard-pct "%; no post-GC reading is available here, so this figure "
+                 "counts uncollected garbage. "))
+          "Nothing was queued and the brief was NOT kept: resend the full task text. "
+          "Retry after " retry-s "s. If the post-GC figure stays at or above "
+          hard-pct "%, the live set is too large for -Xmx: raise -Xmx or stop idle lings.")}))
 
-(defn- heap-pressure-defer
-  "Layer 4 OOM backpressure: best-effort heap-headroom admission check.
-   Returns a {:level :heap-pct} map when a new spawn should be DEFERRED
-   (JVM heap fraction >= the soft watermark), or nil to ADMIT.
-
-   Lings launch inside (or alongside) this nREPL JVM; N concurrent
-   heavy spawns atop the multi-GB KG floor have driven kernel OOMs. We shed
-   *new* spawns under pressure rather than hard-kill live agents.
-
-   Reuses the self-contained hive-cache.mem-guard governor, lazily resolved —
-   hive-mcp does NOT statically depend on hive-cache. FAIL-OPEN: a missing
-   governor, any sampling error, or config opt-out all ADMIT (return nil), so
-   the guard can never wedge the spawn path.
-
-   Config — note hive-mcp.config.resolve/get-service-value uses (or val default)
-   which swallows boolean false, so the kill switch is a default-FALSE *disable*
-   flag, not a default-true enable flag:
-     [:swarm :heap-admission-disabled] default false; set true (or env
-       HIVE_MCP_SWARM_HEAP_ADMISSION_DISABLED=true) to force the gate off.
-     [:swarm :heap-admission-soft]      0.0-1.0 heap fraction; nil = mem-guard
-       default 0.80 (env HIVE_MCP_SWARM_HEAP_ADMISSION_SOFT)."
-  []
-  (try
-    (when-not (config/get-service-value :swarm :heap-admission-disabled
-                                        :env "HIVE_MCP_SWARM_HEAP_ADMISSION_DISABLED"
-                                        :parse #(Boolean/parseBoolean %)
-                                        :default false)
-      (when-let [check (requiring-resolve 'hive-cache.mem-guard/check)]
-        (let [soft (config/get-service-value :swarm :heap-admission-soft
-                                             :env "HIVE_MCP_SWARM_HEAP_ADMISSION_SOFT"
-                                             :parse parse-double
-                                             :default nil)
-              wm   (when (number? soft) {:soft soft})
-              {:keys [level heap-pct]} (check nil wm)]
-          (when (contains? #{:soft :hard} level)
-            {:level level :heap-pct heap-pct}))))
-    (catch Throwable _ nil)))
 
 ;;; =============================================================================
 ;;; Spawn Handler
@@ -421,19 +414,12 @@
       (log/warn "Spawn denied: child ling attempted agent spawn"
                 {:role (guards/get-role) :depth (guards/ling-depth)})
       (mcp-error (build-spawn-denied-message)))
-    (if-let [defer (heap-pressure-defer)]
-      ;; Layer 4: heap-headroom backpressure — defer rather than launch.
+    (if-let [refusal (some-> (heap-admission/hard-pressure) heap-refusal)]
+      ;; Layer 4: heap admission — refused at the HARD post-GC watermark.
+      ;; Nothing is queued; the refusal says the brief was not kept.
       (do
-        (log/warn "Spawn deferred: heap pressure backpressure" defer)
-        (mcp-json {:success  false
-                   :deferred true
-                   :reason   "heap-pressure"
-                   :level    (clojure.core/name (:level defer))
-                   :heap-pct (:heap-pct defer)
-                   :message  (str "Spawn deferred: JVM heap at " (:heap-pct defer)
-                                  "% (>= soft watermark). Best-effort OOM "
-                                  "backpressure — existing agents keep running; "
-                                  "retry once active lings drain.")}))
+        (log/warn "Spawn refused: heap pressure" (dissoc refusal :message))
+        (mcp-json refusal))
       (let [agent-type (keyword type)]
       (if-not (and (agent-type-registry/valid-type? agent-type)
                    (agent-type-registry/spawnable? agent-type))
