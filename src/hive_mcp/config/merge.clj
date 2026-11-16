@@ -33,7 +33,10 @@
                 :retry {:attempts 1 :backoff-ms [0]}
                 :probe-interval-ms 5000}
    :spawn      {:chain [:headless :tmux :vterm]}
-   :git-editor {:chain [:hive-git :emacs]}})
+   :git-editor {:chain [:hive-git :emacs]}
+   ;; a dispatch starts an agent and is not idempotent: one attempt per adapter
+   :task-dispatch {:chain [:hive-agent-swarm :local-headless]
+                   :retry {:attempts 1 :backoff-ms [0]}}})
 
 (def default-config
   "Default configuration. Used as base — user config.edn is deep-merged on top."

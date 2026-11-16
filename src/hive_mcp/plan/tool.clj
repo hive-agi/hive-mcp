@@ -117,14 +117,15 @@
    Creates through the IKanbanWrite port resolved at call time.
 
    Returns {:ok task-id} or {:error message}"
-  [{:keys [id title description priority tags files execution]} directory & {:keys [wave]}]
+  [{:keys [id title description priority tags files execution]} directory & {:keys [wave deps]}]
   (try
     (let [priority-str (if (keyword? priority) (name priority) (str priority))
           task-context (cond-> {:plan-step-id id}
                          (seq files) (assoc :files files)
                          execution (assoc :execution execution))
           task-tags    (vec (distinct (cond-> (vec tags)
-                                        (some? wave) (conj (str "wave:" wave)))))
+                                        (some? wave) (conj (str "wave:" wave))
+                                        (seq deps)   (into (map #(str "dep:" %) (sort deps))))))
           request      (cond-> {:title title
                                 :priority priority-str
                                 :directory directory
@@ -208,6 +209,29 @@
        :source-type :automated
        :created-by (str "plan_to_kanban" (when agent-id (str ":" agent-id)))}))))
 
+(defn- create-step-cards!
+  "Create one kanban card per plan step, in wave order so a step's
+   dependencies already have task ids when it is created, and write those ids
+   on the card as `dep:<task-id>` tags in the same load-bearing create. The
+   scheduler reads the card first, so a slow or unreachable KG cannot turn a
+   dependent into 'no dependencies'. Answers [{:step-id :task-id} | {:step-id
+   :error}] in creation order; a step whose dependency failed to create still
+   creates, with the deps it has."
+  [steps waves directory]
+  (let [ordered (sort-by #(get waves (:id %) 0) steps)]
+    (loop [todo ordered, made {}, out []]
+      (if-let [step (first todo)]
+        (let [deps (keep #(get made %) (:depends-on step))
+              {:keys [ok error]} (create-kanban-task! step directory
+                                                      :wave (get waves (:id step))
+                                                      :deps (set deps))]
+          (if error
+            (recur (rest todo) made (conj out {:step-id (:id step) :error error}))
+            (recur (rest todo) (assoc made (:id step) ok)
+                   (conj out {:step-id (:id step) :task-id ok}))))
+        (let [by-step (into {} (map (juxt :step-id identity)) out)]
+          (mapv #(get by-step (:id %)) steps))))))
+
 (defn- build-execute-fn
   "Build the execute function for the Plan FSM.
 
@@ -237,14 +261,7 @@
           waves      (merge-waves auto-waves (:waves plan))
 
           ;; Create kanban tasks for each step, threading wave-number through
-          task-results (doall
-                        (for [step steps]
-                          (let [wave-n (get waves (:id step))
-                                {:keys [ok error]} (create-kanban-task!
-                                                     step directory :wave wave-n)]
-                            (if error
-                              {:step-id (:id step) :error error}
-                              {:step-id (:id step) :task-id ok}))))
+          task-results (create-step-cards! steps waves directory)
           errors (filter :error task-results)
           successes (remove :error task-results)]
 

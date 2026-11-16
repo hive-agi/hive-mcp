@@ -22,12 +22,12 @@
    :priority "medium",
    :directory "/tmp/plan-tool-facet",
    :context {:plan-step-id "b"},
-   :tags ["wave:1"]}
+   :tags ["wave:1" "dep:task-1"]}
   {:title "C",
    :priority "medium",
    :directory "/tmp/plan-tool-facet",
    :context {:plan-step-id "c"},
-   :tags ["wave:2"]}],
+   :tags ["wave:2" "dep:task-1" "dep:task-2"]}],
  :user-waves {:waves {:a 1, :b 0}, :max-wave 1, :task-count 2},
  :rejected
  {:isError true,
