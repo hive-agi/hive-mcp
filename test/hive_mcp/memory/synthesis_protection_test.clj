@@ -21,10 +21,8 @@
 (use-fixtures :each with-clean-provider)
 
 (defn- stub-rows [rows]
-  ;; conn/query returns [[entity] ...]; pull-shape is the entity map
-  (with-redefs [conn/db-snapshot (fn [] ::db)
-                conn/query (fn [_q _db] (mapv vector rows))]
-    (sp/synthesis-protected-ids)))
+  ;; the KG read seam answers [[entity] ...]; pull-shape is the entity map
+  (sp/synthesis-protected-ids (fn [_q] (mapv vector rows))))
 
 (deftest floor-membership
   (testing "members of synthetics at/above the floor are protected; below are released"
@@ -53,14 +51,25 @@
 
 (deftest provider-swallows-kg-failure
   (testing "synthesis-protected-ids yields #{} when the KG read throws"
-    (with-redefs [conn/db-snapshot (fn [] (throw (ex-info "kg down" {})))]
-      (is (= #{} (sp/synthesis-protected-ids))))))
+    (is (= #{} (sp/synthesis-protected-ids (fn [_q] (throw (ex-info "kg down" {}))))))))
 
-;; Against a REAL (fresh, in-memory) KG store, no redefs. KNOWN BUG, pinned
-;; on purpose so a fix shows up as a golden diff: synthesis-protected-ids
-;; calls (conn/query q db), which forwards db as an extra :in input to a query
-;; that declares none; DataScript throws "Extra inputs passed", the catch
-;; answers #{}, and the seeded members are NOT protected. See the f04 report.
+(deftest real-store-protects-seeded-members
+  ;; COV-FACETS-FINDINGS-W2 (f04): the default read used to pass the db as an
+  ;; extra :in input, DataScript threw "Extra inputs passed", the catch answered
+  ;; #{} and protection was silently off. Against a REAL store, no stubs.
+  (kg-fixtures/datascript-fixture
+   (fn []
+     (conn/transact! [{:kg-synthetic/id "s1" :kg-synthetic/members ["a1" "a2"]
+                       :kg-synthetic/confidence 0.5}
+                      {:kg-synthetic/id "s2" :kg-synthetic/members ["c1"]
+                       :kg-synthetic/confidence 0.29}])
+     (is (= #{"a1" "a2"} (sp/synthesis-protected-ids)))
+     (sp/install!)
+     (is (= #{"a1" "a2"} (ports/protected-ids))
+         "the installed provider reaches the reaper through the SPI"))))
+
+;; Against a REAL (fresh, in-memory) KG store, no stubs. Pins the fixed
+;; behaviour: members of the synthetic above the floor are protected.
 (deftest-golden real-store-protection-golden
   "test/golden/hive-mcp/memory/synthesis-protection-real-store.edn"
   (kg-fixtures/datascript-fixture

@@ -81,7 +81,7 @@
 (defn all-ids
   "Sorted vector of all registered scorer-ids."
   []
-  (vec (sort (keys (:by-id @state)))))
+  (types/sorted-ids (keys (:by-id @state))))
 
 (m/=> all-ids [:=> [:cat] [:vector :any]])
 

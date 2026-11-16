@@ -231,3 +231,21 @@
           side (take 2 (m/children arity))]
     (is (= 3 (count (mg/sample side {:size 3 :seed 7})))
         (str ns-sym "/" fn-sym " " (pr-str (m/form side))))))
+
+(deftest all-ids-totally-orders-mixed-id-types
+  ;; COV-FACETS-FINDINGS-W2 (f05): all-ids sorted the raw ids, so a keyword id
+  ;; next to a uuid id threw ClassCastException. Every singleton registry
+  ;; must answer a stable vector instead.
+  (let [u #uuid "00000000-0000-0000-0000-000000000001"]
+    (doseq [[label reset! register! all-ids]
+            [["scorers" r-scorers/reset-for-test! r-scorers/register! r-scorers/all-ids]
+             ["phase-providers" r-providers/reset-for-test! r-providers/register! r-providers/all-ids]
+             ["planners" r-planners/reset-for-test! r-planners/register! r-planners/all-ids]
+             ["plan-stores" r-stores/reset-for-test! r-stores/register! r-stores/all-ids]
+             ["dispatch-modes" r-dispatch/reset-for-test! r-dispatch/register! r-dispatch/all-ids]]]
+      (testing label
+        (reset!)
+        (register! :owner/a :id/y {:v 1})
+        (register! :owner/a u {:v 2})
+        (register! :owner/b :id/x {:v 3})
+        (is (= [:id/x :id/y u] (all-ids)))))))

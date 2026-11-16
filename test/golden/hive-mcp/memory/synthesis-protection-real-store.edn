@@ -1,1 +1,1 @@
-{:empty-kg [], :seeded [], :install :installed, :floor 0.3}
+{:empty-kg [], :seeded ["a1" "a2"], :install :installed, :floor 0.3}
