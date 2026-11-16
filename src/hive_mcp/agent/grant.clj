@@ -18,6 +18,7 @@
   (:require [clojure.string :as str]
             [clojure.data.json :as json]
             [malli.core :as m]
+            [taoensso.timbre :as log]
             [hive-mcp.extensions.soft :as ext-soft]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
@@ -94,12 +95,55 @@
   (when-not (str/blank? (some-> caller-id str))
     (some slave-attr (lineage get-slave (str caller-id)))))
 
-(defn depth-of
-  "Lineage depth of a caller: its registry depth, else 0 (a coordinator)."
+(defn ling-depth?
+  "True when DEPTH is the lineage depth of a ling at any level: 1 or deeper.
+   The coordinator is 0, and an absent or non-integer depth is not a ling's.
+   The one predicate every reader of :slave/depth uses to mean `a ling`."
+  [depth]
+  (and (integer? depth) (>= (long depth) 1)))
+
+(defn ling-row?
+  "True when the registry ROW sits at a ling's lineage depth (`ling-depth?`):
+   a child at depth 1, a grandchild at depth 2, and so on."
+  [row]
+  (ling-depth? (:slave/depth row)))
+
+(defn- coordinator-id? [id]
+  (str/starts-with? (first (str/split (str id) #":" 2)) "coordinator"))
+
+(defn depth-of-known
+  "Lineage depth of a caller read from its registry rows, or nil when it
+   cannot be told. A caller with no registry row is root-level: 0. Otherwise
+   the nearest row up the parent chain that records :slave/depth answers,
+   plus the hops from the caller to it, so a rehydrated row without
+   :slave/depth is derived from its parent chain; a coordinator lane counts
+   as depth 0 with or without a row. nil: the chain ends (no parent, a cycle,
+   an unregistered non-coordinator ancestor) before a depth is found."
   [get-slave caller-id]
-  (or (when-not (str/blank? (some-> caller-id str))
-        (some :slave/depth (take 1 (lineage get-slave (str caller-id)))))
-      0))
+  (when-not (str/blank? (some-> caller-id str))
+    (loop [id (str caller-id) hops 0 seen #{}]
+      (let [row (some get-slave (slave-ids id))
+            d   (:slave/depth row)
+            up  (some-> row parent-of)]
+        (cond
+          (integer? d)          (+ (long d) hops)
+          (coordinator-id? id)  hops
+          (and (nil? row) (zero? hops)) 0
+          (or (nil? up) (contains? seen id) (>= hops max-lineage-depth)) nil
+          :else (recur up (inc hops) (conj seen id)))))))
+
+(defn depth-of
+  "Lineage depth of a caller: `depth-of-known`; 0 for a blank caller or one
+   with no registry row (a coordinator). A registered row whose depth cannot
+   be derived answers 1, a ling's floor, and logs: never 0, which would read
+   as the coordinator and let its children past a max-depth grant."
+  [get-slave caller-id]
+  (if (str/blank? (some-> caller-id str))
+    0
+    (or (depth-of-known get-slave caller-id)
+        (do (log/warn "[grant] registered caller has no derivable lineage depth; treated as depth 1"
+                      {:caller-id caller-id})
+            1))))
 
 ;; =============================================================================
 ;; Spawn
@@ -252,6 +296,12 @@
 
 ;; A blank or nil caller has no grant; the wire form is a map.
 (m/=> recorded-grant [:=> [:cat GetSlave :any] [:maybe :map]])
+
+(m/=> ling-depth? [:=> [:cat :any] :boolean])
+
+(m/=> ling-row? [:=> [:cat [:maybe :map]] :boolean])
+
+(m/=> depth-of-known [:=> [:cat GetSlave :any] [:maybe :int]])
 
 (m/=> depth-of [:=> [:cat GetSlave :any] :int])
 
