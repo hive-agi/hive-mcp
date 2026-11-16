@@ -51,11 +51,16 @@
   (let [b (body resp)]
     (if (map? b) (dissoc b :last-accessed :last_accessed :updated :created :expires) b)))
 
-;; NOTE (reported, not fixed): handle-log-access writes :tags as a
-;; comma-joined STRING on a cross-project access. A store that keeps the
-;; string as given (the stub does) then reads it back as a string, and a
-;; second cross-project access splits it into characters. The port does not
-;; document the :tags update shape, so only the first access is pinned here.
+;; COV-FACETS-FINDINGS-W1: handle-log-access used to write :tags as a
+;; comma-joined STRING; a store that keeps it (the stub does) then split it
+;; into characters on the next cross-project access. It now writes a vector,
+;; like every other update-entry! caller.
+(deftest repeated-cross-project-access-keeps-tags-a-vector
+  (an/handle-log-access {:id "e2" :directory "/tmp/proj-c"})
+  (an/handle-log-access {:id "e2" :directory "/tmp/proj-d"})
+  (is (= ["xpoll:project:proj-b" "xpoll:project:proj-c" "xpoll:project:proj-d"]
+         (:tags (stored "e2")))))
+
 (deftest-golden analytics-writes
   "test/golden/tools/memory/analytics-writes.edn"
   {:log-same-project  (answer (an/handle-log-access {:id "e1"}))

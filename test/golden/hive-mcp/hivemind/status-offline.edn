@@ -1,8 +1,12 @@
 {:calls
- {"clear-agent!" {:threw "java.lang.NullPointerException"},
-  "get-agent-messages" {:threw "java.lang.NullPointerException"},
-  "get-status" {:threw "java.lang.NullPointerException"},
-  "register-agent!" {:threw "java.lang.NullPointerException"}},
+ {"clear-agent!"
+  {:ns "hive-datascript.swarm.registry", :var "get-default-registry"},
+  "get-agent-messages"
+  {:ns "hive-datascript.swarm.registry", :var "get-default-registry"},
+  "get-status"
+  {:ns "hive-agent.swarm.hivemind.state", :var "pending-asks"},
+  "register-agent!"
+  {:ns "hive-datascript.swarm.registry", :var "get-default-registry"}},
  :values
  {"AgentId" "clojure.lang.PersistentVector",
   "AgentView" "clojure.lang.PersistentVector",

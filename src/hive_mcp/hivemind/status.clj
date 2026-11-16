@@ -4,7 +4,7 @@
   (:require [hive-dsl.bounded-atom :refer [bput! bget bounded-swap!]]
             [hive-mcp.channel.core :as channel]
             [hive-mcp.channel.websocket :as ws]
-            [hive-mcp.hivemind.state :as state]
+            [hive-mcp.swarm.delegate :as delegate]
             [hive-mcp.swarm.datascript.registry :as registry]
             [hive-mcp.swarm.logic :as logic]
             [hive-spi.swarm.protocol :as proto]
@@ -15,19 +15,37 @@
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
 
+;; Both resolved per CALL, never captured at load: a load-time capture is nil
+;; offline and NPEs, and goes stale when the swarm addon reloads. Offline each
+;; raises the delegate's documented :swarm/addon-missing.
+
+(defn- swarm-registry
+  "The swarm registry. Offline the shim call raises :swarm/addon-missing."
+  []
+  (registry/get-default-registry))
+
+(defn- hivemind-state
+  "The value of hive-agent's hivemind state var SYM (a bounded atom or an
+   atom). Offline it raises :swarm/addon-missing rather than answering nil."
+  [sym]
+  (let [ns-str "hive-agent.swarm.hivemind.state"]
+    (or (some-> (delegate/resolve-var ns-str sym) deref)
+        (throw (delegate/addon-missing ns-str sym)))))
+
 (defn- build-agents-map
   "Build agents map from DataScript merged with message history."
   ([]
    (build-agents-map nil))
   ([project-id]
-   (let [ds-slaves (if project-id
-                     (proto/get-slaves-by-project registry/default-registry project-id)
-                     (proto/get-all-slaves registry/default-registry))
+   (let [reg (swarm-registry)
+         ds-slaves (if project-id
+                     (proto/get-slaves-by-project reg project-id)
+                     (proto/get-all-slaves reg))
          ;; Unwrap bounded-atom entries to get raw agent-id -> data map
          msg-history (reduce-kv (fn [acc k entry]
                                   (assoc acc k (:data entry)))
                                 {}
-                                @(:atom state/agent-registry))]
+                                @(:atom (hivemind-state 'agent-registry)))]
      (reduce
       (fn [acc slave]
         (let [slave-id (:slave/id slave)
@@ -103,7 +121,7 @@
                                     :question question
                                     :options options}
                                    (select-keys entry [:context :expects :cc])))
-                          @state/pending-asks)
+                          @(hivemind-state 'pending-asks))
       :pending-swarm-prompts (mapv (fn [[slave-id entry]]
                                      (let [{:keys [prompt timestamp session-id received-at]} (:data entry)]
                                        {:slave-id slave-id
@@ -111,7 +129,7 @@
                                         :timestamp timestamp
                                         :session-id session-id
                                         :received-at received-at}))
-                                   @(:atom state/pending-swarm-prompts))
+                                   @(:atom (hivemind-state 'pending-swarm-prompts)))
       :channel-connected (channel/server-connected?)
       :ws-connected (ws/connected?)
       :ws-clients (ws/client-count)
@@ -124,8 +142,9 @@
 (defn get-agent-messages
   "Get recent messages from a specific agent."
   [agent-id]
-  (let [msg-history-entry (bget state/agent-registry agent-id)
-        ds-slave (proto/get-slave registry/default-registry agent-id)]
+  (let [reg (swarm-registry)
+        msg-history-entry (bget (hivemind-state 'agent-registry) agent-id)
+        ds-slave (proto/get-slave reg agent-id)]
     (cond
       msg-history-entry (:messages msg-history-entry)
       ds-slave []
@@ -138,14 +157,15 @@
   "Register an agent in the hivemind registry."
 
   [agent-id metadata]
-  (let [now (System/currentTimeMillis)]
-    (bput! state/agent-registry agent-id
+  (let [now (System/currentTimeMillis)
+        reg (swarm-registry)]
+    (bput! (hivemind-state 'agent-registry) agent-id
            {:messages []
             :last-seen now})
-    (when-not (proto/get-slave registry/default-registry agent-id)
+    (when-not (proto/get-slave reg agent-id)
       (let [cwd (:cwd metadata)
             project-id (when cwd (project-scope/get-current-project-id cwd))]
-        (proto/add-slave! registry/default-registry agent-id
+        (proto/add-slave! reg agent-id
                           {:name (or (:name metadata) agent-id)
                            :status :idle
                            ;; No parent is known here: a self-registering agent is a ling at depth 1.
@@ -165,9 +185,10 @@
 (defn clear-agent!
   "Remove an agent from the registry and release all claims."
   [agent-id]
-  (bounded-swap! state/agent-registry dissoc agent-id)
-  (logic/release-claims-for-slave! agent-id)
-  (proto/remove-slave! registry/default-registry agent-id)
-  (log/info "Agent cleared from hivemind:" agent-id))
+  (let [reg (swarm-registry)]
+    (bounded-swap! (hivemind-state 'agent-registry) dissoc agent-id)
+    (logic/release-claims-for-slave! agent-id)
+    (proto/remove-slave! reg agent-id)
+    (log/info "Agent cleared from hivemind:" agent-id)))
 
 (m/=> clear-agent! [:=> [:cat :any] :nil])

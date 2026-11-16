@@ -1,20 +1,32 @@
 (ns hive-mcp.swarm.restore-liveness-test
-  (:require [clojure.test :refer [deftest is]]
+  (:require [clojure.test :refer [deftest is use-fixtures]]
             [clojure.test.check.generators :as gen]
             [hive-test.trifecta :refer [deftrifecta]]
             [hive-mcp.swarm.sync :as sync]
             [hive-spi.swarm.bootstrap :as bootstrap]
-            [hive-mcp.swarm.lifecycle.boot-reconcile :as boot-reconcile]))
+            [hive-mcp.swarm.lifecycle.boot-reconcile :as boot-reconcile]
+            [malli.instrument :as mi]))
+
+;; COV-FACETS-FINDINGS-W1: classify-row's input contract (sync/Evidence) is
+;; what probe-evidence always answers: all four keys. These tests used to
+;; hand it partial evidence, so they failed 5 times under instrumentation.
+;; The contract is enforced for every test here, so a fixture cannot drift.
+(defn- classify-row-var? [v] (= v #'sync/classify-row))
+
+(use-fixtures :once
+  (fn [t]
+    (mi/instrument! {:filters [(mi/-filter-var classify-row-var?)]})
+    (try (t) (finally (mi/unstrument! {:filters [(mi/-filter-var classify-row-var?)]})))))
 
 (deftrifecta restore-classification
   sync/classify-row
-  {:cases {:dead [{:slave-id "dead" :status :working :created-at 100} {:emacs {:state :known :ids #{}} :live-pids #{}}]
-           :alive [{:slave-id "alive" :status :idle :spawn-mode :vterm :created-at 200} {:emacs {:state :known :ids #{"alive"}} :terminal-modes #{:vterm} :live-pids #{}}]
-           :pid [{:slave-id "pid" :status :working :process-pid 42 :created-at 300} {:emacs {:state :known :ids #{}} :live-pids #{42}}]}
+  {:cases {:dead [{:slave-id "dead" :status :working :created-at 100} {:emacs {:state :known :ids #{}} :live-pids #{} :live-ids #{} :terminal-modes #{}}]
+           :alive [{:slave-id "alive" :status :idle :spawn-mode :vterm :created-at 200} {:emacs {:state :known :ids #{"alive"}} :terminal-modes #{:vterm} :live-pids #{} :live-ids #{}}]
+           :pid [{:slave-id "pid" :status :working :process-pid 42 :created-at 300} {:emacs {:state :known :ids #{}} :live-pids #{42} :live-ids #{} :terminal-modes #{}}]}
    :gen (gen/tuple (gen/hash-map :slave-id gen/string-alphanumeric
                                   :status (gen/elements [:working :idle])
                                   :created-at gen/pos-int)
-                   (gen/return {:emacs {:state :known :ids #{}} :live-pids #{}}))
+                   (gen/return {:emacs {:state :known :ids #{}} :live-pids #{} :live-ids #{} :terminal-modes #{}}))
    :apply? true
    :pred (fn [row] (and (= :zombie (:status row)) (false? (:alive? row))))
    :num-tests 30})
@@ -48,7 +60,7 @@
         {:keys [state sync-ports]} (isolated-restore-store)]
     (sync/full-sync-from-bootstrap! source
                                     (fn [_] {:emacs {:state :known :ids #{"alive"}}
-                                             :terminal-modes #{:vterm} :live-pids #{}})
+                                             :terminal-modes #{:vterm} :live-pids #{} :live-ids #{}})
                                     sync-ports)
     (let [dead (get @state "dead")
           alive (get @state "alive")]
@@ -61,15 +73,15 @@
   (let [row {:slave-id "vterm" :status :working :spawn-mode :vterm :created-at 123}
         classified (sync/classify-row row {:emacs {:state :unknown}
                                               :terminal-modes #{:vterm}
-                                              :live-pids #{}})]
+                                              :live-pids #{} :live-ids #{}})]
     (is (= :working (:status classified)))
     (is (= :unverified (:liveness classified)))
     (is (= 123 (:created-at classified)))))
 
 (deftest headless-session-evidence-preserves-same-jvm-row
   (let [row {:slave-id "in-jvm" :status :working :spawn-mode :hive-agent}]
-    (is (= :working (:status (sync/classify-row row {:emacs {:state :known :ids #{}} :live-ids #{"in-jvm"} :live-pids #{}}))))
-    (is (= :zombie (:status (sync/classify-row row {:emacs {:state :known :ids #{}} :live-ids #{} :live-pids #{}}))))))
+    (is (= :working (:status (sync/classify-row row {:emacs {:state :known :ids #{}} :live-ids #{"in-jvm"} :live-pids #{} :terminal-modes #{:vterm}}))))
+    (is (= :zombie (:status (sync/classify-row row {:emacs {:state :known :ids #{}} :live-ids #{} :live-pids #{} :terminal-modes #{:vterm}}))))))
 
 (deftest full-sync-keeps-unknown-vessel-and-live-headless
   (let [rows [{:slave-id "vessel" :status :working :spawn-mode :vterm}

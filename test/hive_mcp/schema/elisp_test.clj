@@ -59,6 +59,21 @@
                                          :include "hive-base"})]
       (is (str/includes? result "(:include hive-base)")))))
 
+;; COV-FACETS-FINDINGS-W1: emit-struct-with-defaults dropped :include and
+;; emit-from-plist called <name>-create whatever :constructor said.
+(deftest emit-struct-with-defaults-keeps-include
+  (let [result (se/emit-struct-with-defaults [:map [:id :string] [:port :int]]
+                                             {:name "hive-a" :include "hive-base"
+                                              :defaults {:port 7910}})]
+    (is (= "(cl-defstruct (hive-a (:constructor hive-a-create) (:include hive-base))\n  id (port 7910))"
+           result))))
+
+(deftest emit-from-plist-calls-the-custom-constructor
+  (let [result (se/emit-from-plist [:map [:id :string]]
+                                   {:name "hive-a" :constructor "make-a"})]
+    (is (str/includes? result "(make-a\n"))
+    (is (not (str/includes? result "hive-a-create")))))
+
 (deftest test-emit-struct-kebab-case-fields
   (testing "Kebab-case field names are preserved"
     (let [schema [:map [:first-name :string] [:last-name :string]]
@@ -434,18 +449,16 @@
 
 (defn- field-list [s] (mapv (comp name first) (m/children (m/schema s))))
 
-;; FINDING (recorded, src unchanged): emit-struct-with-defaults drops :include
-;; and emit-from-plist ignores :constructor, so a struct emitted with
-;; {:constructor "make-a"} gets a from-plist calling the undefined
-;; hive-a-create. Neither docstring promises those options; the relations
-;; below state the current behaviour and the golden pins it.
+;; emit-struct-with-defaults honours :include, and emit-from-plist calls the
+;; :constructor the struct was emitted with (both were dropped before
+;; COV-FACETS-FINDINGS-W1); the relations below state that.
 (deftrifecta-from-schema emit-struct-with-no-defaults-is-emit-struct
   hive-mcp.schema.elisp/emit-struct-with-defaults
   {:in ElispArgs
    :out [:string {:min 1}]
    :rel (fn [[s o] out]
           (if (empty? (:defaults o))
-            (= out (se/emit-struct s (dissoc o :include)))
+            (= out (se/emit-struct s o))
             (every? (fn [f] (if (contains? (:defaults o) (keyword f))
                               (str/includes? out (str "(" f " "))
                               (str/includes? out f)))
@@ -475,7 +488,7 @@
   {:in ElispArgs
    :out [:string {:min 1}]
    :rel (fn [[s o] out]
-          (and (str/includes? out (str "(" (:name o) "-create\n"))
+          (and (str/includes? out (str "(" (or (:constructor o) (str (:name o) "-create")) "\n"))
                (= (count (field-list s)) (occurrences out "(plist-get plist :"))))
    :num-tests 200
    :golden-path "test/golden/hive-mcp/schema/elisp/emit-from-plist.edn"})
