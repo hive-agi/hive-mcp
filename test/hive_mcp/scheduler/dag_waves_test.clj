@@ -299,6 +299,24 @@
       (let [ready (dag/find-ready-tasks test-directory #{} {} #{})]
         (is (= 0 (count ready)))))))
 
+(deftest find-ready-tasks-honours-a-done-card-from-an-earlier-run
+  (testing "A dependency whose card still exists with status done is satisfied
+            even when this run's completed set is empty"
+    (with-dag-mocks
+      (swap! *chroma-entries assoc "task-a" (assoc task-a :status "done"))
+      (let [ready (dag/find-ready-tasks test-directory #{} {} #{})]
+        (is (= #{"task-b" "task-c"} (set (map :task-id ready))))))
+    (with-dag-mocks
+      (swap! *chroma-entries assoc "task-a" (assoc task-a :status :done))
+      (let [ready (dag/find-ready-tasks test-directory #{} {} #{})]
+        (is (= #{"task-b" "task-c"} (set (map :task-id ready)))
+            "a keyword status reads the same as the string")))
+    (with-dag-mocks
+      (swap! *chroma-entries assoc "task-a" (assoc task-a :status "inprogress"))
+      (let [ready (dag/find-ready-tasks test-directory #{} {} #{})]
+        (is (empty? (filter #(#{"task-b" "task-c"} (:task-id %)) ready))
+            "an unfinished dependency still blocks")))))
+
 ;; =============================================================================
 ;; Tests: dispatch-wave!
 ;; =============================================================================
