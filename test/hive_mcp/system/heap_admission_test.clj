@@ -44,6 +44,22 @@
   (testing "a probe that throws admits"
     (is (nil? (ha/hard-pressure (fn [_] (throw (ex-info "probe down" {}))) wm)))))
 
+(deftest the-1-arity-stubs-the-reading-and-keeps-the-decision
+  ;; The spawn tool's :agent/heap-probe port lands here: the stub stands in
+  ;; for the heap figure, the configured watermarks and the decision stay.
+  (testing "a :hard reading refuses, carrying the watermarks the probe was asked with"
+    (let [seen (atom nil)
+          r    (ha/hard-pressure (probe-returning {:level :hard :basis :post-gc :heap-pct 95}
+                                                  seen))]
+      (is (= :hard (:level r)))
+      (is (map? @seen) "the probe was asked with the configured watermarks")
+      (is (= @seen (:watermarks r)))))
+  (testing "a :soft reading admits"
+    (is (nil? (ha/hard-pressure (probe-returning {:level :soft :basis :post-gc :heap-pct 85}
+                                                 (atom nil))))))
+  (testing "a probe that throws admits"
+    (is (nil? (ha/hard-pressure (fn [_] (throw (ex-info "probe down" {}))))))))
+
 (deftest heap-probe-reads-this-jvm
   (testing "nil (no hive-cache) or a Reading with a level and a basis"
     (let [r (ha/heap-probe wm)]

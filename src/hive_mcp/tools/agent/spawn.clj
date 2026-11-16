@@ -28,7 +28,8 @@
             [hive-mcp.tools.result-bridge :as rb]
             [hive-mcp.context.request :as request-ctx]
             [hive-mcp.agent.ling.spawn :as spawn-impl]
-            [hive-mcp.system.heap-admission :as heap-admission]))
+            [hive-mcp.system.heap-admission :as heap-admission]
+            [hive-mcp.extensions.registry :as ext]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -92,7 +93,6 @@
           "Nothing was queued and the brief was NOT kept: resend the full task text. "
           "Retry after " retry-s "s. If the post-GC figure stays at or above "
           hard-pct "%, the live set is too large for -Xmx: raise -Xmx or stop idle lings.")}))
-
 
 ;;; =============================================================================
 ;;; Spawn Handler
@@ -417,7 +417,10 @@
       (log/warn "Spawn denied: child ling attempted agent spawn"
                 {:role (guards/get-role) :depth (guards/ling-depth)})
       (mcp-error (build-spawn-denied-message)))
-    (if-let [refusal (some-> (heap-admission/hard-pressure) heap-refusal)]
+    (if-let [refusal (some-> (heap-admission/hard-pressure ; read per spawn: per batch member
+                               (or (ext/get-extension :agent/heap-probe) ; test port
+                                   heap-admission/heap-probe))
+                              heap-refusal)]
       ;; Layer 4: heap admission — refused at the HARD post-GC watermark.
       ;; Nothing is queued; the refusal says the brief was not kept.
       (do

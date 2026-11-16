@@ -102,14 +102,18 @@
    at or above the HARD watermark; nil otherwise (admit). A :soft reading
    admits and logs a warning.
 
-   `probe` is (fn [watermarks] reading), `heap-probe` in production; the
-   0-arity reads the watermarks from config. FAIL-OPEN: no governor, a probe
-   or config read that throws, or the kill switch all answer nil, so the gate
-   can never wedge its caller."
-  ([]
+   `probe` is (fn [watermarks] reading), `heap-probe` in production. The
+   0-arity asks `heap-probe`; the 1-arity asks `probe` against the
+   configured watermarks and honours the kill switch, so a caller can stand
+   a stub in for the reading and keep the decision; the 2-arity takes both
+   and reads no config. FAIL-OPEN: no governor, a probe or config read that
+   throws, or the kill switch all answer nil, so the gate can never wedge its
+   caller."
+  ([] (hard-pressure heap-probe))
+  ([probe]
    (try
      (when-not (disabled?)
-       (hard-pressure heap-probe (watermarks)))
+       (hard-pressure probe (watermarks)))
      (catch Throwable t
        (log/debug "heap admission config read failed; admitting:" (ex-message t))
        nil)))
@@ -128,4 +132,5 @@
 
 (m/=> hard-pressure [:function
                      [:=> [:cat] [:maybe Reading]]
+                     [:=> [:cat ifn?] [:maybe Reading]]
                      [:=> [:cat ifn? Watermarks] [:maybe Reading]]])
