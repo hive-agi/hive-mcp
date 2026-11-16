@@ -67,10 +67,13 @@
   (result/rescue nil (kanban-port/get-task task-id)))
 
 (defn- kanban-task-done?
-  "Check if a kanban task has been completed."
+  "True when task-id completed in this run, its card is gone, or its card
+   status is done (completed by an earlier run or by hand)."
   [task-id completed-set]
   (or (contains? completed-set task-id)
-      (nil? (get-kanban-task task-id))))
+      (let [task (get-kanban-task task-id)]
+        (or (nil? task)
+            (= "done" (some-> (:status task) name))))))
 
 (defn- move-kanban-done!
   "Move a finished task's kanban card to 'inreview'. A ling ending its run is
