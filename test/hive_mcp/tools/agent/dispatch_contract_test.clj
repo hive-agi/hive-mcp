@@ -38,4 +38,4 @@
   {:no-agent  (dsp/handle-dispatch {})
    :no-prompt (dsp/handle-dispatch {:agent_id "a"})
    :lookup    (let [r (dsp/handle-dispatch {:agent_id "a" :prompt "p"})]
-                [(:isError r) (str/starts-with? (:text r) "Failed to dispatch")])})
+                [(:isError r) (str/starts-with? (:text r) "Agent not found")])})

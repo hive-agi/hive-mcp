@@ -67,7 +67,7 @@
 
 (deftest ports-and-specs-come-from-config-with-defaults
   (testing "absent :transports means the shipped ports"
-    (is (= [:delivery :events :git-editor :spawn] (reg/ports nil)))
+    (is (= [:delivery :events :git-editor :repl :spawn :task-dispatch] (reg/ports nil)))
     (is (= [:nats-inbox :tmux :emacs :hivemind-shout] (:chain (reg/port-spec nil :delivery)))))
   (testing "a port entry is merged over :defaults, which is merged over the shipped defaults"
     (let [spec (reg/port-spec {:defaults {:probe-interval-ms 5}
