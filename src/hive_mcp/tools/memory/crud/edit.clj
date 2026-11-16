@@ -17,6 +17,7 @@
             [hive-mcp.tools.memory.duration :as duration]
             [hive-mcp.tools.core :as core :refer [mcp-json mcp-error]]
             [hive-mcp.protocols.memory :as mem-proto]
+            [hive-mcp.plan.plans :as plans]
             [hive-mcp.memory.type-registry :as type-registry]
             [clojure.string :as str]
             [taoensso.timbre :as log]
@@ -261,11 +262,54 @@
 (def ^:private edit-locks
   (vec (repeatedly 256 #(Object.))))
 
+(defn- plan-entry?
+  "True when `entry` is a plan record — the only type mirrored into the
+   dedicated plans collection."
+  [entry]
+  (= "plan" (some-> (:type entry) name)))
+
+(defn- reindex-plan!
+  "Re-mirror an edited plan into the `hive-mcp-plans` index.
+
+   The main store is authoritative and already holds the edit; the index is
+   derived state keyed by the same id, so index-plan!'s upsert simply replaces
+   the stale document. It is re-run on ANY plan edit, not just a content
+   change: tags, project, duration and status live in the indexed metadata
+   too, and leaving those stale makes `plan query` filter on a lie.
+
+   `plan-status` is carried over from the stored entry rather than hardcoded,
+   so an edit can never silently reset an `active` plan to `draft`.
+
+   A failed index must not fail an edit that already landed: it is logged and
+   swallowed."
+  [entry]
+  (try
+    (let [steps (plans/count-plan-steps (:content entry))]
+      (plans/index-plan!
+       (cond-> {:id              (:id entry)
+                :type            "plan"
+                :content         (:content entry)
+                :tags            (:tags entry)
+                :project-id      (:project-id entry)
+                :duration        (:duration entry)
+                :expires         (:expires entry)
+                :content-hash    (:content-hash entry)
+                :plan-status     (or (:plan-status entry) "draft")
+                :abstraction-level (:abstraction-level entry)
+                :knowledge-gaps  (:knowledge-gaps entry)
+                :agent-id        (:agent-id entry)}
+         steps (assoc :steps-count steps))))
+    (catch Throwable t
+      (log/warn "Plan re-index failed for" (:id entry) "(edit kept, index stale):"
+                (or (ex-message t) (str (class t)))))))
+
+
 (defn- apply-edit!
   "Apply a single edit to whichever registered store holds the entry. Returns a
    result map describing the outcome, or nil when no store has the id. Does not
    build MCP-shaped responses — leaves that to the caller so batch ops can
-   aggregate cleanly. Announces a successful write through write-events."
+   aggregate cleanly. Announces a successful write through write-events, and
+   re-mirrors a plan edit into the plans index (`reindex-plan!`)."
   [{:keys [id reason] :as params}]
   (locking (nth edit-locks (mod (hash id) (count edit-locks)))
     (when-let [[store existing] (store-holding id)]
@@ -299,6 +343,8 @@
                                               :tags        (:tags updated)
                                               :project-id  (:project-id updated)
                                               :fields      (vec (keys updates))})
+              (when (plan-entry? updated)
+                (reindex-plan! updated))
               {:id               id
                :updated          updated
                :fields-changed   (vec (keys updates))

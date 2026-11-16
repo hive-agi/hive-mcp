@@ -86,6 +86,8 @@
 (def default-promotion-threshold promotion/default-promotion-threshold)
 (def default-promoted-confidence promotion/default-promoted-confidence)
 (def default-promotion-limit promotion/default-promotion-limit)
+
+(def default-co-access-max-degree promotion/default-co-access-max-degree)
 (def promote-co-access-edges! #'promotion/promote-co-access-edges!)
 
 ;; =============================================================================

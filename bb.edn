@@ -16,6 +16,9 @@
   serve {:doc "Start the hive-mcp SERVER (binds the serving nREPL port)"
          :task (shell "clojure -M:nrepl")}
 
+  install-unit {:doc "Install resources/systemd/hive-mcp.service as a systemd user unit and daemon-reload; never enables or starts it (--dry-run)"
+                :task (apply (requiring-resolve 'hive-mcp.service.install/-main) *command-line-args*)}
+
   mcp {:doc "Start MCP server"
        :task (shell "clojure -X:mcp")}
 

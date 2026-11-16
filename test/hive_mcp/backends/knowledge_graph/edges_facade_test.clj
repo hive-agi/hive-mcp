@@ -13,9 +13,10 @@
             [clojure.java.io :as io]
             [datahike.api :as d]
             [datahike.norm.norm :as norm]
-            [hive-mcp.chroma.crud :as crud]
             [hive-mcp.knowledge-graph.edges :as edges]
-            [hive-mcp.knowledge-graph.store.fixtures :as fixtures]))
+            [hive-mcp.knowledge-graph.store.fixtures :as fixtures]
+            [hive-mcp.test.stub.memory-store :as mem-stub]
+            [hive-mcp.test-support.registry-isolation :as iso]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -58,33 +59,46 @@
 ;; =============================================================================
 ;; node-ids-by-tag
 ;; =============================================================================
+;;
+;; Tags live in the memory store, reached through the IMemoryStore port. The
+;; store is a contract stub (hive-mcp.test.stub.memory-store), wrapped in the
+;; observing store so the port call itself is asserted; no backend is named.
 
-(deftest node-ids-by-tag-delegates-to-chroma-test
-  (testing "node-ids-by-tag delegates to chroma.crud/query-entries with tag + 10k limit"
-    (let [calls (atom [])]
-      (with-redefs [crud/query-entries
-                    (fn [& {:keys [tags limit] :as opts}]
-                      (swap! calls conj opts)
-                      [{:id "entry-1" :tags ["kanban"]}
-                       {:id "entry-2" :tags ["kanban"]}
-                       {:id nil}])] ; nil ids must be dropped
-        (is (= ["entry-1" "entry-2"] (edges/node-ids-by-tag "kanban")))
-        (is (= 1 (count @calls)))
-        (is (= ["kanban"] (:tags (first @calls))))
-        (is (= 10000 (:limit (first @calls))))))))
+(deftest node-ids-by-tag-queries-the-memory-port-test
+  (testing "node-ids-by-tag asks the :default memory store for the tag with the 10k limit"
+    (iso/with-restored-store-registry
+      (fn []
+        (let [inner (mem-stub/->stub)
+              _     (mem-stub/seed! inner [{:id "entry-1" :type "note" :tags ["kanban"]}
+                                           {:id "entry-2" :type "note" :tags ["kanban" "todo"]}
+                                           {:id "entry-3" :type "note" :tags ["other"]}])
+              store (mem-stub/install! (mem-stub/->observing inner))]
+          (is (= #{"entry-1" "entry-2"} (set (edges/node-ids-by-tag "kanban"))))
+          (let [[[opts] :as qcalls] (mem-stub/calls-of store :query-entries)]
+            (is (= 1 (count qcalls)))
+            (is (= ["kanban"] (:tags opts)))
+            (is (= 10000 (:limit opts)))))))))
 
 (deftest node-ids-by-tag-degrades-loudly-test
-  (testing "node-ids-by-tag returns [] (not throw) when chroma layer is unavailable"
-    (with-redefs [crud/query-entries
-                  (fn [& _]
-                    (throw (ex-info "No embedding provider available"
-                                    {:error :no-embedding-provider})))]
-      (is (= [] (edges/node-ids-by-tag "kanban"))))))
+  (testing "node-ids-by-tag returns [] (not throw) when the store's query fails"
+    (iso/with-restored-store-registry
+      (fn []
+        (let [store (mem-stub/install!
+                     (mem-stub/->observing (mem-stub/->stub)
+                                           {:query-entries "No embedding provider available"}))]
+          (is (= [] (edges/node-ids-by-tag "kanban")))
+          (is (= 1 (count (mem-stub/calls-of store :query-entries)))
+              "the failing port call was made, so the [] is the degrade path"))))))
+
+(deftest node-ids-by-tag-no-store-test
+  (testing "node-ids-by-tag returns [] when no memory store is registered"
+    (mem-stub/with-no-store
+      (fn [] (is (= [] (edges/node-ids-by-tag "kanban")))))))
 
 (deftest node-ids-by-tag-empty-result-test
   (testing "node-ids-by-tag returns [] when no entries carry the tag"
-    (with-redefs [crud/query-entries (fn [& _] [])]
-      (is (= [] (edges/node-ids-by-tag "no-such-tag"))))))
+    (mem-stub/with-stub-store
+      (fn [] (is (= [] (edges/node-ids-by-tag "no-such-tag")))))))
 
 ;; =============================================================================
 ;; neighbors

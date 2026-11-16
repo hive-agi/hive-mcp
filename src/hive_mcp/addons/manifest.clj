@@ -38,7 +38,8 @@
             [taoensso.timbre :as log]
             [hive-mcp.addons.core :as addon-core]
             [hive-mcp.addons.schema :as schema]
-            [hive-mcp.addons.metrics :as addon-metrics])
+            [hive-mcp.addons.metrics :as addon-metrics]
+            [hive-mcp.addons.placement :as placement])
   (:import [java.util.jar JarFile]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
@@ -98,7 +99,9 @@
    - :addon/dependencies  Set of other addon IDs required
    - :addon/description   Human-readable description
    - :addon/author        Author name or org
-   - :addon/license       License identifier string"
+   - :addon/license       License identifier string
+   - :addon/placement     Why the addon must run where it runs, as a reason
+                          set (hive-mcp.addons.placement/Placement)"
   [:map
    [:addon/id AddonId]
    [:addon/type AddonType]
@@ -111,7 +114,8 @@
    [:addon/dependencies {:optional true :default #{}} [:set AddonId]]
    [:addon/description {:optional true} [:maybe :string]]
    [:addon/author {:optional true} [:maybe :string]]
-   [:addon/license {:optional true} [:maybe :string]]])
+   [:addon/license {:optional true} [:maybe :string]]
+   [:addon/placement {:optional true} placement/Placement]])
 
 ;; =============================================================================
 ;; Validation

@@ -13,18 +13,22 @@
 
 (defn start-legacy-channel!
   "Start legacy bidirectional channel server (deprecated - kept for backward compat).
+   Listens on loopback unless :channel :host / HIVE_MCP_CHANNEL_HOST says otherwise.
    Marks coordinator as running to protect from test fixture cleanup."
   []
   (let [channel-port (config/get-service-value :channel :port
                                                :env "HIVE_MCP_CHANNEL_PORT"
                                                :parse parse-long
-                                               :default 9998)]
+                                               :default 9998)
+        channel-host (config/get-service-value :channel :host
+                                               :env "HIVE_MCP_CHANNEL_HOST"
+                                               :default "127.0.0.1")]
     (result/rescue nil
-                   (channel/start-server! {:type :tcp :port channel-port})
+                   (channel/start-server! {:type :tcp :host channel-host :port channel-port})
       ;; Mark coordinator as running to protect from test fixture cleanup
       ;; the production server when tests run in the same JVM
                    (channel/mark-coordinator-running!)
-                   (log/info "Legacy channel server started on TCP port" channel-port))))
+                   (log/info "Legacy channel server started on TCP" (str channel-host ":" channel-port)))))
 
 ;; every path ends in log/info or the rescue's nil
 (m/=> start-legacy-channel! [:=> [:cat] :nil])

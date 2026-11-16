@@ -67,6 +67,27 @@
       (is (= 30 (count (:discovered (bh/read-baseline path))))))
     (io/delete-file path true)))
 
+(deftest a-baseline-addon-discovered-but-not-mounted-degrades-the-boot
+  (let [path    (tmp-path)
+        ids     (mapv #(str "hive.a" %) (range 30))
+        healthy {:discovered (conj ids "hive.agent") :mounted (conj ids "hive.agent") :failed []}
+        lost-ss {:discovered (conj ids "hive.agent") :mounted ids :failed ["hive.agent"]}]
+    (testing "healthy boot writes the baseline with hive.agent mounted"
+      (is (not (:degraded? (bh/record-roster! healthy path)))))
+    (testing "the same roster minus one mount is an error, not a warn"
+      (let [snap (bh/record-roster! lost-ss path)]
+        (is (:degraded? snap))
+        (is (= #{:baseline-unmounted :mount-failed} (set (map :issue (:issues snap)))))
+        (is (str/includes? (bh/notice) "hive.agent"))))
+    (testing "the degraded boot did not overwrite the baseline"
+      (is (some #{"hive.agent"} (:mounted (bh/read-baseline path)))))
+    (testing "an id that the baseline mounted but is no longer discovered is not this issue"
+      (is (not-any? #(= :baseline-unmounted (:issue %))
+                    (bh/assess {:discovered ids :mounted ids
+                                :baseline {:discovered (conj ids "hive.agent")
+                                           :mounted (conj ids "hive.agent")}}))))
+    (io/delete-file path true)))
+
 (deftest record-memory-after-roster
   (bh/record-roster! incident-facts nil)
   (is (nil? (bh/notice)) "one manifest with no expectations is not provably degraded")

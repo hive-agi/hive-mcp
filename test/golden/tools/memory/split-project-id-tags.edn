@@ -1,0 +1,7 @@
+{:blank-id-dropped {:tags ["note"], :project-ids []},
+ :dedup {:tags [], :project-ids ["topic:a" "topic:b"]},
+ :empty {:tags [], :project-ids []},
+ :mixed {:tags ["kind:axiom" "note"], :project-ids ["topic:a"]},
+ :nil-tags {:tags [], :project-ids []},
+ :pid-only {:tags [], :project-ids ["topic:microservices"]},
+ :plain-only {:tags ["kind:axiom" "note"], :project-ids []}}

@@ -62,7 +62,16 @@
   #'q/handle-kg-traverse
   {:in [:cat ks/TraverseParams]
    :out ks/KgResponse
-   :rel (fn [[p] out] (refusal-or-success? [(:start_node p)] out))
+   :rel (fn [[p] out]
+          (let [{:keys [limit min_confidence]} p
+                ok-limit? (or (nil? limit) (contains? #{"3"} limit)
+                              (and (integer? limit) (pos? limit)))
+                ok-conf?  (or (nil? min_confidence) (number? min_confidence)
+                              (= "0.5" min_confidence))]
+            (if (and (valid-id? (:start_node p)) (not (and ok-limit? ok-conf?)))
+              (and (true? (:isError out))
+                   (boolean (re-find #"omit it" (:text out))))
+              (refusal-or-success? [(:start_node p)] out))))
    :golden-path "test/golden/hive-mcp/tools/kg/handle-kg-traverse.edn"
    :num-tests 60})
 

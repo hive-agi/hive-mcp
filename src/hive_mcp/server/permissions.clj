@@ -163,8 +163,8 @@
 ;; TODO: Implement
 (defn- handle-tier-2
   "Request coordinator review for tier-2.
-   Returns diff preview, coordinator decides."
-  [_agent-id _tool-name arguments]
+   Returns diff preview, coordinator decides through the :ask! port."
+  [{:keys [ask!]} _agent-id _tool-name arguments]
   (let [path (extract-path arguments)
         ;; Show content preview for coordinator
         content-preview (when-let [content (or (get arguments "new_string")
@@ -178,7 +178,7 @@
                            _agent-id _tool-name path content-preview)
                    (format "TIER-2: Agent %s wants to %s on %s. Approve?"
                            _agent-id _tool-name path))
-        response (hivemind/ask! _agent-id question ["yes" "no"])]
+        response (ask! _agent-id question ["yes" "no"])]
     {:approved (= "yes" (:decision response))
      :tier :tier-2
      :reviewer :coordinator
@@ -188,8 +188,8 @@
 ;; TODO: Implement
 (defn- handle-tier-3
   "Request human approval for tier-3.
-   Blocks until human responds via channel."
-  [_agent-id _tool-name arguments]
+   Blocks until human responds via channel (the :emit! and :ask! ports)."
+  [{:keys [ask! emit!]} _agent-id _tool-name arguments]
   (let [path (extract-path arguments)
         ;; Format arguments for human review (truncate if too long)
         args-preview (let [code (or (get arguments "code")
@@ -210,13 +210,13 @@
         question (format "TIER-3 APPROVAL REQUIRED\n\nAgent: %s\nTool: %s\nPath: %s\n\nArguments:\n%s\n\nApprove this action?"
                          _agent-id _tool-name (or path "N/A") args-preview)]
     ;; Emit channel event for UI notification
-    (channel/emit-event! :approval-request
+    (emit! :approval-request
                          {:agent-id _agent-id
                           :tool _tool-name
                           :arguments arguments
                           :tier :tier-3})
     ;; Block waiting for human decision
-    (let [response (hivemind/ask! _agent-id question ["approve" "deny"])]
+    (let [response (ask! _agent-id question ["approve" "deny"])]
       {:approved (= "approve" (:decision response))
        :tier :tier-3
        :reviewer :human
@@ -230,15 +230,20 @@
      :approved - boolean
      :tier     - which tier was applied
      :reviewer - :auto, :coordinator, or :human
-     :reason   - explanation if denied"
-  [agent-id tool-name arguments]
-  (let [tier (get-tier tool-name arguments)]
+     :reason   - explanation if denied
+
+   Optional `ports` inject the reviewers: :ask! (fn [agent-id question options]
+   -> {:decision ...}, default hivemind/ask!) and :emit! (fn [event-type data],
+   default channel/emit-event!)."
+  [agent-id tool-name arguments & [ports]]
+  (let [tier  (get-tier tool-name arguments)
+        ports (merge {:ask! hivemind/ask! :emit! channel/emit-event!} ports)]
     (log/debug "Permission check:" tool-name "-> tier:" tier)
     (case tier
       :allowed {:approved true :tier :allowed :reviewer :none}
       :tier-1 (handle-tier-1 agent-id tool-name arguments)
-      :tier-2 (handle-tier-2 agent-id tool-name arguments)
-      :tier-3 (handle-tier-3 agent-id tool-name arguments)
+      :tier-2 (handle-tier-2 ports agent-id tool-name arguments)
+      :tier-3 (handle-tier-3 ports agent-id tool-name arguments)
       ;; Unknown tier = deny
       {:approved false :tier tier :reviewer :error :reason "Unknown tier"})))
 
@@ -250,7 +255,10 @@
    [:reviewer [:enum :none :auto :coordinator :human :error]]
    [:reason {:optional true} [:maybe :string]]])
 
-(m/=> escalate! [:=> [:cat :any :any ToolArguments] Escalation])
+(m/=> escalate! [:=> [:cat :any :any ToolArguments
+                         [:? [:maybe [:map [:ask! {:optional true} ifn?]
+                                      [:emit! {:optional true} ifn?]]]]]
+                 Escalation])
 
 ;;; ============================================================
 ;;; Integration Helpers

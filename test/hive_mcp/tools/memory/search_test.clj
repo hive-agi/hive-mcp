@@ -10,9 +10,10 @@
 
    Stubs work at the protocol boundary: we register a mock IMemoryStore
    via mem-proto/register-store! and inject behaviour in the defrecord's
-   search-similar. Each test sets a unique :default store and restores
-   any pre-existing default in a fixture-free try/finally pattern to
-   stay thread-safe across the suite."
+   search-similar. Each test sets the :default store under
+   with-restored-store-registry, which refuses a running addon server and
+   restores the prior registry atomically. Run these tests in a dedicated
+   sequential test JVM."
   (:require [clojure.test :refer [deftest is testing]]
             [clojure.data.json :as json]
             [hive-mcp.tools.memory.search :as search]
@@ -21,7 +22,8 @@
             [hive-mcp.project.scope :as kg-scope]
             [hive-mcp.context.request :as ctx]
             [hive-mcp.plan.plans :as plans]
-            [hive-mcp.memory.ingest-search :as ingest-search]))
+            [hive-mcp.memory.ingest-search :as ingest-search]
+            [hive-mcp.test-support.registry-isolation :as isolation]))
 
 ;; =============================================================================
 ;; Stub IMemoryStore
@@ -47,17 +49,14 @@
   (reset-store!             [_]))
 
 (defn- with-stub-store*
-  "Register `store` as the :default memory store, run f, then restore
-   whatever store (if any) was registered before. Never leaks state."
+  "Register `store` as :default under the shared isolation fixture.
+   Refuse a running addon server and restore the exact prior slot map
+   atomically on exit, including when f throws."
   [store f]
-  (let [prior (get (mem-proto/registered-stores) :default)]
-    (try
+  (isolation/with-restored-store-registry
+    (fn []
       (mem-proto/register-store! :default store)
-      (f)
-      (finally
-        (if prior
-          (mem-proto/register-store! :default prior)
-          (mem-proto/unregister-store! :default))))))
+      (f))))
 
 (defmacro with-stub-store [store & body]
   `(with-stub-store* ~store (fn [] ~@body)))
@@ -213,6 +212,35 @@
             (is (< elapsed 2000)
                 (str "thrown errors must return fast, got " elapsed "ms"))
             (is (some? (:text resp)))))))))
+
+(deftest unavailable-store-is-a-failed-search-not-absence-test
+  (testing "a store that answers an error Result or a Failure map (Milvus
+            unreachable) yields :memory/search-failed, never count 0
+            (kanban 20260915232000-267ac9be)"
+    (doseq [[label answer]
+            [["read-incomplete, no partial rows"
+              {:error   :milvus/read-incomplete
+               :failed  [{:collection "hive-mcp-memory" :message "HTTP connect timed out"}]
+               :partial []}]
+             ["read-incomplete, partial rows"
+              {:error   :milvus/read-incomplete
+               :failed  [{:collection "hive-mcp-memory" :message "HTTP connect timed out"}]
+               :partial [{:id "n-1" :type "note" :content "x" :distance 0.1}]}]
+             ["Failure map"
+              {:success? false :errors ["Milvus client not connected"] :reconnecting? true}]]]
+      (let [calls (atom 0)
+            store (->StubStore (fn [_q _opts] (swap! calls inc) answer))]
+        (with-stubs
+          (with-stub-store store
+            (let [resp (search/handle-search-semantic
+                        {:query "x" :limit 3 :directory "/tmp/test"})
+                  body (str (:text resp))]
+              (is (:isError resp) (str label ": an outage must be an error response"))
+              (is (re-find #"vectordb" body) (str label ": names the stage: " body))
+              (is (re-find #"not be evidence of absence" body) (str label ": " body))
+              (is (not (re-find #"\"count\"" body))
+                  (str label ": no ok payload with a count: " body))
+              (is (= 1 @calls) (str label ": an error answer is not retried as empty")))))))))
 
 ;; =============================================================================
 ;; Budget sanity: total wall clock bounded even on pathological combos

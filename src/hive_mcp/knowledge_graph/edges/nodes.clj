@@ -1,11 +1,13 @@
 (ns hive-mcp.knowledge-graph.edges.nodes
   "Node-level read facade over the KG edge set: distinct participating node
-   ids, tag -> node lookup (Chroma-backed), and 1-hop neighbors."
+   ids, tag -> node lookup (memory-store-backed, through the IMemoryStore
+   port), and 1-hop neighbors."
   (:require [hive-mcp.knowledge-graph.connection :as conn]
             [hive-mcp.knowledge-graph.edges.queries :as queries]
             [taoensso.timbre :as log]
             [malli.core :as m]
-            [hive-mcp.knowledge-graph.edges.schema :as es]))
+            [hive-mcp.knowledge-graph.edges.schema :as es]
+            [hive-mcp.protocols.memory :as mem-proto]))
 
 (defn get-all-node-ids
   "Distinct node IDs participating in any KG edge — the union of
@@ -47,22 +49,25 @@
 (defn node-ids-by-tag
   "Entry IDs (KG node IDs) tagged with `tag`.
 
-   CROSS-CONTEXT DEPENDENCY: tags live in Chroma metadata, not in the
-   Datahike KG — this delegates to `hive-mcp.chroma.crud/query-entries`
-   (:tags [tag] :limit 10000) via requiring-resolve. The 10k cap
+   CROSS-CONTEXT DEPENDENCY: tags live in the memory store's entry metadata,
+   not in the Datahike KG — this delegates to the registered :default memory
+   store through the `IMemoryStore` port (`hive-mcp.protocols.memory/
+   query-entries` with {:tags [tag] :limit 10000}), so whichever backend is
+   installed (Chroma, Milvus, Qdrant, a test stub) answers. The 10k cap
    (`node-ids-by-tag-limit`) means tags with more than 10000 entries are
-   truncated at the Chroma layer.
+   truncated at the store layer.
 
-   Degrades LOUDLY, not silently: when the Chroma/memory query layer is
-   unavailable (e.g. no embedding provider configured — require-embedding!
-   throws), logs WARN \"node-ids-by-tag degraded\" and returns [].
+   Degrades LOUDLY, not silently: when the memory query layer is
+   unavailable (no store registered, or e.g. no embedding provider
+   configured so the store's query throws), logs WARN
+   \"node-ids-by-tag degraded\" and returns [].
    Callers must treat [] as \"no signal\", never as \"no nodes tagged\"."
   [tag]
   (try
-    (let [query-entries (requiring-resolve 'hive-mcp.chroma.crud/query-entries)]
-      (into [] (keep :id) (query-entries :tags [tag] :limit node-ids-by-tag-limit)))
+    (into [] (keep :id) (mem-proto/query-entries (mem-proto/get-store)
+                                                 {:tags [tag] :limit node-ids-by-tag-limit}))
     (catch Exception e
-      (log/warn "node-ids-by-tag degraded — chroma/memory query layer unavailable, returning []"
+      (log/warn "node-ids-by-tag degraded — memory query layer unavailable, returning []"
                 {:tag tag :error (.getMessage e)})
       [])))
 

@@ -81,11 +81,12 @@
 
 
 (defn- get-embeddings
-  "Get embeddings for one or more texts from OpenAI API."
-  [api-base api-key model texts]
+  "Get embeddings for one or more texts from the OpenAI API through
+   `request`, the transport seam (fn [api-base api-key body] -> parsed response)."
+  [request api-base api-key model texts]
   (log/debug "Getting embeddings for" (count texts) "texts using" model)
-  (let [response (make-request api-base api-key {:model model
-                                                 :input texts})
+  (let [response (request api-base api-key {:model model
+                                            :input texts})
         data (:data response)]
     ;; Sort by index to ensure order matches input
     (->> data
@@ -95,13 +96,16 @@
 
 (defrecord OpenAIEmbedder [api-base api-key model dimension]
   emb-proto/EmbeddingProvider
-  (embed-text [_ text]
-    (first (get-embeddings api-base api-key model [text])))
-  (embed-batch [_ texts]
-    ;; OpenAI has a limit of ~8000 tokens per batch
-    ;; For safety, batch in groups of 100 texts
-    (let [batches (partition-all 100 texts)]
-      (vec (mapcat #(get-embeddings api-base api-key model (vec %)) batches))))
+  ;; :request-fn (assoc'd by ->provider) is the HTTP transport seam; absent,
+  ;; the real make-request runs.
+  (embed-text [this text]
+    (first (get-embeddings (or (:request-fn this) make-request)
+                           api-base api-key model [text])))
+  (embed-batch [this texts]
+    ;; OpenAI has a limit of ~8000 tokens per batch; batch in groups of 100
+    (let [request (or (:request-fn this) make-request)
+          batches (partition-all 100 texts)]
+      (vec (mapcat #(get-embeddings request api-base api-key model (vec %)) batches))))
   (embedding-dimension [_] dimension))
 
 
@@ -114,6 +118,8 @@
                  or https://api.openai.com/v1)
      :model    - Embedding model (required: :model, OPENAI_EMBEDDING_MODEL, or
                  config [:embeddings :openai :model])
+     :request-fn - HTTP transport seam (fn [api-base api-key body] -> response);
+                 defaults to the real HTTP call.
 
    Known dimensions: text-embedding-3-small 1536, text-embedding-3-large 3072,
    text-embedding-ada-002 1536."
@@ -131,7 +137,8 @@
                         :model model
                         :supported (keys models)})))
      (log/info "Created OpenAI embedder with model:" model "dimension:" dimension "api-base:" api-base)
-     (->OpenAIEmbedder api-base api-key model dimension))))
+     (cond-> (->OpenAIEmbedder api-base api-key model dimension)
+       (:request-fn overrides) (assoc :request-fn (:request-fn overrides))))))
 
 (m/=> ->provider [:function
                   [:=> [:cat] emb-proto/Provider]

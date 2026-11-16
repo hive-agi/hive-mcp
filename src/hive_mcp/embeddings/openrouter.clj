@@ -87,11 +87,12 @@
 
 
 (defn- get-embeddings
-  "Get embeddings for one or more texts from OpenRouter API."
-  [api-base api-key model texts]
+  "Get embeddings for one or more texts from the OpenRouter API through
+   `request`, the transport seam (fn [api-base api-key body] -> parsed response)."
+  [request api-base api-key model texts]
   (log/debug "Getting embeddings for" (count texts) "texts using" model)
-  (let [response (make-request api-base api-key {:model model
-                                                 :input texts})
+  (let [response (request api-base api-key {:model model
+                                            :input texts})
         data (:data response)]
     ;; Sort by index to ensure order matches input
     (->> data
@@ -101,12 +102,16 @@
 
 (defrecord OpenRouterEmbedder [api-base api-key model dimension]
   emb-proto/EmbeddingProvider
-  (embed-text [_ text]
-    (first (get-embeddings api-base api-key model [text])))
-  (embed-batch [_ texts]
+  ;; :request-fn (assoc'd by ->provider) is the HTTP transport seam; absent,
+  ;; the real make-request runs.
+  (embed-text [this text]
+    (first (get-embeddings (or (:request-fn this) make-request)
+                           api-base api-key model [text])))
+  (embed-batch [this texts]
     ;; Batch in groups of 50 texts to avoid timeouts
-    (let [batches (partition-all 50 texts)]
-      (vec (mapcat #(get-embeddings api-base api-key model (vec %)) batches))))
+    (let [request (or (:request-fn this) make-request)
+          batches (partition-all 50 texts)]
+      (vec (mapcat #(get-embeddings request api-base api-key model (vec %)) batches))))
   (embedding-dimension [_] dimension))
 
 
@@ -118,6 +123,8 @@
      :api-base - API base URL (default: config [:embeddings :openrouter :api-base]
                  or https://openrouter.ai/api/v1)
      :model    - Embedding model (required: this option or OPENROUTER_EMBEDDING_MODEL)
+     :request-fn - HTTP transport seam (fn [api-base api-key body] -> response);
+                 defaults to the real HTTP call.
 
    Dimensions for known models come from the `models` spec table; an unknown
    model is assumed 4096-dimensional."
@@ -130,7 +137,8 @@
        (throw (ex-info "OpenRouter API key required. Set OPENROUTER_API_KEY env var or pass :api-key option."
                        {:type :missing-api-key})))
      (log/info "Created OpenRouter embedder with model:" model "dimension:" dimension "api-base:" api-base)
-     (->OpenRouterEmbedder api-base api-key model dimension))))
+     (cond-> (->OpenRouterEmbedder api-base api-key model dimension)
+       (:request-fn overrides) (assoc :request-fn (:request-fn overrides))))))
 
 (def ProviderOpts
   "Options of `->provider`, per its docstring."
@@ -149,7 +157,10 @@
    The model comes from opts :model or OPENROUTER_EMBEDDING_MODEL."
   ([] (set-as-default! {}))
   ([opts]
-   (active/set-embedding-provider! (->provider opts))
+   (active/set-embedding-provider!
+    (->provider opts)
+    (when-let [model (or (:model opts) (:model (resolve-config! {})))]
+      {:impl :openrouter :model (str model)}))
    (log/info "OpenRouter embeddings enabled with" (or (:model opts) (:model (resolve-config! {}))))))
 
 ;; Ends in log/info, which returns nil.

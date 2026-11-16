@@ -1,0 +1,6 @@
+{:capped {:ids ["a" "b" "c" "d"], :pages 2, :exhausted? false},
+ :empty {:ids [], :pages 1, :exhausted? true},
+ :exact-page {:ids ["a" "b" "c"], :pages 2, :exhausted? true},
+ :several-pages
+ {:ids ["a" "b" "c" "d" "e" "f" "g"], :pages 3, :exhausted? true},
+ :short-page {:ids ["a" "b"], :pages 1, :exhausted? true}}

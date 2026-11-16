@@ -17,6 +17,7 @@
             [hive-mcp.crystal.recall]
             [hive-mcp.knowledge-graph.connection]
             [hive-mcp.protocols.memory :as proto]
+            [hive-mcp.test-support.registry-isolation :as isolation]
             [hive-mcp.tools.memory.crud.write :as wr]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
@@ -105,17 +106,17 @@
     (store-status   [_] {})
     (reset-store!   [_] nil)))
 
-(use-fixtures :each
-  (fn [f]
-    (let [snapshot (proto/registered-stores)]
+(defn- with-empty-default-slot
+  "Clear :default for F. Refuses a running addon server before the slot is
+   touched and restores the exact prior slot map in one atomic swap, instead
+   of unregistering and re-registering :default."
+  [f]
+  (isolation/with-restored-store-registry
+    (fn []
       (proto/unregister-store! :default)
-      (try
-        (f)
-        (finally
-          (proto/unregister-store! :default)
-          (doseq [[k store] snapshot]
-            (when (= :default k)
-              (proto/register-store! k store))))))))
+      (f))))
+
+(use-fixtures :each with-empty-default-slot)
 
 (deftest handle-add-timeout-names-the-stalled-stage
   (proto/register-store! :default

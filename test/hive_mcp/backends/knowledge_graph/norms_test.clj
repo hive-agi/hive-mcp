@@ -110,6 +110,53 @@
         (finally
           (release-conn conn))))))
 
+(deftest kg-norms-mark-derived-attrs-no-history-test
+  (testing "norm 010 installs :db/noHistory on the derived attrs of a store that
+            already holds them, and leaves the retained attrs history-tracked"
+    (let [derived  #{:knowledge/grounded-at :knowledge/grounded-from :knowledge/source-hash
+                     :disc/content-hash :disc/analyzed-at :disc/last-read-at :disc/read-count
+                     :disc/certainty-alpha :disc/certainty-beta :disc/last-observation
+                     :kg-edge/schema-text :kg-edge/schema-head :kg-edge/schema-subject}
+          retained #{:knowledge/abstraction-level :knowledge/gaps :knowledge/source-type
+                     :disc/git-commit :kg-edge/predicate}
+          conn (fresh-conn)]
+      (try
+        ;; pre-existing data, as on a live store (disc attrs are schemaless here)
+        (d/transact conn {:tx-data [{:disc/content-hash "h0" :disc/read-count 1
+                                     :disc/git-commit "g0"}]})
+        (norm/ensure-norms! conn (io/resource "hive_mcp/norms/kg"))
+        (let [schema (d/schema (d/db conn))]
+          (doseq [a derived]
+            (is (true? (get-in schema [a :db/noHistory])) (str a " should be noHistory")))
+          (doseq [a retained]
+            (is (not (get-in schema [a :db/noHistory])) (str a " must keep history")))
+          (is (= :db.type/instant (get-in schema [:knowledge/grounded-at :db/valueType]))
+              "the alter merges into 002's definition, it does not replace it"))
+        (finally
+          (release-conn conn))))))
+
+(deftest kg-norms-no-history-drops-superseded-values-test
+  (testing "after the norms, a rewritten derived value keeps no history; a
+            retained attr keeps every value"
+    (let [cfg  (-> test-cfg
+                   (assoc :keep-history? true)
+                   (assoc-in [:store :id] (java.util.UUID/randomUUID)))
+          _    (d/create-database cfg)
+          conn (d/connect cfg)]
+      (try
+        (norm/ensure-norms! conn (io/resource "hive_mcp/norms/kg"))
+        (let [eid (get-in (d/transact conn {:tx-data [{:db/id "e" :knowledge/source-hash "s1"
+                                                         :knowledge/source-type :manual}]})
+                          [:tempids "e"])]
+          (d/transact conn {:tx-data [{:db/id eid :knowledge/source-hash "s2"
+                                       :knowledge/source-type :automated}]})
+          (let [hist (fn [a] (set (d/q '[:find [?v ...] :in $ ?a :where [_ ?a ?v]]
+                                       (d/history (d/db conn)) a)))]
+            (is (= #{"s2"} (hist :knowledge/source-hash)))
+            (is (= #{:manual :automated} (hist :knowledge/source-type)))))
+        (finally
+          (release-conn conn))))))
+
 (deftest kg-norms-tx-norm-tracking-test
   (testing ":tx/norm attribute tracks applied norms"
     (let [conn (fresh-conn)]

@@ -45,6 +45,13 @@
   (unsubscribe! [this subject]
     "Unsubscribe from a subject/topic. Safe to call when not subscribed."))
 
+(defprotocol IChainStatus
+  "Optional: a backbone served by a TransportChain reports the chain's state
+   (chain, active adapter, per-adapter health, :degraded?) so backbone-status
+   can show a degraded bus instead of a bare connected flag."
+  (chain-status [this]
+    "Map with :port :chain :active :resolved-by :adapters :switches :degraded?."))
+
 ;;; ============================================================================
 ;;; Active Backbone Management
 ;;; ============================================================================
@@ -102,6 +109,47 @@
   "Create a no-op backbone fallback."
   []
   (->NoopBackbone))
+
+(def BackboneStatus
+  [:map
+   [:backbone-id :keyword]
+   [:installed? :boolean]
+   [:connected? :boolean]
+   [:working? :boolean]
+   [:degraded? {:optional true} :boolean]
+   [:chain {:optional true} :map]
+   [:summary :string]])
+
+(defn backbone-status
+  "Which backbone is active and whether it actually works. :working? is true
+   only for an installed, non-noop backbone that reports connected? now, so
+   neither a NoopBackbone nor a disconnected NatsBackbone passes as a bus.
+   A chain-backed backbone also reports :chain (its IChainStatus view) and
+   :degraded?: true when the preferred adapter does not serve the port, so a
+   bus running on its fallback reads as degraded, never as healthy."
+  []
+  (let [bb   (get-backbone)
+        id   (backbone-id bb)
+        inst (and (backbone-set?) (not= :noop id))
+        up?  (boolean (try (connected? bb) (catch Exception _ false)))
+        ok?  (and inst up?)
+        view (when (and inst (satisfies? IChainStatus bb))
+               (try (chain-status bb) (catch Exception _ nil)))
+        deg? (boolean (:degraded? view))]
+    (cond-> {:backbone-id id
+             :installed?  (boolean inst)
+             :connected?  up?
+             :working?    (boolean ok?)
+             :summary     (cond
+                            (not inst) "no event bus: NoopBackbone, events stay in-process"
+                            (and view deg?)
+                            (str "event bus DEGRADED: serving on " (name (or (:active view) :none))
+                                 " (preferred " (name (first (:chain view))) " unavailable)")
+                            ok?        (str (name id) " backbone connected")
+                            :else      (str (name id) " backbone installed but NOT connected"))}
+      view (assoc :chain view :degraded? deg?))))
+
+(m/=> backbone-status [:=> [:cat] BackboneStatus])
 
 (def Backbone
   "Any value satisfying IEventBackbone; generates NoopBackbones."

@@ -28,7 +28,10 @@
             [hive-mcp.memory.write-events :as write-events]
             [hive-mcp.addons.boot-health :as boot-health]
             [malli.core :as m]
-            [hive-mcp.tools.memory.schema :as ms]))
+            [hive-mcp.tools.memory.schema :as ms]
+            [hive-mcp.tools.memory.read-outcome :as read-outcome]
+            [hive-mcp.memory.domain :as domain]
+            [clojure.string :as str]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -171,25 +174,70 @@
          :duration (:duration entry)
          :expires (:expires entry)))
 
+(def expiring-params
+  "Params `memory expiring` acts on, plus the routing keys a call carries.
+   Keys starting with `_` are transport-injected and accepted too."
+  #{:days :limit :directory :include-short :include_short :type :scope
+    :command :tool :agent_id :project_id :async :async-timeout-ms :timeout_ms})
+
+(defn- unknown-expiring-params [params]
+  (->> (keys params)
+       (remove #(or (expiring-params %)
+                    (str/starts-with? (name %) "_")))
+       (map name)
+       sort
+       vec))
+
+(defn- expiring-visible?
+  "True when ENTRY is visible from scope filter SF (ScopeFilter ADT): by a
+   visible scope tag, or by its :project-id among the visible projects."
+  [sf entry]
+  (let [pids (domain/scope->project-ids sf true)]
+    (or (nil? pids)
+        (scope/matches-scope? entry sf)
+        (contains? (set pids) (:project-id entry)))))
+
 (defn- expiring-soon*
-  "Pure logic for expiring-soon query. Returns Result."
-  [{:keys [days directory limit include-short]}]
-  (let [days-val (coerce-int! days :days 3)
-        limit-val (coerce-int! limit :limit 20)
-        directory (or directory (ctx/current-directory))]
-    (log/info "mcp-memory-expiring-soon:" days-val "limit:" limit-val "directory:" directory)
-    (if-not (mem-proto/store-set?)
-      (result/err :memory/store-not-configured
-                  {:message (boot-health/with-notice "Memory store not configured")})
-      (let [project-id (scope/get-current-project-id directory)
-            all-entries (with-resilience
-                          (mem-proto/entries-expiring-soon (mem-proto/get-store) days-val {}))
-            scope-filter (scope/make-scope-tag project-id)
-            filtered (->> all-entries
-                          (filter #(scope/matches-scope? % scope-filter))
-                          (filter #(or include-short (worth-promoting? %)))
-                          (take limit-val))]
-        (result/ok (mapv entry->expiring-meta filtered))))))
+  "Pure logic for expiring-soon query. Returns Result.
+
+   Rows are filtered by scope (`:scope` as in memory query, default the
+   directory's project and its hierarchy), by `:type` when given, and by
+   `worth-promoting?` unless include-short; then sorted soonest-first and
+   cut to :limit. A failed store read, or rows dropped for a missing id,
+   answer {:results :count :warnings} instead of a bare vector."
+  [{:keys [days directory limit include-short include_short type scope] :as params}]
+  (let [unknown (unknown-expiring-params params)]
+    (if (seq unknown)
+      (result/err :memory/unknown-params
+                  {:message (str "memory expiring does not accept: " (str/join ", " unknown)
+                                 ". Accepted: days, limit, directory, type, scope, include_short.")})
+      (let [days-val  (coerce-int! days :days 3)
+            limit-val (coerce-int! limit :limit 20)
+            short?    (boolean (or include-short include_short))
+            directory (or directory (ctx/current-directory))]
+        (log/info "mcp-memory-expiring-soon:" days-val "limit:" limit-val "directory:" directory)
+        (if-not (mem-proto/store-set?)
+          (result/err :memory/store-not-configured
+                      {:message (boot-health/with-notice "Memory store not configured")})
+          (let [project-id (scope/get-current-project-id directory)
+                sf         (domain/parse-scope scope project-id)
+                outcome    (read-outcome/classify
+                            (with-resilience
+                              (mem-proto/entries-expiring-soon (mem-proto/get-store) days-val {})))
+                {kept :rows dropped :dropped-null-ids} (read-outcome/kept-rows (:rows outcome))
+                rows       (->> kept
+                                (filter #(expiring-visible? sf %))
+                                (filter #(or (nil? type) (= (name type) (some-> (:type %) name))))
+                                (filter #(or short? (worth-promoting? %)))
+                                (sort-by (comp str :expires))
+                                (take limit-val)
+                                (mapv entry->expiring-meta))
+                warnings   (read-outcome/warnings outcome {:dropped-null-ids dropped})]
+            (when (seq warnings)
+              (log/warn "mcp-memory-expiring-soon answered with warnings:" warnings))
+            (result/ok (if (seq warnings)
+                         {:results rows :count (count rows) :warnings warnings}
+                         rows))))))))
 
 (defn handle-expiring-soon
   "List memory entries expiring within N days, filtered by project scope."

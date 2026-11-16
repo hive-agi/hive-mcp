@@ -28,7 +28,7 @@
                 (let [body (json/read-str (:text out) :key-fn keyword)]
                   (and (:isError out)
                        (false? (:ok body))
-                       (str/includes? (:error body) "Valid: disable, dump, enable, help"))))
+                       (str/includes? (:error body) "Valid: bus-status, disable, dump, enable, help"))))
    :num-tests 100})
 
 (defn- body [resp] (update (json/read-str (:text resp) :key-fn keyword) :result

@@ -44,12 +44,6 @@
                       {:op :magit/stage :files ["a.clj" "b.clj"] :directory "/tmp/repo"}]
    :magit-commit     [#(magit/handle-magit-commit {:directory "/tmp/repo" :message "m" :all true})
                       {:op :magit/commit :message "m" :all true :directory "/tmp/repo"}]
-   :magit-push       [#(magit/handle-magit-push {:directory "/tmp/repo" :remote " github "})
-                      {:op :magit/push :set-upstream false :remote "github" :directory "/tmp/repo"}]
-   :magit-pull       [#(magit/handle-magit-pull {:directory "/tmp/repo"})
-                      {:op :magit/pull :directory "/tmp/repo"}]
-   :magit-fetch      [#(magit/handle-magit-fetch {:directory "/tmp/repo" :remote "  "})
-                      {:op :magit/fetch :remote nil :directory "/tmp/repo"}]
    :magit-feature    [#(magit/handle-magit-feature-branches {:directory "/tmp/repo"})
                       {:op :magit/feature-branches :directory "/tmp/repo"}]
    :project-info     [#(projectile/handle-projectile-info {:directory "/tmp/repo"})

@@ -13,8 +13,7 @@
     :expected ["I"]})},
  :case-2
  {:out [], :in ({:mounted ["MdS"], :expected-min 0, :memory nil})},
- :case-3
- {:out [], :in ({:baseline {:at "T"}, :memory {:deferred-to "TS"}})},
+ :case-3 {:out [], :in ({:baseline {}, :memory {:deferred-to "TS"}})},
  :case-4
  {:out [],
   :in
@@ -31,7 +30,7 @@
   ({:mounted ["ZY" "383V3w" "i3i948" "bU" "8vW"],
     :expected-min 3,
     :expected [],
-    :baseline {:discovered []},
+    :baseline {:discovered [], :mounted []},
     :memory {:backend "3170w", :store-set? nil}})},
  :case-6
  {:out
@@ -47,7 +46,8 @@
   :in
   ({:failed #{"SpTh" "sMF"},
     :expected ["RlW3s88" "1k2KkQ" "RBeb0" "VFXE1cs" "hP7c" "NmS"],
-    :baseline {:at "w8Kj"},
+    :baseline
+    {:mounted #{"O7zxa" "CS23A" "3UW8" "ljQTD" "cgh9"}, :at "s6N"},
     :memory nil})},
  :case-7
  {:out
@@ -65,4 +65,4 @@
   :in
   ({:failed ["2fV14dxW" "y4Sf" "R8a0Y" "53g25M" "37kI7"],
     :expected-min 1,
-    :baseline {:at "e"}})}}
+    :baseline {:at "Hv6n1"}})}}

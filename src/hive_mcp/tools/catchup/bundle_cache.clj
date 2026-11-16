@@ -31,7 +31,8 @@
             [hive-mcp.dns.result :refer [rescue rescue-log]]
             [clojure.tools.logging :as log]
             [malli.core :as m]
-            [hive-mcp.tools.catchup.shapes :as shapes])
+            [hive-mcp.tools.catchup.shapes :as shapes]
+            [hive-weave.single-flight :as sf])
   (:import [java.lang.ref WeakReference]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -74,7 +75,7 @@
 (defonce ^:private bundles    (atom {}))
 (defonce ^:private content    (atom {}))
 (defonce ^:private refreshing (atom #{}))
-(defonce ^:private in-flight  (atom {}))
+(defonce ^:private in-flight  (sf/registry))
 (defonce ^:private counters   (atom {:hit 0 :stale 0 :miss 0 :content-hit 0 :content-miss 0
                                      :invalidations 0}))
 
@@ -102,30 +103,16 @@
 ;; Single flight
 ;; =============================================================================
 
-(defrecord ^:private Failed [cause])
-
 (defn single-flight
   "Run `compute-fn` for `key` unless a computation for `key` is already in
    flight, in which case wait for it and return its result. A failure is
    re-thrown to the computing caller and surfaced to waiters as an ex-info
-   carrying the cause."
+   carrying the cause.
+
+   Delegates to hive-weave.single-flight/run, the single definition, against
+   this cache's own registry so `stats` can count what is in flight."
   [key compute-fn]
-  (let [p        (promise)
-        [old _]  (swap-vals! in-flight (fn [m] (if (contains? m key) m (assoc m key p))))]
-    (if-let [existing (get old key)]
-      (let [v @existing]
-        (if (instance? Failed v)
-          (throw (ex-info "single-flight compute failed" {:key key} (:cause v)))
-          v))
-      (try
-        (let [v (compute-fn)]
-          (deliver p v)
-          v)
-        (catch Throwable t
-          (deliver p (->Failed t))
-          (throw t))
-        (finally
-          (swap! in-flight dissoc key))))))
+  (sf/run in-flight key compute-fn))
 
 ;; =============================================================================
 ;; Bundle tier

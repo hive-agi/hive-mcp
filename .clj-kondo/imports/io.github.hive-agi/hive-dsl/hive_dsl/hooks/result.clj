@@ -66,13 +66,17 @@
    unresolved. Rewrite to a plain `let` with every binding flattened so
    kondo resolves them and still analyzes the body + binding exprs.
 
-   Each ok-binding expr is rewritten to `(:ok expr)`, which is what the macro
-   binds at runtime. Binding the Result expression directly gives the symbol
-   the Result's type, and every downstream use of the payload then reports a
-   mismatch against it."
+   Each ok-binding expr is rewritten to `(get expr :ok)`, which is what the
+   macro binds at runtime. Binding the Result expression directly gives the
+   symbol the Result's type. `get`, not `(:ok expr)`: kondo infers a keyword
+   lookup on a literal Result map, so a binding to `(err ..)` typed the symbol
+   nil (the branch the macro short-circuits) and every downstream use of the
+   payload reported a mismatch. `get` leaves the payload type unknown."
   [{:keys [node]}]
   (let [unwrap (fn [expr]
-                 (api/list-node [(api/keyword-node :ok) expr]))
+                 (api/list-node [(api/token-node 'clojure.core/get)
+                                 expr
+                                 (api/keyword-node :ok)]))
         [_ binding-vec & body] (:children node)
         flat (loop [bs (seq (:children binding-vec)) acc []]
                (if (empty? bs)

@@ -26,18 +26,49 @@
 ;; Co-Access Recording
 ;; =============================================================================
 
-(defn- existing-co-access-edges
-  "Every :co-accessed edge among `ids`, keyed by [from to].
-   One `find-edges-between` read in place of a `find-edge` per pair."
+(def ^:const default-co-access-max-degree
+  "Most :co-accessed edges one node may carry before record-co-access! stops
+   CREATING new ones on it. Reinforcing an existing edge is never capped.
+   Bounds the derived co-access layer per node instead of letting a hub entry
+   collect an edge to everything it was ever recalled with."
+  50)
+
+(defn- co-access-neighbourhood
+  "Every :co-accessed edge touching any of `ids` (as :from or :to), in one
+   query, folded into what record-co-access! needs:
+     :by-pair - every :co-accessed edge among `ids`, keyed by [from to]
+     :degree  - :co-accessed edge count per id (absent = 0)
+   One read in place of a `find-edge` per pair (it supersedes the
+   `find-edges-between` read, which saw only edges inside `ids` and so could
+   not count a node's degree)."
   [ids]
-  (reduce (fn [acc edge]
-            (let [k [(:kg-edge/from edge) (:kg-edge/to edge)]]
-              (cond-> acc
-                (and (= :co-accessed (:kg-edge/relation edge))
-                     (not (contains? acc k)))
-                (assoc k edge))))
-          {}
-          (queries/find-edges-between (set ids))))
+  (let [id-set (set ids)
+        edges  (conn/query '[:find [(pull ?e [:kg-edge/id :kg-edge/from :kg-edge/to]) ...]
+                             :in $ [?node ...]
+                             :where
+                             (or [?e :kg-edge/from ?node]
+                                 [?e :kg-edge/to ?node])
+                             [?e :kg-edge/relation :co-accessed]]
+                           (vec id-set))]
+    (reduce (fn [acc {:kg-edge/keys [from to] :as edge}]
+              (let [k [from to]]
+                (cond-> (-> acc
+                            (update-in [:degree from] (fnil inc 0))
+                            (update-in [:degree to] (fnil inc 0)))
+                  (and (contains? id-set from)
+                       (contains? id-set to)
+                       (not (contains? (:by-pair acc) k)))
+                  (assoc-in [:by-pair k] edge))))
+            {:by-pair {} :degree {}}
+            (distinct (or edges [])))))
+
+(defn under-degree-cap?
+  "True when neither endpoint of a new pair has reached `max-degree`.
+   `degree` maps node id -> current :co-accessed edge count (absent = 0).
+   Pure predicate — no side effects."
+  [degree max-degree from-id to-id]
+  (and (< (get degree from-id 0) max-degree)
+       (< (get degree to-id 0) max-degree)))
 
 (defn record-co-access!
   "Record co-access pattern between a batch of memory entries.
@@ -49,9 +80,14 @@
      opts      - Optional map with:
                  :scope      - Scope where co-access occurred
                  :created-by - Agent/tool that triggered the recall
+                 :max-degree - Per-node cap on :co-accessed edges (default
+                               `default-co-access-max-degree`). A new edge is
+                               not created when either endpoint already
+                               carries this many; reinforcement is uncapped.
 
    Returns the count of edges created or reinforced."
-  [entry-ids & [{:keys [scope created-by]}]]
+  [entry-ids & [{:keys [scope created-by max-degree]
+                 :or {max-degree default-co-access-max-degree}}]]
   (let [ids (vec (distinct (seq entry-ids)))]
     (when (>= (count ids) 2)
       (conn/with-tx-batch
@@ -60,23 +96,31 @@
                       [(nth ids i) (nth ids j)])
              ;; Limit pairs to avoid quadratic explosion on large batches
               limited-pairs (take 50 pairs)
-              existing-by-pair (existing-co-access-edges ids)]
-          (count
-           (for [[from-id to-id] limited-pairs]
-             (if-let [existing (get existing-by-pair [from-id to-id])]
-              ;; Reinforce existing co-access edge
-               (do (write/increment-confidence! (:kg-edge/id existing) 0.1)
-                   (write/verify-edge! (:kg-edge/id existing))
-                   :reinforced)
-              ;; Create new co-access edge with low initial confidence
-               (do (write/add-edge! (cond-> {:from from-id
-                                             :to to-id
-                                             :relation :co-accessed
-                                             :confidence 0.3
-                                             :source-type :co-access}
-                                      scope (assoc :scope scope)
-                                      created-by (assoc :created-by created-by)))
-                   :created)))))))))
+              {existing-by-pair :by-pair degree :degree} (co-access-neighbourhood ids)]
+          (->> limited-pairs
+               (reduce
+                (fn [{:keys [degree] :as acc} [from-id to-id]]
+                  (if-let [existing (get existing-by-pair [from-id to-id])]
+                   ;; Reinforce existing co-access edge
+                    (do (write/increment-confidence! (:kg-edge/id existing) 0.1)
+                        (write/verify-edge! (:kg-edge/id existing))
+                        (update acc :n inc))
+                    (if (under-degree-cap? degree max-degree from-id to-id)
+                     ;; Create new co-access edge with low initial confidence
+                      (do (write/add-edge! (cond-> {:from from-id
+                                                    :to to-id
+                                                    :relation :co-accessed
+                                                    :confidence 0.3
+                                                    :source-type :co-access}
+                                             scope (assoc :scope scope)
+                                             created-by (assoc :created-by created-by)))
+                          (-> acc
+                              (update :n inc)
+                              (update-in [:degree from-id] (fnil inc 0))
+                              (update-in [:degree to-id] (fnil inc 0))))
+                      acc)))
+                {:n 0 :degree degree})
+               :n))))))
 
 (defn get-co-accessed
   "Get entries co-accessed with the given entry.
@@ -208,3 +252,5 @@
 (m/=> record-co-access! [:=> [:cat es/NodeIds [:? es/CoAccessOpts]] [:maybe es/Count]])
 (m/=> get-co-accessed [:=> [:cat :string] [:vector es/Neighbor]])
 (m/=> promote-co-access-edges! [:=> [:cat [:? es/PromotionOpts]] es/PromotionTally])
+
+(m/=> under-degree-cap? [:=> [:cat es/DegreeMap nat-int? :string :string] :boolean])

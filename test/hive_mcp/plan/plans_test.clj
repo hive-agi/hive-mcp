@@ -17,10 +17,8 @@
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
 
-;; =============================================================================
-;; Fixtures
-;; =============================================================================
-
+;; ======================================================================;; Fixtures
+;; ======================================================================
 (defn reset-cache-fixture [f]
   (plans/reset-collection-cache!)
   (f)
@@ -28,10 +26,8 @@
 
 (use-fixtures :each reset-cache-fixture)
 
-;; =============================================================================
-;; Private fn accessors (tests need to poke at private helpers)
-;; =============================================================================
-
+;; ======================================================================;; Private fn accessors (tests need to poke at private helpers)
+;; ======================================================================
 (def get-or-create-collection
   #'hive-mcp.plan.plans/get-or-create-collection)
 
@@ -63,10 +59,8 @@
       (throw (ex-info "stub-provider: embed-batch is not part of this path" {})))
     (embedding-dimension [_] dim)))
 
-;; =============================================================================
-;; cache-and-return-collection! helper
-;; =============================================================================
-
+;; ======================================================================;; cache-and-return-collection! helper
+;; ======================================================================
 (deftest cache-and-return-collection!-test
   (testing "caches collection and returns it (action :created)"
     (plans/reset-collection-cache!)
@@ -82,10 +76,8 @@
       (is (= fake-coll returned))
       (is (= fake-coll @@collection-cache)))))
 
-;; =============================================================================
-;; get-or-create-collection dispatch
-;; =============================================================================
-
+;; ======================================================================;; get-or-create-collection dispatch
+;; ======================================================================
 (deftest get-or-create-collection-cache-hit-test
   (testing "when cache hit, returns cached value WITHOUT calling provider"
     (let [cached      {:id "cached" :metadata {:dimension 768}}
@@ -156,3 +148,38 @@
           (is (false? @called-crt)              "no create when dim matches")
           (is (false? @called-del)              "no delete when dim matches")
           (is (= existing @@collection-cache)   "existing collection cached"))))))
+
+(deftest reindex-plans!-test
+  (testing "plans are indexed, non-plans and failures are skipped, not fatal"
+    (let [indexed (atom [])]
+      (with-redefs [plans/index-plan! (fn [e]
+                                        (if (= "bad" (:id e))
+                                          (throw (ex-info "boom" {}))
+                                          (swap! indexed conj (:id e))))]
+        (is (= {:indexed 2 :skipped 2}
+               (plans/reindex-plans!
+                [{:id "p1" :type "plan" :content "1. a"}
+                 {:id "p2" :type "plan" :content "1. b"}
+                 {:id "n1" :type "note"}
+                 {:id "bad" :type "plan" :content "1. c"}])))
+        (is (= ["p1" "p2"] @indexed)
+            "only successful plans were indexed")))))
+(deftest transition-status-test
+  (testing "the machine advances one edge at a time"
+    (is (true? (:ok? (plans/transition-status "draft" "active"))))
+    (is (true? (:ok? (plans/transition-status "active" "completed"))))
+    (is (= :advanced (:reason (plans/transition-status "draft" "active")))))
+  (testing "idempotent re-application is a noop, not a failure"
+    (is (true? (:ok? (plans/transition-status "active" "active"))))
+    (is (= :noop (:reason (plans/transition-status "active" "active")))))
+  (testing "anything can be superseded"
+    (is (true? (:ok? (plans/transition-status "draft" "superseded"))))
+    (is (true? (:ok? (plans/transition-status "completed" "superseded")))))
+  (testing "terminal states do not reopen"
+    (is (false? (:ok? (plans/transition-status "completed" "active"))))
+    (is (= :illegal-transition (:reason (plans/transition-status "completed" "active")))))
+  (testing "unknown status is refused"
+    (is (false? (:ok? (plans/transition-status "draft" "bogus"))))
+    (is (= :invalid-status (:reason (plans/transition-status "draft" "bogus")))))
+  (testing "a missing stored status reads as draft"
+    (is (= "draft" (:from (plans/transition-status nil "active"))))))

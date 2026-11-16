@@ -12,6 +12,8 @@
 #            HIVE_MCP_MAX_RESTARTS (5) HIVE_MCP_RESTART_WINDOW (600s)
 #            HIVE_MCP_OOM_SCORE_ADJ (-500) HIVE_MCP_OOMD_PREFERENCE (avoid)
 #            HIVE_MCP_COREDUMP (0: 1 raises ulimit -c for crash forensics)
+#            HIVE_MCP_RESTART_LOCK (on) HIVE_MCP_RESTART_LOCK_FILE
+#            HIVE_MCP_RESTART_BY (who launches; see "Restart lock" below)
 #
 # Profile precedence: --profile flag > HIVE_PROFILE env > config.edn
 # [:system :profile] > "desktop". Unset here means config.edn decides.
@@ -150,6 +152,40 @@ OOMD_PREF="${HIVE_MCP_OOMD_PREFERENCE:-avoid}"
 # :mcp carries :exec-fn and no :main-opts, so -M needs an explicit -m.
 CMD=(clojure "${JVM_ARGS[@]}" "${SDEPS_ARG[@]+"${SDEPS_ARG[@]}"}" -M"$ALIASES"
      -m hive-mcp.server.core "${PASSTHROUGH_ARGS[@]+"${PASSTHROUGH_ARGS[@]}"}")
+
+# ── Restart lock: exactly one launch, and everyone learns who ─────────
+# hivemind lives inside this JVM, so while it is down nobody can announce a
+# restart there. The out-of-band channel is a file lock: a non-blocking flock
+# on $HIVE_MCP_RESTART_LOCK_FILE, held on fd 9 for the life of the launcher
+# and, through exec, the JVM (Java closes fds above 2 in what it spawns, so
+# lings never inherit it). The winner writes who it is beside the lock and
+# appends a line to restarts.log; a second launcher prints that holder and
+# exits 75 (EX_TEMPFAIL) without starting a JVM. The kernel drops the lock
+# when the holder dies, so a dead server never blocks the next launch.
+# Knobs: HIVE_MCP_RESTART_LOCK (on; off skips it), HIVE_MCP_RESTART_LOCK_FILE
+# (~/.local/share/hive-mcp/restart-<nREPL port>.lock, so a second instance
+# on another port is not blocked), HIVE_MCP_RESTART_BY (who is
+# launching, e.g. coordinator:52578; default the parent process).
+RESTART_LOCK_EXIT=75
+if [[ "${HIVE_MCP_RESTART_LOCK:-on}" != "off" ]]; then
+  if command -v flock >/dev/null 2>&1; then
+    LOCK_FILE="${HIVE_MCP_RESTART_LOCK_FILE:-${XDG_DATA_HOME:-$HOME/.local/share}/hive-mcp/restart-${HIVE_MCP_NREPL_PORT:-7910}.lock}"
+    mkdir -p "$(dirname "$LOCK_FILE")"
+    exec 9>>"$LOCK_FILE"
+    if ! flock -n 9; then
+      notice "restart refused: another launcher holds $LOCK_FILE"
+      [[ -f "$LOCK_FILE.holder" ]] && notice "  holder: $(cat "$LOCK_FILE.holder")"
+      exit "$RESTART_LOCK_EXIT"
+    fi
+    BY="${HIVE_MCP_RESTART_BY:-ppid $PPID ($(ps -o comm= -p "$PPID" 2>/dev/null || echo '?'))}"
+    HOLDER="pid=$$ by=$BY started=$(date -Iseconds)"
+    printf '%s\n' "$HOLDER" > "$LOCK_FILE.holder"
+    printf '%s\n' "$HOLDER" >> "$(dirname "$LOCK_FILE")/restarts.log"
+    notice "restart lock held ($HOLDER)"
+  else
+    notice "flock not on PATH: launching without the restart lock"
+  fi
+fi
 
 # ── Launch ──────────────────────────────────────────────────────────
 cd "$PROJECT_DIR"

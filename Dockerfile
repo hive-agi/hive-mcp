@@ -78,6 +78,11 @@ EXPOSE 7910 9999 7911 7912
 
 ENV HIVE_HEAP=2g
 ENV HIVE_PROFILE=k8s-headless
+# The socket channels default to loopback on a host; inside the container
+# the network namespace is the boundary, so listen where EXPOSE can reach.
+ENV HIVE_MCP_WS_CHANNEL_HOST=0.0.0.0
+ENV HIVE_MCP_OLYMPUS_WS_HOST=0.0.0.0
+ENV HIVE_MCP_CHANNEL_HOST=0.0.0.0
 
 # nREPL is the first server up and the last down; a TCP probe on it is
 # the readiness signal. bash /dev/tcp needs no extra package.

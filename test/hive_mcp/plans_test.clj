@@ -22,7 +22,7 @@
 ;; Constants and Helpers
 ;; =============================================================================
 
-(def ^:private test-collection-name "hive-mcp-plans")
+(def ^:private test-collection-name @#'plans/collection-name)
 
 (defn delete-test-collection!
   "Delete the test collection if it exists."

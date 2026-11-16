@@ -152,6 +152,44 @@
      :warnings  warnings
      :degraded? (boolean (seq warnings))}))
 
+(defn with-durability
+  "Add to an `apply-kg-calls` result whether its queued edges are readable yet.
+   `readable?` takes an edge id and returns truthy once that edge can be read
+   back from the store.
+
+   The edges are enqueued in order and the writer flushes in order, so the last
+   edge id being readable means all of them are. Polls that id until it reads
+   back or the `kg-call-timeout-ms` budget runs out. It asks about this call's
+   own edges, not about the writer queue: a queue that other writers keep busy
+   says nothing about these edges.
+
+   Adds :pending? to the result:
+     false - the edges are readable, or there were none to wait for.
+     true  - not confirmed within the budget. The edges are queued and land
+             when the writer drains, so the caller must not create them again;
+             a `kg-pending:` warning says so. Not degraded: nothing is lost.
+
+   A throwing `readable?` counts as not readable yet. Never throws."
+  [{:keys [edges] :as kg-result} readable?]
+  (if (empty? edges)
+    (assoc kg-result :pending? false)
+    (let [timeout-ms (kg-call-timeout-ms)
+          deadline   (+ (System/currentTimeMillis) timeout-ms)
+          last-id    (peek edges)
+          readable?  (fn [] (try (boolean (readable? last-id))
+                                 (catch Throwable _not-readable-yet false)))
+          landed?    (loop []
+                       (cond
+                         (readable?) true
+                         (>= (System/currentTimeMillis) deadline) false
+                         :else (do (Thread/sleep 10) (recur))))]
+      (if landed?
+        (assoc kg-result :pending? false)
+        (-> kg-result
+            (assoc :pending? true)
+            (update :warnings conj
+                    (str "kg-pending:edges-queued:" timeout-ms "ms")))))))
+
 (defn log-degradation!
   "Side-effecting helper — caller invokes once if `:degraded?` is true."
   [{:keys [warnings]} ctx]
@@ -180,6 +218,16 @@
         [:edges [:vector :any]]
         [:warnings [:vector :string]]
         [:degraded? :boolean]]])
+
+(m/=> with-durability
+      [:=> [:cat
+            [:map [:edges [:vector :any]] [:warnings [:vector :string]] [:degraded? :boolean]]
+            [:fn ifn?]]
+       [:map
+        [:edges [:vector :any]]
+        [:warnings [:vector :string]]
+        [:degraded? :boolean]
+        [:pending? :boolean]]])
 
 (m/=> log-degradation!
       [:=> [:cat :map :map]
