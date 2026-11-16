@@ -1,8 +1,8 @@
-{:case-0 {:out "hive.v1.event.x_1", :in ("x_1")},
- :case-1 {:out "hive.v1.event..", :in (:.)},
- :case-2 {:out "hive.v1.event.H", :in (H)},
- :case-3 {:out "hive.v1.event.e", :in (e)},
- :case-4 {:out "hive.v1.event.oD-", :in (:oD-)},
- :case-5 {:out "hive.v1.event.!n+", :in (:!n+)},
- :case-6 {:out "hive.v1.event.g", :in (:g)},
- :case-7 {:out "hive.v1.event.x_1", :in ("x_1")}}
+{:case-0 {:out "hive.v1.event.t", :in (:t)},
+ :case-1 {:out "hive.v1.event.unknown", :in (nil)},
+ :case-2 {:out "hive.v1.event.unknown", :in ("")},
+ :case-3 {:out "hive.v1.event.unknown", :in ("  ")},
+ :case-4 {:out "hive.v1.event._?", :in (_?)},
+ :case-5 {:out "hive.v1.event.o98", :in (:o98)},
+ :case-6 {:out "hive.v1.event.memory-add", :in ("memory-add")},
+ :case-7 {:out "hive.v1.event.g22!", :in (:g22!)}}

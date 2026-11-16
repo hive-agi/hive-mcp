@@ -41,7 +41,8 @@
    Returns plan map if entry should decay, nil otherwise."
   [entry opts]
   (let [delta (crystal/calculate-decay-delta entry opts)
-        old-beta (get entry :staleness-beta 1)]
+        ;; `or`, not get's default: a PRESENT-but-nil beta is the default too.
+        old-beta (or (:staleness-beta entry) 1)]
     (when (pos? delta)
       {:id (:id entry)
        :type (:type entry)

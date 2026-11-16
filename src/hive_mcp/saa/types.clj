@@ -112,6 +112,21 @@
   "What `restore!` accepts: a prior snapshot, or nil (restore to empty)."
   [:maybe [:map [:data {:optional true} [:maybe :map]]]])
 
+(defn sorted-ids
+  "Ids in a stable total order, whatever their types. Registry ids are mixed
+   in practice (keyword seeds next to uuid ids), and `sort` throws a
+   ClassCastException across Comparable classes. This orders by class name
+   first, then naturally within a class (str for non-Comparables)."
+  [ids]
+  (vec (sort-by (juxt #(.getName (class %))
+                      #(if (instance? Comparable %) % (str %)))
+                (fn [[ca a] [cb b]]
+                  (let [c (compare ca cb)]
+                    (if (zero? c) (compare a b) c)))
+                ids)))
+
+(m/=> sorted-ids [:=> [:cat [:maybe [:sequential :any]]] [:vector :any]])
+
 (defn raw-msg->phase-message
   "Map a bridge query! raw message into a PhaseMessage variant.
 

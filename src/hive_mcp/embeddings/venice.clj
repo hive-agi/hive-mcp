@@ -91,11 +91,12 @@
 
 
 (defn- get-embeddings
-  "Get embeddings for one or more texts from Venice API."
-  [api-base api-key model texts]
+  "Get embeddings for one or more texts from the Venice API through
+   `request`, the transport seam (fn [api-base api-key body] -> parsed response)."
+  [request api-base api-key model texts]
   (log/debug "Getting embeddings for" (count texts) "texts using" model)
-  (let [response (make-request api-base api-key {:model model
-                                                 :input texts})
+  (let [response (request api-base api-key {:model model
+                                            :input texts})
         data (:data response)]
     ;; Sort by index to ensure order matches input.
     (->> data
@@ -105,13 +106,17 @@
 
 (defrecord VeniceEmbedder [api-base api-key model dimension]
   emb-proto/EmbeddingProvider
-  (embed-text [_ text]
-    (first (get-embeddings api-base api-key model [text])))
-  (embed-batch [_ texts]
-    ;; Conservative batch size — Venice has not published a hard cap, so
+  ;; :request-fn (assoc'd by ->provider) is the HTTP transport seam; absent,
+  ;; the real make-request runs.
+  (embed-text [this text]
+    (first (get-embeddings (or (:request-fn this) make-request)
+                           api-base api-key model [text])))
+  (embed-batch [this texts]
+    ;; Conservative batch size: Venice has not published a hard cap, so
     ;; partition like OpenRouter (50) to dodge timeouts on long EDN inputs.
-    (let [batches (partition-all 50 texts)]
-      (vec (mapcat #(get-embeddings api-base api-key model (vec %)) batches))))
+    (let [request (or (:request-fn this) make-request)
+          batches (partition-all 50 texts)]
+      (vec (mapcat #(get-embeddings request api-base api-key model (vec %)) batches))))
   (embedding-dimension [_] dimension))
 
 
@@ -125,6 +130,8 @@
                  https://api.venice.ai/api/v1).
      :model    - Embedding model (default: env VENICE_EMBEDDING_MODEL or
                  text-embedding-qwen3-8b).
+     :request-fn - HTTP transport seam (fn [api-base api-key body] -> response);
+                 defaults to the real HTTP call.
 
    Models:
      - text-embedding-qwen3-8b (4096 dims, 32k context — default)"
@@ -138,7 +145,8 @@
                        {:type :missing-api-key})))
      (log/info "Created Venice embedder with model:" model
                "dimension:" dimension "api-base:" api-base)
-     (->VeniceEmbedder api-base api-key model dimension))))
+     (cond-> (->VeniceEmbedder api-base api-key model dimension)
+       (:request-fn overrides) (assoc :request-fn (:request-fn overrides))))))
 
 (m/=> ->provider [:function
                   [:=> [:cat] emb-proto/Provider]
