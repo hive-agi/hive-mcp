@@ -156,8 +156,12 @@
    so hive-mcp keeps no compile dependency on it. Returns
      {:ok? :ir-loadable? :strategy-classes-match? :routed? :routed-plan-id}."
   []
-  (let [run   (requiring-resolve 'hive-workflows.algebra.eval/run)
-        call* (requiring-resolve 'hive-workflows.ir/call*)]
+  ;; requiring-resolve THROWS (FileNotFoundException) for an absent namespace
+  ;; rather than answering nil, so resolve fail-soft: without it the absent
+  ;; branch below was unreachable and the check threw instead.
+  (let [resolve* (fn [sym] (try (requiring-resolve sym) (catch Exception _ nil)))
+        run      (resolve* 'hive-workflows.algebra.eval/run)
+        call*    (resolve* 'hive-workflows.ir/call*)]
     (if-not (and run call*)
       {:ok? false :ir-loadable? false}
       (let [classes-match? (every? (fn [[m cls]]

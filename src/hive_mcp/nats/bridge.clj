@@ -90,7 +90,7 @@
   "Build subject for system events.
    E.g. hive.v1.event.agent-spawn"
   [event-type]
-  (str event-prefix "." (name event-type)))
+  (str event-prefix "." (safe-token event-type "unknown")))
 
 (defn event-wildcard
   "Build wildcard subject for all system events.
@@ -491,9 +491,9 @@
        [:=> [:cat :any] :string]])
 
 (m/=> event-subject
-      ;; event-type is (name x)'d: nil throws NPE, so nil is outside the domain
-      ;; (corrected in cov-facets f07).
-      [:=> [:cat [:or :string :keyword :symbol]]
+      ;; nil/blank event-type -> hive.v1.event.unknown, like tool-subject: a
+      ;; publish-event! payload without :type must not NPE the publisher.
+      [:=> [:cat [:or :string :keyword :symbol :nil]]
        :string])
 
 (m/=> event-wildcard

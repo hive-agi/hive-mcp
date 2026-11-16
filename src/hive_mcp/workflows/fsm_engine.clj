@@ -84,18 +84,45 @@
 
 (defn- parse-step-id
   "Parse a step-id string back to a qualified keyword.
-   Handles both namespace-qualified (\"ns/name\") and simple (\"name\") forms."
+   Handles both namespace-qualified (\"ns/name\") and simple (\"name\") forms,
+   with or without the leading colon `states->steps` writes (\":ns/name\"),
+   so a loaded workflow's own step ids round-trip."
   [step-id-str]
   (if (string? step-id-str)
-    (if-let [slash-idx (clojure.string/index-of step-id-str "/")]
-      (keyword (subs step-id-str 0 slash-idx)
-               (subs step-id-str (inc slash-idx)))
-      (keyword step-id-str))
+    (let [s (cond-> step-id-str (clojure.string/starts-with? step-id-str ":") (subs 1))]
+      (if-let [slash-idx (clojure.string/index-of s "/")]
+        (keyword (subs s 0 slash-idx)
+                 (subs s (inc slash-idx)))
+        (keyword s)))
     step-id-str))
 
 ;; =============================================================================
 ;; FSMWorkflowEngine
 ;; =============================================================================
+
+(defn- step-once
+  "Run exactly ONE state of an FSM graph and answer the halted FSM state
+   ({:current-state-id next :data new-data :trace ...}).
+
+   Built on the public fsm/run rather than fsm/step: hive-events' step calls
+   transition with `identity` as its 2-arity post hook (ArityException) and
+   needs :trace/:opts a hand-built halted state lacks (NPE), so it cannot run
+   a loaded workflow's step. A :pre hook halts the run after the first
+   transition; the :hive.events.fsm/halt handler hands the FSM back."
+  [graph state-id data resources]
+  (when-not (get-in graph [state-id :handler])
+    (throw (ex-info (str "no handler for state " state-id) {:state state-id})))
+  (let [seen (atom 0)
+        halt-after-one (fn [fsm _resources]
+                         (if (> (swap! seen inc) 1)
+                           (assoc fsm
+                                  :last-state-id (:current-state-id fsm)
+                                  :current-state-id :hive.events.fsm/halt)
+                           fsm))]
+    (fsm/run {:fsm  (assoc graph :hive.events.fsm/halt {:handler (fn [_ halted] halted)})
+              :opts {:pre halt-after-one}}
+             resources
+             {:data data :current-state-id state-id})))
 
 (defrecord FSMWorkflowEngine []
   proto/IWorkflowEngine
@@ -191,20 +218,23 @@
       (try
         (let [compiled   (:_compiled workflow)
               resources  (or (:resources opts) (:context opts) {})
-              state-kw   (parse-step-id step-id)
-              ;; Construct a halted-like FSM state for fsm/step
-              halted-fsm (or (:_halted-state opts)
-                             {:fsm              (:fsm compiled)
-                              :current-state-id state-kw
-                              :data             (or (:context opts) {})})
-              result     (fsm/step halted-fsm resources)
+              halted     (:_halted-state opts)
+              state-kw   (if halted
+                           (:current-state-id halted)
+                           (parse-step-id step-id))
+              result     (step-once (or (:fsm halted) (:fsm compiled))
+                                    state-kw
+                                    (if halted (:data halted) (or (:context opts) {}))
+                                    resources)
+              errored?   (= :hive.events.fsm/error (:current-state-id result))
               duration   (elapsed-ms start-time)]
-          {:success?    true
+          {:success?    (not errored?)
            :step-id     step-id
+           :next-step-id (some-> (:current-state-id result) str)
            :result      result
            :duration-ms duration
-           :errors      []
-           :context     (:data result result)})
+           :errors      (if errored? [(str "no valid transition from " state-kw)] [])
+           :context     (:data result)})
         (catch Throwable e
           {:success?    false
            :step-id     step-id
