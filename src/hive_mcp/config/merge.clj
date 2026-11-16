@@ -22,6 +22,17 @@
   (into {} (comp (keep :secret-key) (map (fn [k] [k nil])))
         (vals model/seed-registry)))
 
+(def default-transports
+  "Shipped TransportChain config, one entry per capability port. A port entry
+   is merged over :defaults; a user :chain vector replaces the shipped one."
+  {:defaults   {:retry             {:attempts 3 :backoff-ms [200 1000 5000]}
+                :probe-interval-ms 30000
+                :sticky?           true}
+   :delivery   {:chain [:nats-inbox :tmux :emacs :hivemind-shout]}
+   :events     {:chain [:nats :local-channel]}
+   :spawn      {:chain [:headless :tmux :vterm]}
+   :git-editor {:chain [:hive-git :emacs]}})
+
 (def default-config
   "Default configuration. Used as base — user config.edn is deep-merged on top."
   {:project-roots []
@@ -140,6 +151,7 @@
    ;; deep-merged over this, and `provider/effective-registry` re-reads it.
    :secrets default-secret-slots
    :llm-providers model/seed-registry
+   :transports default-transports
    :hivemind {;; Max chars preserved in a shout :message / :task before truncation.
               ;; One bad shout fans out (per-agent ring × backbone × subscribers),
               ;; so aggressive bound protects every downstream context window.
