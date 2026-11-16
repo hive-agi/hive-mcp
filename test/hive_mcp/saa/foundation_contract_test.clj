@@ -201,8 +201,9 @@
 
 (deftest saa-gate-is-not-vacuous
   (let [report (coverage/coverage {:paths saa-files})]
-    (is (= 23 (count (:universe report))) "every public defn of the saa files")
-    (is (= 23 (count (:covered report))))))
+    ;; 24: + types/sorted-ids (COV-FACETS-FINDINGS-W2), contracted with m/=>
+    (is (= 24 (count (:universe report))) "every public defn of the saa files")
+    (is (= 24 (count (:covered report))))))
 
 (deftest every-saa-contract-generates-both-sides
   (doseq [ns-sym '[hive-mcp.saa.adapters hive-mcp.saa.core-seed hive-mcp.saa.model
