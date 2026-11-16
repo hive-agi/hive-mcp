@@ -148,6 +148,7 @@
         (proto/add-slave! registry/default-registry agent-id
                           {:name (or (:name metadata) agent-id)
                            :status :idle
+                           ;; No parent is known here: a self-registering agent is a ling at depth 1.
                            :depth 1
                            :presets (:presets metadata)
                            :cwd cwd
