@@ -1,0 +1,68 @@
+{:addressing-no-change
+ {:active :a,
+  :adapters
+  {:a {:status :ok, :fails 0},
+   :b {:status :ok, :fails 0},
+   :c {:status :ok, :fails 0}}},
+ :fail-active-clears
+ {:active nil,
+  :adapters
+  {:a
+   {:status :degraded,
+    :last-ok-at nil,
+    :last-attempt-at 400,
+    :last-err
+    {:error :transport/connection-refused,
+     :error/kind :unavailable,
+     :at 400},
+    :fails 1},
+   :b {:status :ok, :fails 0},
+   :c {:status :ok, :fails 0}}},
+ :fail-counts
+ {:active nil,
+  :adapters
+  {:a
+   {:status :degraded,
+    :last-ok-at nil,
+    :last-attempt-at 500,
+    :last-err
+    {:error :transport/connection-refused,
+     :error/kind :unavailable,
+     :at 500},
+    :fails 3}}},
+ :fail-degrades
+ {:active :a,
+  :adapters
+  {:a {:status :ok, :fails 0},
+   :b
+   {:status :degraded,
+    :last-ok-at nil,
+    :last-attempt-at 300,
+    :last-err
+    {:error :transport/connection-refused,
+     :error/kind :unavailable,
+     :at 300},
+    :fails 1},
+   :c {:status :ok, :fails 0}}},
+ :ok-becomes-active
+ {:active :b,
+  :adapters
+  {:a {:status :unknown, :fails 0},
+   :b
+   {:status :ok,
+    :last-ok-at 100,
+    :last-attempt-at 100,
+    :last-err nil,
+    :fails 0},
+   :c {:status :unknown, :fails 0}}},
+ :ok-recovers-degraded
+ {:active :a,
+  :adapters
+  {:a
+   {:status :ok,
+    :last-ok-at 200,
+    :last-attempt-at 200,
+    :last-err nil,
+    :fails 0},
+   :b {:status :ok, :fails 0},
+   :c {:status :ok, :fails 0}}}}
