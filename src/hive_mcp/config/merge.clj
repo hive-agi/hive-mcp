@@ -29,7 +29,9 @@
                 :probe-interval-ms 30000
                 :sticky?           true}
    :delivery   {:chain [:nats-inbox :tmux :emacs :hivemind-shout]}
-   :events     {:chain [:nats :local-channel]}
+   :events     {:chain [:nats :local-channel]
+                :retry {:attempts 1 :backoff-ms [0]}
+                :probe-interval-ms 5000}
    :spawn      {:chain [:headless :tmux :vterm]}
    :git-editor {:chain [:hive-git :emacs]}})
 
