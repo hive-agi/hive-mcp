@@ -16,6 +16,7 @@
    5. dag-status (query)
    6. Edge cases (cycles, failures, dry-run)"
   (:require [hive-mcp.project.scope]
+            [hive-mcp.transport.registry]
             [clojure.test :refer [deftest is testing use-fixtures]]
             [hive-mcp.scheduler.dag-waves :as dag]
             [hive-spi.kanban :as kanban]
