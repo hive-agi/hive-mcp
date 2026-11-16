@@ -1,10 +1,10 @@
-(ns hive-mcp.agent.spawn-chain-test
+(ns hive-mcp.transport.spawn-test
   "The :spawn chain: an omitted spawn_mode resolves through it, Emacs-bound
    modes are skipped with a reason while Emacs is down, an explicit mode stays
    strict. Prompt watch and the collect default ride along."
   (:require [clojure.test :refer [deftest is testing use-fixtures]]
-            [hive-mcp.agent.spawn-chain :as sc]
-            [hive-mcp.swarm.prompt-watch :as pw]
+            [hive-mcp.transport.spawn :as sc]
+            [hive-mcp.transport.prompt-watch :as pw]
             [hive-mcp.tools.agent.spawn :as spawn]
             [hive-mcp.tools.swarm.collect :as collect]
             [hive-mcp.transport.registry :as reg]

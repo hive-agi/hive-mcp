@@ -1,4 +1,4 @@
-(ns hive-mcp.swarm.prompt-watch
+(ns hive-mcp.transport.prompt-watch
   "Prompt-stall detection that needs no Emacs.
 
    The Emacs path emits :prompt-shown and :prompt-stall on the channel bus,

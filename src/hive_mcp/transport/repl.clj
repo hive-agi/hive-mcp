@@ -1,4 +1,4 @@
-(ns hive-mcp.agent.repl-chain
+(ns hive-mcp.transport.repl
   "The :repl TransportChain: ling REPLs without Emacs.
 
    Chain (config.edn [:transports :repl :chain], shipped

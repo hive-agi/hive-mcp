@@ -9,7 +9,7 @@
             [hive-mcp.agent.protocol :as proto]
             [hive-mcp.agent.ling :as ling]
             [hive-mcp.agent.ling.lifecycle :as lifecycle]
-            [hive-mcp.agent.spawn-chain :as spawn-chain]
+            [hive-mcp.transport.spawn :as spawn-chain]
             [hive-mcp.agent.type-registry :as agent-type-registry]
             [hive-mcp.agent.spawn-mode-registry :as spawn-registry]
             [hive-mcp.agent.openrouter :as llm-registry]

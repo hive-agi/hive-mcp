@@ -1,4 +1,4 @@
-(ns hive-mcp.agent.spawn-chain
+(ns hive-mcp.transport.spawn
   "The :spawn TransportChain: which spawn mode a ling gets when the caller
    names none.
 
@@ -14,7 +14,7 @@
    caller who asks for vterm with Emacs down gets an error, not a quiet
    headless ling."
   (:require [hive-dsl.result :as r]
-            [hive-mcp.agent.spawn-mode-registry :as modes]
+            [hive-spi.swarm.spawn-modes :as modes]
             [hive-mcp.transport.registry :as reg]
             [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>

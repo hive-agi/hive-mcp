@@ -1,9 +1,9 @@
-(ns hive-mcp.agent.repl-chain-test
+(ns hive-mcp.transport.repl-test
   "The :repl chain: a headless nREPL registers in the JVM-side registry with
    no Emacs, and the chain falls to :emacs-cider only when it cannot start."
   (:require [clojure.test :refer [deftest is testing use-fixtures]]
             [hive-dsl.result :as r]
-            [hive-mcp.agent.repl-chain :as rc]
+            [hive-mcp.transport.repl :as rc]
             [hive-mcp.transport.registry :as reg]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
