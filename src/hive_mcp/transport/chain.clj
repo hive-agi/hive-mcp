@@ -176,6 +176,7 @@
 (m/=> normalize-spec [:=> [:cat ChainSpec] ChainSpec])
 (m/=> init-state [:=> [:cat ChainSpec] ChainState])
 (m/=> order [:=> [:cat ChainState ChainSpec] [:vector :keyword]])
+(m/=> addressing? [:=> [:cat :any] :boolean])
 (m/=> step [:=> [:cat ChainState :keyword :map :int] ChainState])
 (m/=> probe-candidates [:=> [:cat ChainState ChainSpec :int] [:vector :keyword]])
 (m/=> backoff-delay [:=> [:cat Retry [:int {:min 1}]] [:int {:min 0}]])
