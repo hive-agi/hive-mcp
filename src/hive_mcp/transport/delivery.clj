@@ -24,7 +24,6 @@
             [hive-mcp.extensions.soft :as soft]
             [hive-mcp.nats.client :as client]
             [hive-mcp.nats.inbox :as inbox]
-            [hive-mcp.swarm.datascript.queries :as queries]
             [hive-mcp.transport.registry :as reg]
             [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
@@ -39,9 +38,16 @@
   "0-arg port: the live NATS connection, or nil."
   (fn [] (client/current-connection)))
 
+(defn- registry-row
+  "The swarm registry row of `id`, resolved at call time. nil when the swarm
+   registry is absent or unreadable, so the id reads as unknown."
+  [id]
+  (when-let [get-slave (soft/resolve-soft 'hive-mcp.swarm.datascript.queries/get-slave)]
+    (try (get-slave id) (catch Exception _ nil))))
+
 (def ^:dynamic *find-ling*
   "1-arg port: the swarm registry row of an agent id, or nil."
-  (fn [id] (queries/get-slave id)))
+  registry-row)
 
 (defn- default-tmux-reply
   [to message]
