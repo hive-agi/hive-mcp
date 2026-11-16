@@ -1,11 +1,11 @@
-(ns hive-mcp.swarm.task-dispatch-test
+(ns hive-mcp.scheduler.task-dispatch-test
   "The :task-dispatch chain: the open :local-headless default, the registered
    :hive-agent-swarm dispatcher, and the fallback between them."
   (:require [clojure.test :refer [deftest is testing use-fixtures]]
             [hive-dsl.result :as r]
             [hive-mcp.agent.ling :as ling]
             [hive-mcp.config.merge :as merge]
-            [hive-mcp.swarm.task-dispatch :as td]
+            [hive-mcp.scheduler.task-dispatch :as td]
             [hive-mcp.transport.registry :as reg]
             [hive-spi.swarm.dispatch :as port]
             [hive-spi.swarm.dispatch.conformance :as conf]

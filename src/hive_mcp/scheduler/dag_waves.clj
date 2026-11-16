@@ -13,7 +13,7 @@
             [taoensso.timbre :as log]
             [hive.events :as ev]
             [hive-mcp.scheduler.dag-eligibility :as elig]
-            [hive-mcp.swarm.task-dispatch :as task-dispatch]
+            [hive-mcp.scheduler.task-dispatch :as task-dispatch]
             [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;

@@ -55,7 +55,7 @@
     (is (= 84 (count (:covered r))))))
 
 (deftest swarm-gate-covers-task-dispatch
-  (let [r (coverage/coverage {:paths ["src/hive_mcp/swarm/task_dispatch.clj"]})]
+  (let [r (coverage/coverage {:paths ["src/hive_mcp/scheduler/task_dispatch.clj"]})]
     (is (pos? (count (:universe r))))
     (is (= (count (:universe r)) (count (:covered r))))))
 

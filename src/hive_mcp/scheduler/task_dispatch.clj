@@ -1,4 +1,4 @@
-(ns hive-mcp.swarm.task-dispatch
+(ns hive-mcp.scheduler.task-dispatch
   "Task dispatch through the :task-dispatch TransportChain.
 
    The open scheduler hands a task to `dispatch!` and never names how the agent
