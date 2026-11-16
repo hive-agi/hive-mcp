@@ -51,8 +51,8 @@
 
 (deftest transport-gate-is-not-vacuous
   (let [r (coverage/coverage {:paths ["src/hive_mcp/transport"]})]
-    (is (= 61 (count (:universe r))))
-    (is (= 61 (count (:covered r))))))
+    (is (= 69 (count (:universe r))))
+    (is (= 69 (count (:covered r))))))
 
 (def ^:private transport-nses
   '[hive-mcp.transport.core hive-mcp.transport.exposure hive-mcp.transport.mcp-http
