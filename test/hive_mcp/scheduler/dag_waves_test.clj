@@ -16,6 +16,7 @@
    5. dag-status (query)
    6. Edge cases (cycles, failures, dry-run)"
   (:require [hive-mcp.project.scope]
+            [hive-mcp.transport.registry]
             [clojure.test :refer [deftest is testing use-fixtures]]
             [hive-mcp.scheduler.dag-waves :as dag]
             [hive-spi.kanban :as kanban]
@@ -244,7 +245,14 @@
       (stub/install! (stub/->stub nil {:get-entry-fn (fn [id] (mock-get-entry-by-id id))}))
       (f))))
 
-(use-fixtures :each reset-dag-state-fixture with-task-store with-kanban-port)
+(defn with-fresh-dispatch-chain
+  "clojure.test fixture: every test starts with an unbound :task-dispatch chain,
+   so the state a spawn failure left in one test never reaches the next."
+  [f]
+  (hive-mcp.transport.registry/clear!)
+  (try (f) (finally (hive-mcp.transport.registry/clear!))))
+
+(use-fixtures :each reset-dag-state-fixture with-fresh-dispatch-chain with-task-store with-kanban-port)
 
 ;; =============================================================================
 ;; Tests: find-ready-tasks

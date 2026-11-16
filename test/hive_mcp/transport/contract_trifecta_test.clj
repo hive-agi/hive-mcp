@@ -51,15 +51,21 @@
 
 (deftest transport-gate-is-not-vacuous
   (let [r (coverage/coverage {:paths ["src/hive_mcp/transport"]})]
-    (is (= 84 (count (:universe r))))
-    (is (= 84 (count (:covered r))))))
+    (is (= 91 (count (:universe r))))
+    (is (= 91 (count (:covered r))))))
+
+(deftest swarm-gate-covers-task-dispatch
+  (let [r (coverage/coverage {:paths ["src/hive_mcp/scheduler/task_dispatch.clj"]})]
+    (is (pos? (count (:universe r))))
+    (is (= (count (:universe r)) (count (:covered r))))))
 
 (def ^:private transport-nses
   '[hive-mcp.transport.core hive-mcp.transport.exposure hive-mcp.transport.mcp-http
     hive-mcp.transport.websocket hive-mcp.transport.a2a hive-mcp.transport.a2a.schema
     hive-mcp.transport.a2a.handlers hive-mcp.transport.olympus.snapshots
     hive-mcp.transport.olympus.state-bridge hive-mcp.transport.olympus.stream
-    hive-mcp.transport.olympus.http hive-mcp.transport.origin hive-mcp.transport.registry])
+    hive-mcp.transport.olympus.http hive-mcp.transport.origin hive-mcp.transport.registry
+    hive-mcp.transport.events hive-mcp.transport.delivery])
 
 (deftest every-transport-contract-generates-both-sides
   (doseq [ns-sym transport-nses

@@ -127,6 +127,7 @@
   "saa" :hive-workflows
   "scheduler.dag-eligibility" :hive-workflows
   "scheduler.dag-waves" :hive-workflows
+  "scheduler.task-dispatch" :hive-workflows
   "scheduler.decay" :hive-memory
   "scheduler.kg-gc" :hive-memory
   "scheduler.vulcan" :hive-workflows

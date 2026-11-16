@@ -114,6 +114,14 @@
   (and (r/err? outcome)
        (= :addressing (:error/kind outcome))))
 
+(defn inapplicable?
+  "True when outcome says the adapter does not serve this target at all
+   (:error/kind :inapplicable). It is neither a failure of the adapter nor an
+   addressing error: the walk moves on, and the adapter's health is untouched."
+  [outcome]
+  (and (r/err? outcome)
+       (= :inapplicable (:error/kind outcome))))
+
 (defn- failure-entry
   [prev outcome now]
   {:status          :degraded
@@ -129,7 +137,7 @@
    other error -> adapter :degraded; if it was :active, :active is cleared"
   [state adapter outcome now]
   (cond
-    (addressing? outcome)
+    (or (addressing? outcome) (inapplicable? outcome))
     state
 
     (r/ok? outcome)
@@ -177,6 +185,7 @@
 (m/=> init-state [:=> [:cat ChainSpec] ChainState])
 (m/=> order [:=> [:cat ChainState ChainSpec] [:vector :keyword]])
 (m/=> addressing? [:=> [:cat :any] :boolean])
+(m/=> inapplicable? [:=> [:cat :any] :boolean])
 (m/=> step [:=> [:cat ChainState :keyword :map :int] ChainState])
 (m/=> probe-candidates [:=> [:cat ChainState ChainSpec :int] [:vector :keyword]])
 (m/=> backoff-delay [:=> [:cat Retry [:int {:min 1}]] [:int {:min 0}]])
@@ -207,7 +216,7 @@
   (let [attempts (:attempts retry)]
     (loop [n 1]
       (let [out (call-adapter adapter-fn op)]
-        (if (or (r/ok? out) (addressing? out) (>= n attempts))
+        (if (or (r/ok? out) (addressing? out) (inapplicable? out) (>= n attempts))
           out
           (do (sleep-fn (backoff-delay retry n))
               (recur (inc n))))))))
@@ -272,6 +281,9 @@
              (cond
                (r/ok? out)       (annotate-ok spec out k skipped)
                (addressing? out) (annotate-err out k skipped)
+               (inapplicable? out) (recur (rest todo)
+                                          (conj skipped (skip-entry k :inapplicable out))
+                                          last-k)
                :else (recur (rest todo)
                             (conj skipped (skip-entry k :failed out))
                             k)))

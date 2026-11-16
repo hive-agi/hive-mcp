@@ -381,9 +381,11 @@
    being ranked above :active, takes over (law 4). Adapters without a :probe
    are not probed. Answers {:port :probed [{:adapter :ok?}] :active}."
   ([port] (probe-port! port nil))
-  ([port {:keys [now-fn] :or {now-fn #(System/currentTimeMillis)}}]
+  ([port {:keys [now-fn force?] :or {now-fn #(System/currentTimeMillis)}}]
    (if-let [{:keys [spec state adapters]} (refresh-adapters! port)]
-     (loop [todo   (chain/probe-candidates @state spec (now-fn))
+     (loop [todo   (chain/probe-candidates @state
+                                           (cond-> spec force? (assoc :probe-interval-ms 0))
+                                           (now-fn))
             probed []]
        (let [k (first todo)
              p (get-in adapters [k :probe])]
