@@ -1,0 +1,225 @@
+{:addressing-stops
+ {:result
+  {:error :addressing/unknown-id,
+   :error/kind :addressing,
+   :via :a,
+   :skipped []},
+  :state
+  {:active nil,
+   :adapters
+   {:a {:status :unknown, :fails 0},
+    :b {:status :unknown, :fails 0},
+    :c {:status :unknown, :fails 0}}},
+  :calls {:a 1}},
+ :all-degraded-try
+ {:result
+  {:ok
+   {:value :b,
+    :via :b,
+    :resolved-by :fallback,
+    :skipped
+    [{:adapter :a,
+      :reason :failed,
+      :error
+      {:error :transport/connection-refused,
+       :error/kind :unavailable}}]}},
+  :state
+  {:active :b,
+   :adapters
+   {:a
+    {:status :degraded,
+     :last-ok-at nil,
+     :last-attempt-at 5000,
+     :last-err
+     {:error :transport/connection-refused,
+      :error/kind :unavailable,
+      :at 5000},
+     :fails 1},
+    :b
+    {:status :ok,
+     :last-ok-at 5000,
+     :last-attempt-at 5000,
+     :last-err nil,
+     :fails 0},
+    :c {:status :degraded, :fails 0}}},
+  :calls {:a 2, :b 1}},
+ :all-fail
+ {:result
+  {:error :transport/chain-exhausted,
+   :error/kind :unavailable,
+   :via :c,
+   :skipped
+   [{:adapter :a,
+     :reason :failed,
+     :error
+     {:error :transport/connection-refused, :error/kind :unavailable}}
+    {:adapter :b,
+     :reason :failed,
+     :error
+     {:error :transport/connection-refused, :error/kind :unavailable}}
+    {:adapter :c,
+     :reason :failed,
+     :error
+     {:error :transport/connection-refused,
+      :error/kind :unavailable}}]},
+  :state
+  {:active nil,
+   :adapters
+   {:a
+    {:status :degraded,
+     :last-ok-at nil,
+     :last-attempt-at 5000,
+     :last-err
+     {:error :transport/connection-refused,
+      :error/kind :unavailable,
+      :at 5000},
+     :fails 1},
+    :b
+    {:status :degraded,
+     :last-ok-at nil,
+     :last-attempt-at 5000,
+     :last-err
+     {:error :transport/connection-refused,
+      :error/kind :unavailable,
+      :at 5000},
+     :fails 1},
+    :c
+    {:status :degraded,
+     :last-ok-at nil,
+     :last-attempt-at 5000,
+     :last-err
+     {:error :transport/connection-refused,
+      :error/kind :unavailable,
+      :at 5000},
+     :fails 1}}},
+  :calls {:a 2, :b 2, :c 2}},
+ :degraded-skipped
+ {:result
+  {:ok
+   {:value :b,
+    :via :b,
+    :resolved-by :fallback,
+    :skipped [{:adapter :a, :reason :degraded}]}},
+  :state
+  {:active :b,
+   :adapters
+   {:a {:status :degraded, :fails 0},
+    :b
+    {:status :ok,
+     :last-ok-at 5000,
+     :last-attempt-at 5000,
+     :last-err nil,
+     :fails 0},
+    :c {:status :ok, :fails 0}}},
+  :calls {:b 1}},
+ :fallback-to-b
+ {:result
+  {:ok
+   {:value :b,
+    :via :b,
+    :resolved-by :fallback,
+    :skipped
+    [{:adapter :a,
+      :reason :failed,
+      :error
+      {:error :transport/connection-refused,
+       :error/kind :unavailable}}]}},
+  :state
+  {:active :b,
+   :adapters
+   {:a
+    {:status :degraded,
+     :last-ok-at nil,
+     :last-attempt-at 5000,
+     :last-err
+     {:error :transport/connection-refused,
+      :error/kind :unavailable,
+      :at 5000},
+     :fails 1},
+    :b
+    {:status :ok,
+     :last-ok-at 5000,
+     :last-attempt-at 5000,
+     :last-err nil,
+     :fails 0},
+    :c {:status :unknown, :fails 0}}},
+  :calls {:a 2, :b 1}},
+ :primary-ok
+ {:result
+  {:ok {:value :a, :via :a, :resolved-by :primary, :skipped []}},
+  :state
+  {:active :a,
+   :adapters
+   {:a
+    {:status :ok,
+     :last-ok-at 5000,
+     :last-attempt-at 5000,
+     :last-err nil,
+     :fails 0},
+    :b {:status :unknown, :fails 0},
+    :c {:status :unknown, :fails 0}}},
+  :calls {:a 1}},
+ :retry-then-ok
+ {:result
+  {:ok {:value :a, :via :a, :resolved-by :primary, :skipped []}},
+  :state
+  {:active :a,
+   :adapters
+   {:a
+    {:status :ok,
+     :last-ok-at 5000,
+     :last-attempt-at 5000,
+     :last-err nil,
+     :fails 0},
+    :b {:status :unknown, :fails 0},
+    :c {:status :unknown, :fails 0}}},
+  :calls {:a 2}},
+ :sticky-b
+ {:result
+  {:ok {:value :b, :via :b, :resolved-by :fallback, :skipped []}},
+  :state
+  {:active :b,
+   :adapters
+   {:a {:status :ok, :fails 0},
+    :b
+    {:status :ok,
+     :last-ok-at 5000,
+     :last-attempt-at 5000,
+     :last-err nil,
+     :fails 0},
+    :c {:status :ok, :fails 0}}},
+  :calls {:b 1}},
+ :thrown-is-failure
+ {:result
+  {:ok
+   {:value :b,
+    :via :b,
+    :resolved-by :fallback,
+    :skipped
+    [{:adapter :a,
+      :reason :failed,
+      :error
+      {:error :transport/exception,
+       :error/kind :unavailable,
+       :message "boom"}}]}},
+  :state
+  {:active :b,
+   :adapters
+   {:a
+    {:status :degraded,
+     :last-ok-at nil,
+     :last-attempt-at 5000,
+     :last-err
+     {:error :transport/exception,
+      :error/kind :unavailable,
+      :message "boom",
+      :at 5000},
+     :fails 1},
+    :b
+    {:status :ok,
+     :last-ok-at 5000,
+     :last-attempt-at 5000,
+     :last-err nil,
+     :fails 0},
+    :c {:status :unknown, :fails 0}}},
+  :calls {:a 2, :b 1}}}
