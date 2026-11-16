@@ -31,6 +31,7 @@
    :delivery   {:chain [:nats-inbox :tmux :emacs :hivemind-shout]}
    :events     {:chain [:nats :local-channel]}
    :spawn      {:chain [:headless :tmux :vterm]}
+   :repl       {:chain [:headless-nrepl :emacs-cider]}
    :git-editor {:chain [:hive-git :emacs]}})
 
 (def default-config

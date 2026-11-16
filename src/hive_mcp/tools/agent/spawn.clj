@@ -9,6 +9,7 @@
             [hive-mcp.agent.protocol :as proto]
             [hive-mcp.agent.ling :as ling]
             [hive-mcp.agent.ling.lifecycle :as lifecycle]
+            [hive-mcp.agent.spawn-chain :as spawn-chain]
             [hive-mcp.agent.type-registry :as agent-type-registry]
             [hive-mcp.agent.spawn-mode-registry :as spawn-registry]
             [hive-mcp.agent.openrouter :as llm-registry]
@@ -311,6 +312,31 @@
          "and none answered. Start Emacs (emacs --daemon) or retry with "
          "spawn_mode=\"headless\", which needs no Emacs.")))
 
+(defn resolve-spawn-mode
+  "The spawn mode of a request and how it was chosen. An explicit `requested`
+   mode stays strict: it is returned as is, with no fallback, so the preflight
+   refuses an unusable one by name. With none, the :spawn chain
+   (config.edn [:transports :spawn :chain], shipped [:headless :tmux :vterm])
+   picks the first mode that can serve: one needing Emacs is skipped, with its
+   reason, while Emacs is down. REACHABLE? is the Emacs port.
+   Answers {:mode kw :resolved-by :explicit|:primary|:fallback :skipped [..]}.
+   Throws ex-info naming every skipped mode when none can serve."
+  [requested reachable?]
+  (if requested
+    {:mode (keyword requested) :resolved-by :explicit :skipped []}
+    (let [out (spawn-chain/resolve-mode! (spawn-chain/default-env reachable?))]
+      (if-let [entry (find out :ok)]
+        (let [{:keys [via resolved-by skipped]} (val entry)]
+          {:mode via :resolved-by resolved-by :skipped skipped})
+        (throw (ex-info (str "no spawn mode can serve: "
+                             (str/join "; " (map (fn [{:keys [adapter reason error]}]
+                                                   (str (clojure.core/name adapter) " "
+                                                        (clojure.core/name reason)
+                                                        (when-let [msg (:message error)]
+                                                          (str " (" msg ")"))))
+                                                 (:skipped out))))
+                        {:skipped (:skipped out)}))))))
+
 (defn spawn-brief
   "The initial task a spawn carries: `task`, else `prompt`. Blank counts as
    absent. Throws ex-info when both are given and differ."
@@ -441,7 +467,11 @@
                                   (string? presets) [presets]
                                   (sequential? presets) (vec presets)
                                   :else [presets])
-                    effective-spawn-mode (keyword (or spawn_mode (lifecycle/default-spawn-mode)))
+                    chosen-mode (resolve-spawn-mode spawn_mode *editor-reachable?*)
+                    effective-spawn-mode (:mode chosen-mode)
+                    _ (when (seq (:skipped chosen-mode))
+                        (log/info "Spawn mode chosen through the :spawn chain"
+                                  (select-keys chosen-mode [:mode :resolved-by :skipped])))
                     _ (when-not (spawn-registry/valid-mode? effective-spawn-mode)
                         (throw (ex-info (str "spawn_mode must be one of: " (pr-str spawn-registry/mcp-modes))
                                         {:spawn-mode spawn_mode})))
