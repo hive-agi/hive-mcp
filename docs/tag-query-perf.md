@@ -18,7 +18,8 @@ size, suggesting bandwidth/deserialization cost, not filter pushdown.
   -> `hive-mcp.protocols.memory/query-entries`
   -> `hive-mcp.memory.store.chroma` record `query-entries`
   -> `hive-mcp.chroma.crud/query-entries`
-  -> `clojure-chroma-client.api/get` (HTTP POST collections/:id/get).
+  -> `hive-mcp.chroma.client/get` (a shim resolving
+     `clojure-chroma-client.api/get`, HTTP POST collections/:id/get).
 
 The task brief referred to a "Milvus backend" but no Milvus impl exists in
 this repo. The only active IMemoryStore is Chroma (`memory/store/chroma.clj`).
@@ -48,10 +49,14 @@ project rows (not 185 tagged rows).
 
 `hive-mcp.chroma.crud/query-entries`: drop `:documents` from `:include`.
 
-- Only `metadata->entry` reads `:document`, and only one caller
-  (`hive-mcp.agent.drone.context/context.clj:159`) ever reads `:document`
-  from a result — and it does so on `search-similar` results, not
-  `query-entries`, so it is unaffected.
+- Only `metadata->entry` reads `:document`, and only one caller ever reads
+  `:document` from a result, on `search-similar` results rather than
+  `query-entries`, so it is unaffected. (Historical note 2026-11-14: that
+  caller was `hive-mcp.agent.drone.context/context.clj:159`, in the since
+  abolished drone module; the `:document`-bearing `search-similar` hits are now
+  normalised in `hive-mcp.memory.ingest_search` and consumed by the memory
+  search formatter. The conclusion is unchanged: `query-entries` consumers
+  read `:content`.)
 - All other downstream consumers read `:content` (populated from
   `metadata.content`), `:tags`, `:project-id`, etc.
 - Net impact: ~50% reduction in HTTP payload and JSON parse cost for

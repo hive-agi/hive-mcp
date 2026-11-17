@@ -1,14 +1,13 @@
 (ns hive-mcp.hivemind.status-test
   "Facets for hivemind status.
 
-   SEAM GAP (recorded, src unchanged): every fn here reads
-   registry/default-registry and state/agent-registry, which are values
-   captured at load from the swarm library's shims. Offline (no library,
-   this tree) they are nil, so each fn throws a NullPointerException rather
-   than the delegate's documented :swarm/addon-missing ex-info. There is no
-   injected port to stub without with-redefs. What these facets pin is the
-   observable offline contract: every contracted fn, for any argument its
-   m/=> input generates, FAILS (never answers a fabricated status), and the
+   Every fn resolves the swarm registry and hivemind state per call (no
+   load-time capture). Offline (no library, this tree) each raises the
+   delegate's documented :swarm/addon-missing ex-info naming the var it
+   reached for; it used to throw a NullPointerException on the nil values
+   captured at load (COV-FACETS-FINDINGS-W1). What these facets pin is that
+   offline contract: every contracted fn, for any argument its m/=> input
+   generates, FAILS with addon-missing (never a fabricated status), and the
    value schemas the contracts are built from discriminate. The behaviour is
    driven in test-swarm/ with the library present."
   (:require [clojure.test :refer [deftest is]]
@@ -25,7 +24,11 @@
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
 
 (def ^:private shim 'hive-mcp.hivemind.status)
-(def ^:private npe {:threw "java.lang.NullPointerException"})
+(defn- addon-missing?
+  "An offline outcome that names the addon var reached ({:ns :var}), the
+   shape sf/call gives :swarm/addon-missing; never an NPE."
+  [outcome]
+  (and (string? (:ns outcome)) (string? (:var outcome))))
 
 (deftest-golden status-offline-outcomes-golden
   "test/golden/hive-mcp/hivemind/status-offline.edn"
@@ -39,7 +42,7 @@
 (defspec every-status-fn-fails-offline-for-any-contract-input 100
   (prop/for-all [[sym args] (sf/call-gen shim (sf/contracted shim))]
     (or (not (sf/offline?))
-        (= npe (sf/call shim sym args)))))
+        (addon-missing? (sf/call shim sym args)))))
 
 (when (sf/offline?)
   (hmut/deftest-mutations get-status-never-fabricates-a-status
@@ -50,8 +53,8 @@
                      :delivery-channels {} :delivery-up? false})]
      ["answers nil offline" (constantly nil)]]
     (fn []
-      (is (= npe (sf/call shim 'get-status [])))
-      (is (= npe (sf/call shim 'get-status ["p"]))))))
+      (is (addon-missing? (sf/call shim 'get-status [])))
+      (is (addon-missing? (sf/call shim 'get-status ["p"]))))))
 
 (deftest status-schema-requires-every-documented-key
   (let [ok {:agents {"a" {:status :idle :name "a" :presets [] :cwd nil :project-id nil

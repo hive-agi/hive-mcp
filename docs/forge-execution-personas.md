@@ -51,8 +51,14 @@ buckets are `:principles`, `:priority-principles`, `:priority-conventions`,
 `:sessions`, `:recent-wraps`, `:decisions`, `:conventions`, `:snippets`, and
 `:expiring`. Zero omits a bucket; valid counts are integers from 0 to 1000.
 Omitted or invalid counts retain the normal limit. Axiom and nomination limits
-remain unchanged even when a persona requests zero. The knowledge addon also
-uses `:atlas` for its separate atlas lane.
+remain unchanged even when a persona requests zero.
+
+Historical note (2026-11-14): `:atlas` is not currently a bucket.
+`hive-mcp.tools.catchup.caps/resolve-caps` reduces over exactly the keys of its
+own `default-caps` and its `Caps` schema is `:closed` over those keys, so an
+`:atlas` key supplied by a caps provider is dropped; the atlas lane predates
+that closure. The adjustable buckets are the `default-caps` keys named above,
+plus the axiom and nomination buckets.
 
 Personalized bundles bypass the shared project bundle cache, preventing one
 caller's selection from changing another caller's memories. Persona registrations

@@ -20,12 +20,20 @@
      (calls host)           recorded [op timeout-ms] pairs, oldest first
      (calls-of host k)      the recorded pairs whose :op is K
      (ops host)             the :op keywords, oldest first"
-  (:require [hive-spi.editor.services :as svc]))
+  (:require [hive-mcp.transport.registry :as reg]
+            [hive-spi.editor.services :as svc]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
 
 (def registry-key :vessel)
+
+(def editor-only-transports
+  "The :git-editor chain reduced to the editor, so a test that scripts the
+   vessel reaches it instead of the plain-git provider that heads the shipped
+   chain. No retry and no probe: a scripted answer is final."
+  {:defaults   {:retry {:attempts 1 :backoff-ms [0]} :probe-interval-ms 0}
+   :git-editor {:chain [:emacs]}})
 
 (def available
   "The :swarm/available? answer of a vessel whose swarm addon is loaded."
@@ -66,6 +74,8 @@
    Returns the previously registered capability map (nil when none)."
   [host]
   (let [prior (get (svc/registered) registry-key)]
+    (reg/clear!)
+    (reg/rebind! editor-only-transports)
     (svc/unregister-services! registry-key)
     (svc/register-services! registry-key (capability-fns host))
     prior))
@@ -75,6 +85,7 @@
   [prior]
   (svc/unregister-services! registry-key)
   (when (seq prior) (svc/register-services! registry-key prior))
+  (reg/clear!)
   nil)
 
 (defn answering

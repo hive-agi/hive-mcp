@@ -74,9 +74,9 @@
 
 (deftest status-and-messages-handlers-need-the-swarm-offline
   (if (sf/offline?)
-    (is (= {:threw "java.lang.NullPointerException"}
+    (is (= {:ns "hive-agent.swarm.hivemind.state" :var "pending-asks"}
            (sf/outcome (handler "hivemind_status") [{:project_id "p"}]))
-        "SEAM GAP: hivemind.status reads registry/default-registry, a nil shim value offline")
+        "offline, hivemind.status raises the delegate's addon-missing (it used to NPE)")
     (is (string? (:text ((handler "hivemind_status") {:project_id "p"}))))))
 
 (deftest lift-nested-payload-cases

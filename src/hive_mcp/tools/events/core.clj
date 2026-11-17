@@ -33,13 +33,14 @@
    :register-handler #'cmd/handle-register-handler
    :unreg-fx         #'cmd/handle-unreg-fx
    :bus-status       #'cmd/handle-bus-status
+   :transport-status #'cmd/handle-transport-status
    :help             #'cmd/handle-help})
 
 (defn- normalize-command
   [cmd]
   (cond
     (keyword? cmd) cmd
-    (string? cmd)  (keyword (str/replace cmd #"^:" ""))
+    (string? cmd)  (keyword (str/replace (str/replace (str/trim cmd) #"^:" "") " " "-"))
     :else          nil))
 
 (defn- to-mcp
@@ -76,7 +77,8 @@
 (def tool-def
   {:name "events"
    :description (str "hive-agent observability surface. "
-                     "Subcommands: enable, disable, tail, dump, stats, register-handler, unreg-fx, help. "
+                     "Subcommands: enable, disable, tail, dump, stats, register-handler, unreg-fx, bus-status, transport-status, help. "
+                     "transport-status (also \"transport status\") shows every transport chain: chain, active adapter, per-adapter status and last-ok-at, recent switches. "
                      "enable/disable take {:agent-ids [...] | :all true}. "
                      "tail/dump/stats take {:agent-id ID}. "
                      "register-handler takes {:event-id KW :symbol \"ns/name\"}. "
@@ -84,7 +86,7 @@
                      "Use command='help' to list all.")
    :inputSchema {:type "object"
                  :properties {"command" {:type "string"
-                                         :description "Subcommand: enable, disable, tail, dump, stats, register-handler, unreg-fx, help"}
+                                         :description "Subcommand: enable, disable, tail, dump, stats, register-handler, unreg-fx, bus-status, transport-status, help"}
                               "agent-id" {:type "string"
                                           :description "[tail/dump/stats] Agent identifier"}
                               "agent_id" {:type "string"

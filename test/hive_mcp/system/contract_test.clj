@@ -3,7 +3,7 @@
    gate for the whole system tree. The other system namespaces carry their
    facets in their own <ns>-contract-test (addon-hot, keepalive, layer3,
    layer5, sweep-coordinator, shutdown.in-core, sweepers.heap-pressure,
-   sweepers.stale-cache) or <ns>-test (sweepers.orphan-edge). Pure
+   sweepers.stale-cache) or <ns>-test (sweepers.orphan-edge, heap-admission). Pure
    calculations get schema-driven trifectas; boundary fns get goldens over
    plain-EDN projections of their results, with every process-global registry
    they drive captured and restored around the test. No scheduler is started
@@ -12,6 +12,7 @@
             [hive-mcp.protocols.lifecycle :as lifecycle]
             [hive-mcp.system.addon-hot]
             [hive-mcp.system.child-scope :as cs]
+            [hive-mcp.system.heap-admission]
             [hive-mcp.system.keepalive]
             [hive-mcp.system.layer3]
             [hive-mcp.system.layer5]
@@ -185,15 +186,15 @@
 
 (deftest system-gate-is-not-vacuous
   (let [report (coverage/coverage {:paths ["src/hive_mcp/system"]})]
-    (is (= 56 (count (:universe report))) "every public defn of the tree")
-    (is (= 56 (count (:covered report))))))
+    (is (= 58 (count (:universe report))) "every public defn of the tree")
+    (is (= 58 (count (:covered report))))))
 
 (deftest every-system-contract-generates-both-sides
   (doseq [ns-sym '[hive-mcp.system.registry hive-mcp.system.addon-hot hive-mcp.system.keepalive
                    hive-mcp.system.layer3 hive-mcp.system.layer5 hive-mcp.system.child-scope
                    hive-mcp.system.sweep-coordinator hive-mcp.system.shutdown.in-core
                    hive-mcp.system.sweepers.heap-pressure hive-mcp.system.sweepers.stale-cache
-                   hive-mcp.system.sweepers.orphan-edge]
+                   hive-mcp.system.sweepers.orphan-edge hive-mcp.system.heap-admission]
           [fn-sym {:keys [schema]}] (get (m/function-schemas) ns-sym)
           arity (if (= :function (m/type schema)) (m/children schema) [schema])
           side (take 2 (m/children arity))]

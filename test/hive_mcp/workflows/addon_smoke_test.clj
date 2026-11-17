@@ -10,7 +10,8 @@
             [hive-mcp.addons.protocol :as proto]
             [hive-mcp.addons.core :as addons]
             [hive-schemas.test :refer [deftrifecta-from-schema]]
-            [hive-test.golden :as golden]))
+            [hive-test.golden :as golden]
+            [clojure.java.io :as io]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -110,11 +111,8 @@
   ;; every check answers its absent-addon shape.
   (let [{:keys [by-id scan-errors] :as discovered} (smoke/discovered-addons)
         report (smoke/check)
-        ;; BUG (recorded, not fixed): check-ir-seam's contract promises
-        ;; {:ok? false :ir-loadable? false} when hive-workflows is absent, but
-        ;; requiring-resolve THROWS FileNotFoundException for a missing
-        ;; namespace instead of answering nil, so the `if-not` branch is
-        ;; unreachable. Pinned as the current behaviour: it throws.
+        ;; COV-FACETS-FINDINGS-W2 (f05): with hive-workflows absent the check
+        ;; answers its contracted absent shape instead of throwing.
         ir-seam (try (smoke/check-ir-seam)
                      (catch java.io.FileNotFoundException _ :throws-file-not-found))]
     {:on-classpath? (smoke/addons-on-classpath?)
@@ -128,3 +126,11 @@
      :ir-seam ir-seam
      :required (vec (sort smoke/required-addon-ids))
      :methods (vec (sort smoke/required-methods))}))
+
+(clojure.test/deftest check-ir-seam-answers-absent-shape
+  ;; COV-FACETS-FINDINGS-W2 (f05): on a classpath without hive-workflows the
+  ;; check must answer {:ok? false :ir-loadable? false}, not throw.
+  (when-not (io/resource "hive_workflows/algebra/eval.clj")
+    (clojure.test/is (= {:ok? false :ir-loadable? false}
+                        (try (smoke/check-ir-seam)
+                             (catch Throwable t {:threw (.getName (class t))}))))))

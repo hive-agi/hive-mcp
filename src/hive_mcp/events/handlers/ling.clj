@@ -31,23 +31,26 @@
     :cwd       \"/path/to/project\"
     :depth     1}
 
+   :depth is the lineage depth the spawn computed (a coordinator is 0). It
+   is recorded only when given: no default is invented here, since a wrong
+   depth silently defeats the grant's max-depth bound.
+
    Produces effects:
    - :log         - Log spawn message
    - :ds-transact - Register ling in DataScript"
   [_coeffects [_ {:keys [slave-id name presets cwd depth]}]]
-  (let [effective-id (or slave-id name "unknown-ling")
-        effective-depth (or depth 1)]
+  (let [effective-id (or slave-id name "unknown-ling")]
     {:log {:level :info
            :message (str "Ling started: " effective-id
                          (when (seq presets) (str " presets=" presets)))}
-     :ds-transact [{:slave/id effective-id
-                    :slave/name (or name effective-id)
-                    :slave/status :starting
-                    :slave/depth effective-depth
-                    :slave/tasks-completed 0
-                    :slave/created-at (java.util.Date.)
-                    :slave/presets (vec (or presets []))
-                    :slave/cwd cwd}]}))
+     :ds-transact [(cond-> {:slave/id effective-id
+                            :slave/name (or name effective-id)
+                            :slave/status :starting
+                            :slave/tasks-completed 0
+                            :slave/created-at (java.util.Date.)
+                            :slave/presets (vec (or presets []))
+                            :slave/cwd cwd}
+                     (some? depth) (assoc :slave/depth depth))]}))
 
 (m/=> handle-ling-started
       [:=> hs/HandlerArgs
@@ -57,7 +60,7 @@
                                 [:slave/id :any]
                                 [:slave/name :any]
                                 [:slave/status [:= :starting]]
-                                [:slave/depth :any]
+                                [:slave/depth {:optional true} :int]
                                 [:slave/tasks-completed [:= 0]]
                                 [:slave/created-at inst?]
                                 [:slave/presets [:vector :any]]

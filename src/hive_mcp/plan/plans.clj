@@ -54,7 +54,16 @@
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
 
-(def ^:private collection-name "hive-mcp-plans")
+(def ^:private collection-name
+  "The plan index collection.
+
+   NOT `hive-mcp-plans`: that collection was migrated from Chroma with the
+   memory schema (top-level status columns, no `metadata` column), while the
+   vector-store port writes one JSON `metadata` column. Reusing the name made
+   every index write fail against a collection the adapter could resolve but
+   not insert into. `-index` is a fresh port-native collection; the old one is
+   left untouched as the backup of the records it holds."
+  "hive-mcp-plan-index")
 
 (def high-abstraction-types
   "Memory types routed to OpenRouter-backed plans collection.
@@ -68,9 +77,86 @@
   [type]
   (contains? high-abstraction-types type))
 
+(def plan-statuses
+  "Plan statuses in lifecycle order.
+
+   `draft -> active -> completed` is the happy path, walked one step at a time:
+   `active` is set by plan-to-kanban (the work is now dispatched) and
+   `completed` by the plan itself being finished. `superseded` is terminal and
+   reachable from any non-terminal state (a plan replaced before it finished).
+   Both `completed` and `superseded` are therefore sinks, which is what makes
+   `completed -> active` a refusal rather than a reopen: nothing in the machine
+   owns a backwards edge."
+  ["draft" "active" "completed" "superseded"])
+
 (def ^:private valid-plan-statuses
-  "Valid plan-status values."
-  #{"draft" "active" "completed" "superseded"})
+  "Valid plan-status values, as a set for membership tests."
+  (set plan-statuses))
+
+(defn plan-status?
+  "True when STATUS is one of the four plan statuses."
+  [status]
+  (contains? valid-plan-statuses status))
+
+(def TransitionResult
+  "What `transition-status` answers: the verdict, the edge it judged, and a
+   sentence a caller can hand straight back to an LLM."
+  [:map
+   [:ok? :boolean]
+   [:from [:string {:gen/elements ["draft" "active" "completed" "superseded"]}]]
+   ;; nil when TO was not a status at all (an unknown request, echoed back).
+   [:to [:maybe [:string {:gen/elements ["draft" "active" "completed" "superseded" nil]}]]]
+   [:reason [:enum :noop :advanced :completed :superseded :invalid-status :illegal-transition]]
+   [:message [:string {:min 1}]]])
+
+(def ^:private allowed-transitions
+  "The forward edges of the machine. `superseded` is handled separately because
+   it is reachable from every non-terminal state."
+  #{["draft" "active"] ["active" "completed"]})
+
+(defn- transition-message [from to reason]
+  (case reason
+    :noop (str "plan is already " to)
+    :advanced (str from " -> " to)
+    :completed (str "plan completed (" from " -> completed)")
+    :superseded (str "plan superseded (" from " -> superseded)")
+    :invalid-status (str "unknown plan status: " (pr-str to)
+                         "; valid: " (str/join ", " plan-statuses))
+    :illegal-transition (str "refused: " from " -> " to
+                             " is not an edge of the plan machine"
+                             (when (= to "active")
+                               " (completed and superseded are terminal)"))))
+
+(defn transition-status
+  "Pure: judge a plan status transition FROM -> TO.
+
+   The machine is `draft -> active -> completed`, plus anything -> `superseded`
+   (a plan can be replaced before or after it finished). Re-applying the
+   current status is a NOOP and succeeds — the verbs are idempotent, so
+   completing twice is one completion, not an error. Everything else is
+   refused, including `completed -> active` (active is not a reopen edge).
+
+   FROM is the stored status; a plan that carries none is a `draft`, which is
+   what the index and the write path both default it to. Returns a
+   TransitionResult: `:ok? false` is a refusal, never a throw, so callers can
+   answer it as an MCP error with `:message` intact."
+  [from to]
+  (let [from (if (contains? valid-plan-statuses from) from "draft")
+        reason (cond
+                 (not (contains? valid-plan-statuses to)) :invalid-status
+                 (= from to) :noop
+                 (= to "superseded") :superseded
+                 (contains? allowed-transitions [from to]) (if (= to "completed") :completed :advanced)
+                 :else :illegal-transition)
+        ok? (contains? #{:noop :advanced :completed :superseded} reason)]
+    {:ok? ok?
+     :from from
+     :to to
+     :reason reason
+     :message (transition-message from to reason)}))
+
+(m/=> plan-status? [:=> [:cat :any] :boolean])
+(m/=> transition-status [:=> [:cat [:maybe :string] :any] TransitionResult])
 
 (defonce ^:private collection-cache (atom nil))
 
@@ -177,7 +263,7 @@
   "Convert plan entry to searchable document string.
    Includes structured metadata header for better semantic search."
   [{:keys [type content tags project-id plan-status steps-count decision-id]}]
-  (let [entry-type (or type "plan")
+  (let [entry-type (or (some-> type name) "plan")
         label (str "Plan Entry [" (or plan-status "draft") "]")]
     (str label "\n"
          "Type: " entry-type "\n"
@@ -195,8 +281,10 @@
   [content]
   (when content
     (let [numbered (count (re-seq #"(?m)^\s*\d+[\.\)]\s+" content))
-          step-headers (count (re-seq #"(?m)^#+\s*[Ss]tep\s+\d+" content))]
-      (max numbered step-headers))))
+          step-headers (count (re-seq #"(?m)^#+\s*[Ss]tep\s+\d+" content))
+          ;; EDN plans carry no numbered lines; their steps are :id entries.
+          edn-steps (count (re-seq #":id\s+\"step-" content))]
+      (max numbered step-headers edn-steps))))
 
 (defn- extract-entry-metadata
   "Extract metadata from plan entry map.
@@ -204,7 +292,7 @@
   [{:keys [type content tags project-id duration expires content-hash
            steps-count decision-id wave-count plan-status
            abstraction-level knowledge-gaps agent-id]}]
-  (let [entry-type (or type "plan")
+  (let [entry-type (or (some-> type name) "plan")
         is-plan? (= entry-type "plan")
         auto-steps (when is-plan? (or steps-count (count-plan-steps content)))]
     (cond-> {:type entry-type
@@ -352,10 +440,14 @@
                                       type (assoc :type type)
                                       project-id (assoc :project-id project-id)
                                       plan-status (assoc :plan-status plan-status))
+                       ;; The port's `where` is a post-filter over an
+                       ;; arbitrary vendor-ordered page, so asking for exactly
+                       ;; LIMIT rows can return none after filtering. Read a
+                       ;; wide page and take LIMIT after the filter.
                        results (vp/-get (vp/require-store) coll
                                         {:where where-clause
                                          :include #{:metadatas :documents}
-                                         :limit limit})]
+                                         :limit (max limit 1000)})]
                    (->> results
                         (map (fn [{:keys [id metadata document]}]
                                {:id id
@@ -390,11 +482,13 @@
                          ". Valid: " (str/join ", " valid-plan-statuses))
                     {:type :invalid-plan-status
                      :status new-status})))
+  ;; Re-index the whole row rather than sending a metadata-only update: the
+  ;; Milvus adapter's update is an upsert of the record it is given, so a
+  ;; partial record would ship an empty document and vector. `index-plan!`
+  ;; re-embeds the same document and replaces the row by id.
   (result/rescue nil
-                 (let [coll (get-or-create-collection)]
-                   (vp/-update (vp/require-store) coll
-                               [{:id plan-id
-                                 :metadata {:plan-status new-status}}])
+                 (when-let [plan (get-plan plan-id)]
+                   (index-plan! (assoc plan :plan-status new-status))
                    (log/info "Updated plan status:" plan-id "->" new-status)
                    plan-id)))
 
@@ -421,6 +515,30 @@
                  :statuses (frequencies (map :plan-status plans))
                  :projects (frequencies (map :project-id plans)))))
       base)))
+
+(defn reindex-plans!
+  "Re-index every entry in `entries` into the plan collection.
+
+   Used after a collection-name/schema move, where the source of truth (the
+   memory store) is intact but the index is not. Skips entries that are not
+   type plan; returns {:indexed n :skipped n}. A failed entry is logged and
+   counted as skipped rather than aborting the rest."
+  [entries]
+  (reduce (fn [acc {:keys [type] :as entry}]
+            (if (= "plan" (some-> type name))
+              (try
+                (index-plan! entry)
+                (update acc :indexed inc)
+                (catch Throwable t
+                  (log/warn "Plan reindex failed:" (:id entry) (ex-message t))
+                  (update acc :skipped inc)))
+              (update acc :skipped inc)))
+          {:indexed 0 :skipped 0}
+          entries))
+
+(m/=> reindex-plans!
+      [:=> [:cat [:sequential :map]]
+       [:map [:indexed :int] [:skipped :int]]])
 
 ;; =============================================================================
 ;; Function Contracts (m16 coverage batch)

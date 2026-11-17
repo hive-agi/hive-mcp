@@ -158,9 +158,8 @@
   [bindings parent]
   (when-let [p (blank->nil parent)]
     (or (get bindings (binding-key p))
-        (when (and (not (audience/coordinator-reader? p))
-                   (inbox/valid-inbox-id? p))
-          p))))
+        (when-not (audience/coordinator-reader? p)
+          (inbox/safe-encode-inbox-id p)))))
 
 (m/=> inbox-for [:=> [:cat [:maybe [:map-of :string :string]] :any] [:maybe :string]])
 
@@ -232,10 +231,8 @@
   "Bind parent `parent-id` (a caller id, e.g. `coordinator:<session>`) to
    inbox `inbox-id`: its lings' senses go there. Returns the binding key."
   [parent-id inbox-id]
-  (when-not (inbox/valid-inbox-id? inbox-id)
-    (throw (ex-info (str "invalid inbox id " (pr-str inbox-id))
-                    {:error :inbox/invalid-id :inbox inbox-id})))
-  (let [k (binding-key parent-id)]
+  (let [inbox-id (inbox/encode-inbox-id inbox-id)
+        k        (binding-key parent-id)]
     (swap! bindings* assoc k inbox-id)
     k))
 

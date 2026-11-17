@@ -96,7 +96,7 @@
    Routes through hive-mcp.vectordb.facade so the active IMemoryStore
    backend (Chroma / Proximum / future) is transparent to the test."
   [content & {:keys [type tags project-id]
-              :or {type "decision"
+              :or {type "plan"
                    tags ["test" "plan"]
                    project-id "hive-mcp-test"}}]
   (let [entry-id (str (random-uuid))]
