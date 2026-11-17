@@ -484,6 +484,21 @@
         (log/info "Budget guardrail registered for ling"
                   {:ling-id slave-id :max-budget-usd max-budget-usd})))))
 
+(defn- arm-ling-inbox!
+  "Arm ling ID's NATS inbox (hive-mcp.nats.ling-inbox), resolved at call
+   time: the spawn path never depends on the bus. Fail-soft, nil-safe."
+  [id]
+  (r/rescue nil
+    (when-let [arm! (soft/resolve-soft 'hive-mcp.nats.ling-inbox/arm!)]
+      (arm! id))))
+
+(defn- disarm-ling-inbox!
+  "Disarm ling ID's NATS inbox: its loop is gone, nothing reads it again."
+  [id]
+  (r/rescue nil
+    (when-let [disarm! (soft/resolve-soft 'hive-mcp.nats.ling-inbox/disarm!)]
+      (disarm! id))))
+
 (defn- dispatch-when-ready!
   [{:keys [mode cwd presets project-id effective-model]} slave-id enriched-task headless?]
   (when (and enriched-task (not headless?))
@@ -555,7 +570,17 @@
                                                    :depth     (:depth plan)
                                                    :grant     (:grant plan)})
         spawn-opts (spawn-opts opts enriched-task headless-inputs (:ling-id plan) credential)]
-    (let [slave-id (strategy/strategy-spawn! strat ctx spawn-opts)]
+    ;; A headless ling's NATS inbox is armed BEFORE its backend starts the
+    ;; loop, so the loop's consumer finds its durable on its first fetch.
+    (when headless? (arm-ling-inbox! (:ling-id plan)))
+    (let [slave-id (try (strategy/strategy-spawn! strat ctx spawn-opts)
+                        (catch Throwable e
+                          ;; No loop started: nothing will ever read the inbox.
+                          (when headless? (disarm-ling-inbox! (:ling-id plan)))
+                          (throw e)))]
+      (when (and headless? (not= slave-id (:ling-id plan)))
+        (disarm-ling-inbox! (:ling-id plan))
+        (arm-ling-inbox! slave-id))
       (reconcile-spawned-slave! plan slave-id enriched-task)
       (stamp-spawn-metadata! plan slave-id headless?)
       (register-ling-resources! slave-id)
@@ -659,7 +684,15 @@
                                           :files files})
           (when (seq files)
             (.claim-files! this files task-id))
-          (let [answer (strategy/strategy-dispatch! strat (lifecycle/ling-ctx this) resolved-opts)]
+          ;; A transport the caller chose (:deliver-fn, e.g. the ling's NATS
+          ;; inbox) replaces the strategy's in-process hand-off; everything
+          ;; above and below (task id, dispatch record, :working, refusal and
+          ;; failure handling) is the same for every route.
+          (let [deliver-fn (:deliver-fn task-opts)
+                answer (if deliver-fn
+                         (deliver-fn (dissoc resolved-opts :deliver-fn))
+                         (strategy/strategy-dispatch! strat (lifecycle/ling-ctx this)
+                                                      (dissoc resolved-opts :deliver-fn)))]
             (when-let [refusal (dispatch-refusal answer)]
               (throw (ex-info "Backend refused the dispatch"
                               {:ling-id id :task-id task-id
@@ -727,6 +760,7 @@
                 result (strategy/strategy-kill! strat (lifecycle/ling-ctx this))]
             (when (:killed? result)
               (ds-lings/remove-slave! id)
+              (disarm-ling-inbox! id)
               ;; Publish agent-kill event via NATS backbone (non-fatal).
               (r/rescue nil
                 (when-let [publish! (requiring-resolve 'hive-mcp.nats.bridge/publish-event!)]

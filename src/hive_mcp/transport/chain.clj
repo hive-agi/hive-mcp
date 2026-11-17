@@ -259,6 +259,25 @@
                (remove (set o) (:chain spec)))]
       [(:chain spec) []])))
 
+(defn past-inapplicable-active
+  "The :active after adapter `served` served a call that first skipped some
+   adapters as :inapplicable (`skipped`). An adapter reached only past
+   adapters that do not serve THIS target is no evidence that the ones above
+   it are down, so it does not take :active: the previous :active `prev`
+   stays when it is nil or one of the inapplicable ones (healthy, it only
+   does not serve this target, e.g. a ling whose NATS consumer is detached).
+   Otherwise (prev failed or is ranked below) `served` becomes :active, as
+   `step` makes it. Without this a sticky lane would pin the first fallback
+   and never try the preferred adapter for the targets it does serve. Pure."
+  [prev served skipped]
+  (if (or (nil? prev)
+          (some #(and (= prev (:adapter %)) (= :inapplicable (:reason %))) skipped))
+    prev
+    served))
+
+(m/=> past-inapplicable-active [:=> [:cat [:maybe :keyword] :keyword [:sequential :map]]
+                                [:maybe :keyword]])
+
 (defn run-chain!
   "Run op through the chain. adapters is {kw (fn [op]) -> Result}; state-atom
    holds a ChainState. Optional opts override :now-fn / :sleep-fn (tests).
@@ -276,8 +295,13 @@
      (loop [todo todo, skipped pre-skipped, last-k nil]
        (if-let [k (first todo)]
          (if-let [f (get adapters k)]
-           (let [out (attempt-adapter f op (:retry spec) sleep-fn)]
-             (swap! state-atom step k out (now-fn))
+           (let [out   (attempt-adapter f op (:retry spec) sleep-fn)
+                 past? (some #(= :inapplicable (:reason %)) skipped)]
+             (swap! state-atom (fn [s]
+                                 (let [s' (step s k out (now-fn))]
+                                   (if (and past? (r/ok? out))
+                                     (assoc s' :active (past-inapplicable-active (:active s) k skipped))
+                                     s'))))
              (cond
                (r/ok? out)       (annotate-ok spec out k skipped)
                (addressing? out) (annotate-err out k skipped)
