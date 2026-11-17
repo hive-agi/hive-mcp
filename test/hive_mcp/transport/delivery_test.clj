@@ -1,10 +1,14 @@
 (ns hive-mcp.transport.delivery-test
   "The :delivery chain: target resolution first, then
-   [:nats-inbox :tmux :emacs :hivemind-shout] with the chain annotation.
+   [:nats-inbox :tmux :headless-ling :emacs :hivemind-shout] with the chain
+   annotation, coordinators and lings each in their own lane.
    Every transport is a scripted port; nothing real is touched."
   (:require [clojure.data.json :as json]
+            [clojure.string :as str]
+            [hive-mcp.extensions.soft :as soft]
             [clojure.test :refer [deftest is testing use-fixtures]]
             [hive-dsl.result :as r]
+            [hive-mcp.extensions.soft :as soft]
             [hive-mcp.nats.inbox :as inbox]
             [hive-mcp.tools.agent.dispatch :as dispatch]
             [hive-mcp.tools.consolidated.hivemind :as hivemind]
@@ -20,14 +24,14 @@
 
 (def ^:private transports
   {:defaults fast
-   :delivery {:chain [:nats-inbox :tmux :emacs :hivemind-shout]}})
+   :delivery {:chain [:nats-inbox :tmux :headless-ling :emacs :hivemind-shout]}})
 
 (def ^:private sent (atom []))
 
 (defn- world
   "Run f with the ports scripted: :nats? whether a connection exists, :armed?
    whether the coordinator's inbox is armed, :tmux? whether the pane takes it."
-  [{:keys [nats? armed? tmux? lings]} f]
+  [{:keys [nats? armed? tmux? lings backends]} f]
   (reg/clear!)
   (reset! sent [])
   (reg/rebind! transports)
@@ -40,8 +44,14 @@
                                          (swap! sent conj [:tmux to msg])
                                          (if tmux? {:ok true :routed :tmux :to to :delivered? true}
                                              {:ok false :error "no pane"}))
-              delivery/*ling-dispatch* (fn [p] (swap! sent conj [:emacs (:agent_id p)])
+              delivery/*ling-dispatch* (fn [p]
+                                         (when (str/starts-with? (str (:agent_id p)) "down")
+                                           (throw (ex-info "no Emacs daemon answers" {})))
+                                         (swap! sent conj [:ling (:agent_id p)])
                                          {:task-id "t1"})
+              delivery/*headless-backends* (fn [] (or backends #{:hive-agent}))
+              delivery/*io-model*      {:claude :buffer :vterm :buffer :tmux :buffer
+                                        :headless :stdin-stdout}
               delivery/*shout*         (fn [to msg] (swap! sent conj [:shout to msg])
                                          {:delivered true :shout-id "s1" :routing :direct :to to})]
       (try (f) (finally (reg/clear!))))))
@@ -94,13 +104,87 @@
              (is (= :hivemind-shout (get-in res [:ok :via])))
              (is (= :fallback (get-in res [:ok :resolved-by])))))))
 
-(deftest ling-goes-through-the-terminal-path
-  (world {:nats? true :armed? true :tmux? true :lings {"ling-1" {:slave/id "ling-1"}}}
+(deftest terminal-ling-goes-through-the-emacs-path
+  (world {:nats? true :armed? true :tmux? true
+          :lings {"ling-1" {:slave/id "ling-1" :ling/spawn-mode :vterm}}}
          (fn []
            (let [res (delivery/deliver! {:to "ling-1" :message "m"
                                          :params {:agent_id "ling-1" :prompt "m"}})]
              (is (= :emacs (get-in res [:ok :via])))
-             (is (= [[:emacs "ling-1"]] @sent))))))
+             (is (= [{:adapter :headless-ling :reason :inapplicable}]
+                    (mapv #(select-keys % [:adapter :reason]) (get-in res [:ok :skipped])))
+                 "the ling lane never walks the coordinator adapters")
+             (is (= [[:ling "ling-1"]] @sent))))))
+
+(deftest a-ling-with-no-spawn-mode-is-a-terminal-claude-ling
+  (world {:lings {"ling-0" {:slave/id "ling-0"}}}
+         (fn []
+           (is (= :emacs (get-in (delivery/deliver! {:to "ling-0" :message "m"
+                                                    :params {:agent_id "ling-0"}})
+                                 [:ok :via]))))))
+
+(deftest headless-ling-goes-via-headless-ling-with-emacs-down
+  (world {:nats? true :armed? true :tmux? true
+          :lings {"hl-1" {:slave/id "hl-1" :ling/spawn-mode :hive-agent}
+                  "hl-2" {:slave/id "hl-2" :ling/spawn-mode "headless"}}}
+         (fn []
+           (binding [soft/*resolve* (fn [sym]
+                                      (when (= sym 'hive-mcp.emacs.client/emacs-running?)
+                                        (constantly false)))]
+             (testing "the probes: Emacs is down, headless-ling checks the backend registry"
+               (is (r/err? ((:probe (reg/open-adapter :delivery :emacs)))))
+               (is (r/ok? ((:probe (reg/open-adapter :delivery :headless-ling)))))
+               (binding [delivery/*headless-backends* (constantly #{})]
+                 (is (r/err? ((:probe (reg/open-adapter :delivery :headless-ling)))))))
+             (doseq [id ["hl-1" "hl-2"]]
+               (let [res (delivery/deliver! {:to id :message "m" :params {:agent_id id}})]
+                 (is (= :headless-ling (get-in res [:ok :via])) id)
+                 (is (= :primary (get-in res [:ok :resolved-by]))
+                     "headless-ling heads the ling lane")
+                 (is (empty? (get-in res [:ok :skipped])))))
+             (testing "a probe round with Emacs down leaves the ling lane on headless-ling"
+               (reg/probe-port! :delivery {:force? true})
+               (is (= :headless-ling
+                      (get-in (delivery/deliver! {:to "hl-1" :message "m" :params {:agent_id "hl-1"}})
+                              [:ok :via]))))
+             (is (= [[:ling "hl-1"] [:ling "hl-2"] [:ling "hl-1"]] @sent))
+             (is (not= :degraded (get-in (reg/status) [:ports :delivery :adapters :headless-ling :status])))))))
+
+(deftest an-unregistered-backend-mode-is-treated-as-a-terminal
+  (world {:backends #{} :lings {"hl-3" {:slave/id "hl-3" :ling/spawn-mode :hive-agent}}}
+         (fn []
+           ;; :hive-agent is no backend and has no io-model: a terminal mode by
+           ;; elimination, so it reaches :emacs, which here dispatches.
+           (is (= :emacs (get-in (delivery/deliver! {:to "hl-3" :message "m"
+                                                    :params {:agent_id "hl-3"}})
+                                 [:ok :via]))))))
+
+(deftest coordinator-and-ling-lanes-keep-their-own-active
+  (world {:nats? true :armed? true :tmux? true
+          :lings {"hl-1" {:slave/id "hl-1" :ling/spawn-mode :hive-agent}
+                  "vt-1" {:slave/id "vt-1" :ling/spawn-mode :vterm}}}
+         (fn []
+           (let [switches (atom [])
+                 prev     (reg/set-switch-sink! #(swap! switches conj %))]
+             (try
+               (dotimes [_ 3]
+                 (is (= :nats-inbox (get-in (delivery/deliver! {:to "coordinator:134462" :message "w"})
+                                            [:ok :via])))
+                 (is (= :headless-ling (get-in (delivery/deliver! {:to "hl-1" :message "m"
+                                                                  :params {:agent_id "hl-1"}})
+                                               [:ok :via]))))
+               (is (= #{[:coordinator nil :nats-inbox] [:ling nil :headless-ling]}
+                      (set (map (juxt :lane :from :to) @switches)))
+                   "one election per lane, then no failover/recovered churn")
+               (let [lanes (get-in (reg/status) [:ports :delivery :lanes])]
+                 (is (= :nats-inbox (get-in lanes [:coordinator :active])))
+                 (is (= :headless-ling (get-in lanes [:ling :active])))
+                 (is (= [:headless-ling :emacs :hivemind-shout] (get-in lanes [:ling :chain]))))
+               (testing "a vterm ling in the same lane still lands via :emacs"
+                 (is (= :emacs (get-in (delivery/deliver! {:to "vt-1" :message "m"
+                                                          :params {:agent_id "vt-1"}})
+                                       [:ok :via]))))
+               (finally (reg/set-switch-sink! prev)))))))
 
 (deftest unknown-target-is-an-addressing-error-with-no-fallback
   (world {:nats? true :armed? true :tmux? true}
