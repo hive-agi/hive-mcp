@@ -206,6 +206,23 @@
 
 (m/=> arm! [:=> [:cat :any :string] [:map [:inbox :string] [:armed? :boolean]]])
 
+(defn disarm!
+  "Delete the durable of inbox `id`, if any. Messages already in the stream
+   stay until max-age, but nothing reads them: a later arm! would replay
+   them, so an id is disarmed only when its reader is gone for good (a killed
+   ling). Answers {:inbox id :armed? false :deleted? bool}."
+  [^Connection conn id]
+  (let [id (encode-inbox-id id)
+        deleted? (boolean
+                  (when (consumer-info conn id)
+                    (try (.deleteConsumer (.jetStreamManagement conn) stream-name (durable id))
+                         (catch JetStreamApiException e
+                           (if (not-found? e) false (throw e))))))]
+    {:inbox id :armed? false :deleted? deleted?}))
+
+(m/=> disarm! [:=> [:cat :any :string] [:map [:inbox :string] [:armed? :boolean]
+                                        [:deleted? :boolean]]])
+
 (defn send!
   "Publish one message to inbox `to` with a broker ack. Returns the stream
    seq. The inbox need not be armed yet: the stream keeps the message."
