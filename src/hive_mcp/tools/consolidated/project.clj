@@ -152,7 +152,22 @@
 ;; Tool Definition
 ;; =============================================================================
 
-(def tool-def
+(def ^:private subdomain-props
+  "Params advertised by every subdomain whose handlers this root folds, through
+   the shared resolver (composite/lazy-resolve-schema-props), as swarm and
+   memory do. Without it a subdomain param is dropped at the MCP boundary and
+   its handler silently runs on the default."
+  (delay
+    (dissoc (apply merge-with merge
+                   (map composite/lazy-resolve-schema-props
+                        '[hive-mcp.tools.consolidated.kanban/tools
+                          hive-mcp.tools.consolidated.config/tools
+                          hive-mcp.tools.consolidated.session/tools
+                          hive-mcp.tools.consolidated.workflow/tools
+                          hive-mcp.tools.consolidated.migrate-kanban/tools]))
+            "command")))
+
+(def ^:private base-tool-def
   {:name "project"
    :consolidated true
    :description "Projectile project operations: info (project details), files (list files), search (content search), find (find by filename), recent (recently visited), list (all projects), scan (discover .hive-project.edn hierarchy), tree (query cached hierarchy), staleness (check if rescan needed). Use command='help' to list all."
@@ -252,5 +267,12 @@
                                           :description "Run batch operations in parallel (default: false)"}}
                  :required ["command"]}
    :handler #'handle-project})
+
+(def tool-def
+  ;; Subdomain params merge UNDER the hand-written ones above, so a root
+  ;; description wins over the subdomain's and every subdomain param that the
+  ;; root does not restate still reaches its handler.
+  (update-in base-tool-def [:inputSchema :properties]
+             #(merge @subdomain-props %)))
 
 (def tools [tool-def])

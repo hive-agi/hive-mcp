@@ -19,9 +19,14 @@
   [:or [:enum "agent-spawn" "memory-add" "hive" "x_1"] :keyword :symbol])
 
 (deftrifecta-from-schema event-subject-contract bridge/event-subject
-  {:in  [:cat NamedToken]
+  ;; COV-FACETS-FINDINGS-W2 (f07): nil used to NPE; nil/blank now fall back
+  ;; to "unknown", the way tool-subject already did.
+  {:in  [:cat [:or NamedToken [:enum "" "  " nil]]]
    :out [:string {:min 14}]
-   :rel (fn [[t] out] (= out (str "hive.v1.event." (name t))))
+   :rel (fn [[t] out]
+          (if (or (nil? t) (str/blank? (name t)))
+            (= out "hive.v1.event.unknown")
+            (= out (str "hive.v1.event." (name t)))))
    :golden-path "test/golden/hive-mcp/f07-bridge-event-subject.edn"})
 
 (deftrifecta-from-schema agent-subject-contract bridge/agent-subject

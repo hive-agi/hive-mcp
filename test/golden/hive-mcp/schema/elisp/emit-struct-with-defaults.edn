@@ -12,7 +12,7 @@
     :var nil})},
  :case-2
  {:out
-  "(cl-defstruct (hive-a (:constructor hive-a-create))\n  id type content tags)",
+  "(cl-defstruct (hive-a (:constructor hive-a-create) (:include aO2))\n  id type content tags)",
   :in
   ([:map
     [:id :string]
@@ -38,7 +38,7 @@
    {:name "hive-a", :include nil})},
  :case-5
  {:out
-  "(cl-defstruct (hive-a (:constructor hive-a-create))\n  id type content tags)",
+  "(cl-defstruct (hive-a (:constructor hive-a-create) (:include 25f3))\n  id type content tags)",
   :in
   ([:map
     [:id :string]
@@ -55,7 +55,8 @@
     :defaults nil,
     :var "1RQxWKk"})},
  :case-7
- {:out "(cl-defstruct (hive-a (:constructor hive-a-create))\n  name)",
+ {:out
+  "(cl-defstruct (hive-a (:constructor hive-a-create) (:include y))\n  name)",
   :in
   ([:map [:name :string]]
    {:name "hive-a", :constructor nil, :include "y", :var "I1OwW"})}}

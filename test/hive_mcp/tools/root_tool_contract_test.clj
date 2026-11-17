@@ -33,10 +33,16 @@
   (try (thunk) nil
        (catch clojure.lang.ExceptionInfo e (:type (ex-data e)))))
 
-(deftest register-tool-refuses-an-empty-schema-and-registers-nothing
-  (doseq [[label bad] {"empty properties" (assoc-in conforming [:inputSchema :properties] {})
-                       "no schema"        (dissoc conforming :inputSchema)
-                       "no description"   (dissoc conforming :description)}]
+(def ^:private zero-arg
+  "A zero-argument tool: an object schema with no properties. hive-addon
+   1.1.11 (7e28559, owner decision 20261108193538-202ddce5) admits it."
+  (assoc-in conforming [:inputSchema :properties] {}))
+
+(deftest register-tool-refuses-a-schemaless-tool-and-registers-nothing
+  (doseq [[label bad] {"no schema"            (dissoc conforming :inputSchema)
+                       "no properties map"    (update conforming :inputSchema dissoc :properties)
+                       "properties not a map" (assoc-in conforming [:inputSchema :properties] [])
+                       "no description"       (dissoc conforming :description)}]
     (testing label
       (is (= :hive-addon/root-tool-contract
              (contract-type #(ext/register-tool! bad))))
@@ -46,9 +52,17 @@
   (is (= probe-name (ext/register-tool! conforming)))
   (is (some #(= probe-name (:name %)) (ext/get-registered-tools))))
 
+(deftest a-zero-argument-tool-conforms-at-both-entry-points
+  (testing "register-tool! registers it"
+    (is (= probe-name (ext/register-tool! zero-arg)))
+    (is (some #(= probe-name (:name %)) (ext/get-registered-tools))))
+  (testing "make-tool serves it, with the async params merged in"
+    (is (nil? (contract-type #(routes/make-tool zero-arg))))))
+
 (deftest make-tool-checks-the-tool's-own-schema-before-async-params-are-added
   (is (= :hive-addon/root-tool-contract
-         (contract-type #(routes/make-tool (assoc-in conforming [:inputSchema :properties] {})))))
+         (contract-type #(routes/make-tool (update conforming :inputSchema dissoc :properties))))
+      "a tool with no :properties is refused before make-tool merges async params into it")
   (let [made (routes/make-tool conforming)]
     (is (contains? (get-in made [:inputSchema :properties]) "x"))
     (is (< 1 (count (get-in made [:inputSchema :properties])))

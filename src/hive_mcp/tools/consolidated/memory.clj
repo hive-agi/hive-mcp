@@ -31,6 +31,40 @@
       :memory/get    (mem/handle-mcp-memory-get-full params)
       :memory/get-metadata (mem/handle-mcp-memory-get-metadata params))))
 
+;; The four read verbs are DEFS, not inline `fn`s in the table. They route
+;; through `dispatch-memory-read` rather than naming a handler, so there was no
+;; var to quote — but an inline `fn` in the map is still a captured value: a
+;; reload of the table's own namespace rebinds nothing for it to follow, and
+;; anything that census-checks the table for captured entries has to special-case
+;; these four. Naming them makes every entry in `handlers` a var, which is the
+;; invariant `hive-mcp.tools.consolidated.memory-var-seam-test` holds.
+
+(defn- read-query
+  "`query`: the structured read path."
+  [params]
+  (dispatch-memory-read :memory/query params))
+
+(defn- read-metadata
+  "`metadata` is an alias onto the QUERY path, which cannot consume an :id
+   (handle-query's destructuring drops it) — so an id-bearing call must be
+   routed to the by-id RETRIEVAL path instead, or it degrades into an
+   unfiltered in-scope scan that answers with unrelated entries."
+  [{:keys [id] :as params}]
+  (if (some? id)
+    (dispatch-memory-read :memory/get-metadata params)
+    (dispatch-memory-read :memory/query
+                          (assoc params :verbosity "metadata"))))
+
+(defn- read-get
+  "`get`: retrieval by id."
+  [params]
+  (dispatch-memory-read :memory/get params))
+
+(defn- read-search
+  "`search`: the semantic retrieval path."
+  [params]
+  (dispatch-memory-read :memory/search params))
+
 (def handlers
   "The `memory` verbs, stored as VARS so a reload of `hive-mcp.tools.memory`
    reaches this table (20260817195749-0d407e9c). Almost every entry there is
@@ -39,22 +73,17 @@
    and the facade's own alias defs are a separate freeze, converted with the
    rest of them rather than ad hoc.
 
-   The four read verbs keep their inline `fn`: they route through
-   `dispatch-memory-read` rather than naming a handler, so there is no var to
-   quote and the indirection is already at call time."
+   The four read verbs are the exception in ORIGIN, not in KIND: they route
+   through `dispatch-memory-read` rather than naming a handler, so there is no
+   existing var to quote — hence the `read-*` defns above, one per verb, so
+   that every value in this table is a var and no reader has to special-case
+   four entries. See `read-metadata` for why the id-bearing form is not simply
+   an alias onto the query path."
   {:add         #'mem/handle-mcp-memory-add
-   :query       (fn [params] (dispatch-memory-read :memory/query params))
-   ;; `metadata` is an alias onto the QUERY path, which cannot consume an :id
-   ;; (handle-query's destructuring drops it) — so an id-bearing call must be
-   ;; routed to the by-id RETRIEVAL path instead, or it degrades into an
-   ;; unfiltered in-scope scan that answers with unrelated entries.
-   :metadata    (fn [{:keys [id] :as params}]
-                  (if (some? id)
-                    (dispatch-memory-read :memory/get-metadata params)
-                    (dispatch-memory-read :memory/query
-                                          (assoc params :verbosity "metadata"))))
-   :get         (fn [params] (dispatch-memory-read :memory/get params))
-   :search      (fn [params] (dispatch-memory-read :memory/search params))
+   :query       #'read-query
+   :metadata    #'read-metadata
+   :get         #'read-get
+   :search      #'read-search
    :duration    #'mem/handle-mcp-memory-set-duration
    :promote     #'mem/handle-mcp-memory-promote
    :demote      #'mem/handle-mcp-memory-demote
@@ -217,21 +246,56 @@
 
 (declare handle-memory)
 
+;; The batch verbs are BUILT (one closure per target command), so like the four
+;; read verbs they have no existing var to quote. Each gets its own private def,
+;; for the same reason: the table then holds only vars, and a reload of this
+;; namespace rebinds the var the table points at instead of leaving the table
+;; holding a closure built by the previous load.
+
+(def ^:private batch-add-handler
+  (make-single-command-batch :add))
+
+(def ^:private batch-feedback-handler
+  (make-single-command-batch :feedback))
+
+;; PR4.3 — additional batch siblings via the same iterator pattern.
+;; A real single-store-call optimization for these is PR5+ work.
+(def ^:private batch-tags-handler
+  (make-single-command-batch :tags))
+
+(def ^:private batch-duration-handler
+  (make-single-command-batch :duration))
+
+(def ^:private batch-promote-handler
+  (make-single-command-batch :promote))
+
+(def ^:private batch-demote-handler
+  (make-single-command-batch :demote))
+
+(def ^:private batch-handler
+  (make-bare-batch-handler #'handle-memory))
+
 (def canonical-handlers
+  "The full `memory` handler tree: `handlers` plus the batch verbs.
+
+   Every LEAF here is a VAR, so a reload of any handler namespace reaches
+   dispatch without this namespace being reloaded in the same pass (see
+   `handlers`). `:kg` and `:migration` are the two exceptions in kind: each is a
+   whole subtree that `composite/lazy-resolve-handlers` re-reads per call, so
+   their leaves are late-bound individually rather than var-quoted here."
   (merge handlers
-         {:batch-add      (make-single-command-batch :add)
-          :batch-feedback (make-single-command-batch :feedback)
-          ;; PR4.3 — additional batch siblings via the same iterator pattern.
-          ;; A real single-store-call optimization for these is PR5+ work.
-          :batch-tags     (make-single-command-batch :tags)
-          :batch-duration (make-single-command-batch :duration)
-          :batch-promote  (make-single-command-batch :promote)
-          :batch-demote   (make-single-command-batch :demote)
-          :batch          (make-bare-batch-handler #'handle-memory)
+         {:batch-add      #'batch-add-handler
+          :batch-feedback #'batch-feedback-handler
+          :batch-tags     #'batch-tags-handler
+          :batch-duration #'batch-duration-handler
+          :batch-promote  #'batch-promote-handler
+          :batch-demote   #'batch-demote-handler
+          :batch          #'batch-handler
           ;; Nested subdomains resolved lazily via composite/lazy-resolve-handlers
           ;; — drops the static `c-kg`/`c-mig` :requires that previously
           ;; coupled this ns to those consolidators (DIP).
           :kg         (composite/lazy-resolve-handlers 'hive-mcp.tools.kg/handlers)
+          :plan       (composite/lazy-resolve-handlers 'hive-mcp.tools.memory.plan/handlers)
           :migration  (composite/lazy-resolve-handlers 'hive-mcp.tools.consolidated.migration/handlers)}))
 
 (def write-commands
@@ -257,10 +321,10 @@
   {:name "memory"
    :consolidated true
    :default-async-commands write-commands
-   :description "Consolidated memory operations. Commands: add, query, metadata, get, search, duration, promote, demote, log_access, feedback, helpfulness, tags, cleanup, expiring, expire, migrate, migrate-scoped, import, decay, xpoll, rename, edit, review, reembed, batch-add, batch-edit, batch-feedback, batch-get, batch-reembed. There is no generic 'batch': batch memory sub-commands with batch-add/batch-edit/batch-get (mixed commands such as 'kg edge' go through the multi tool's operations); bare 'batch' is the ingest addon's file batch (paths or dir) and refuses an operations array. Use 'query' only for structured filters (type/tags/scope/duration); use 'search' for natural-language semantic retrieval. Use 'help' command to list all.\n\nProject scope on add: the entry's project-id is resolved in this order: (1) the first `scope:project:<id>` tag in `tags` (caller-explicit wins), (2) the project of `directory`, (3) the session project. `scope:global` is a visibility tag and never overrides the project-id. migrate-scoped is a write and is queued; if no ---TOOLRESULT--- arrives, read the result back with batch-get (project-id).\n\nAxiom gate: `type: \"axiom\"` is NOT written directly — it is a NOMINATION. The entry is parked as type `axiom-candidate`, tagged `axiom-pending`, and listed for human review at the next catchup; the add response carries `queued_for_review`. Nominate freely, but write the entry so a reviewer can judge it: state the invariant and why breaking it is a category error rather than a footgun. Only a human resolves it, via 'review'.\n\nReview: 'review' with NO id lists EVERY gate's pending queue, grouped by queue type (limit per queue, default 25, scope all, metadata). Optional `type` narrows listing to one queue type. 'review' with id + verdict=\"approve\" lands the originally requested type (axiom); verdict=\"reject\" lands `as` (default principle). Both strip the pending tags and stamp an audit trail. Reviewing is a human decision — do not call approve on your own nomination unless the user asked you to.\n\nEdit: 'edit' mutates an entry in place (id preserved → KG edges preserved). Params: id (required), type, content, find+replace, tags, duration, abstraction_level, reason. find+replace (exclusive with content) swaps the one exact occurrence of find in the content; zero or several occurrences is an error. Any other param is rejected with an error, never ignored. Content change triggers re-embed. 'batch-edit' takes operations:[...] and optional dry-run:true for validation preview.\n\nReembed: 'reembed' re-vectorizes an entry without rewriting content (id required). Use after embedding-model swaps, vector-index rebuilds, or stale-vector recovery. Preserves id, content, tags, edges, duration, abstraction-level, project-id. 'batch-reembed' takes ids:[...] for sequential per-op processing.\n\nWrites default to async: they return {:queued true :task-id ...} immediately and deliver the real result via ---TOOLRESULT--- on the caller's next tool call. Pass async:false to force sync. Reads (query/metadata/get/search/expiring/batch-get/review) stay synchronous by default; pass async:true to queue them."
+   :description "Consolidated memory operations. Commands: add, query, metadata, get, search, duration, promote, demote, log_access, feedback, helpfulness, tags, cleanup, expiring, expire, migrate, migrate-scoped, import, decay, xpoll, rename, edit, review, reembed, reconcile, batch-add, batch-edit, batch-feedback, batch-get, batch-reembed. Plan records are first-class under the nested subdomain 'plan' (plan list|search|get|status|update|archive); plan-to-kanban consumes the same records. There is no generic 'batch': batch memory sub-commands with batch-add/batch-edit/batch-get (mixed commands such as 'kg edge' go through the multi tool's operations); bare 'batch' is the ingest addon's file batch (paths or dir) and refuses an operations array. Use 'query' only for structured filters (type/tags/scope/duration); use 'search' for natural-language semantic retrieval. Use 'help' command to list all.\n\nProject scope on add: the entry's project-id is resolved in this order: (1) the first `scope:project:<id>` tag in `tags` (caller-explicit wins), (2) the project of `directory`, (3) the session project. `scope:global` is a visibility tag and never overrides the project-id. migrate-scoped is a write and is queued; if no ---TOOLRESULT--- arrives, read the result back with batch-get (project-id).\n\nAxiom gate: `type: \"axiom\"` is NOT written directly — it is a NOMINATION. The entry is parked as type `axiom-candidate`, tagged `axiom-pending`, and listed for human review at the next catchup; the add response carries `queued_for_review`. Nominate freely, but write the entry so a reviewer can judge it: state the invariant and why breaking it is a category error rather than a footgun. Only a human resolves it, via 'review'.\n\nReview: 'review' with NO id lists EVERY gate's pending queue, grouped by queue type (limit per queue, default 25, scope all, metadata). Optional `type` narrows listing to one queue type. 'review' with id + verdict=\"approve\" lands the originally requested type (axiom); verdict=\"reject\" lands `as` (default principle). Both strip the pending tags and stamp an audit trail. Reviewing is a human decision — do not call approve on your own nomination unless the user asked you to.\n\nEdit: 'edit' mutates an entry in place (id preserved → KG edges preserved). Params: id (required), type, content, find+replace, tags, duration, abstraction_level, reason. find+replace (exclusive with content) swaps the one exact occurrence of find in the content; zero or several occurrences is an error. Any other param is rejected with an error, never ignored. Content change triggers re-embed. 'batch-edit' takes operations:[...] and optional dry-run:true for validation preview.\n\nReembed: 'reembed' re-vectorizes an entry without rewriting content (id required). Use after embedding-model swaps, vector-index rebuilds, or stale-vector recovery. Preserves id, content, tags, edges, duration, abstraction-level, project-id. 'batch-reembed' takes ids:[...] for sequential per-op processing.\n\nReconcile: 'reconcile' reports drift between the entry store (source of truth) and the vector index: orphan-vector-ids (in the index, not the store), unindexed-store-ids, nil-vector-ids and counts (limit caps each id list, default 100). Read-only and synchronous by default; on a big store it is a full id scan, so run it off-peak. purge=true adds a DRY RUN of deleting the orphan vector records (counts only); purge=true with i_mean_it=true deletes them through the vector index's purge port, after re-reading the store ids so no id the store holds is deleted. It never deletes or edits an entry-store row. It answers purge mode 'refused' (nothing deleted, reason given) unless the sources positively report both listings complete, when the store listing is empty while orphan candidates exist, and when the plan exceeds half of the vector ids. A store whose vectors share the entry row answers purge mode 'unsupported'.\n\nWrites default to async: they return {:queued true :task-id ...} immediately and deliver the real result via ---TOOLRESULT--- on the caller's next tool call. Pass async:false to force sync. Reads (query/metadata/get/search/expiring/batch-get/review) stay synchronous by default; pass async:true to queue them."
    :inputSchema {:type "object"
                  :properties {"command" {:type "string"
-                                         :description "Command to execute. Memory commands are flat (add, query, etc.). Subdomains: 'kg edge', 'kg traverse', 'migration backup', 'ingest file', 'enrich enrich'. Use command='help' to list all."}
+                                         :description "Command to execute. Memory commands are flat (add, query, etc.). Subdomains: 'kg edge', 'kg traverse', 'plan list', 'plan update', 'migration backup', 'ingest file', 'enrich enrich'. Use command='help' to list all."}
                               "type" {:type "string"
                                       :description (str "[add/query] Type of memory entry. [review list] Optional queue type; omit to list every gate's queue. "
                                                         (type-registry/mcp-type-hint))}
@@ -308,6 +372,11 @@
                               "verbosity" {:type "string"
                                            :enum ["full" "metadata"]
                                            :description "[query] Output detail: 'metadata' (default) or 'full'"}
+                              "status" {:type "string"
+                                        :enum ["draft" "active" "completed" "superseded"]
+                                        :description "[plan list/update] Plan status filter (list) or target status (update)."}
+                              "project_id" {:type "string"
+                                            :description "[plan list/status] Project scope filter for plan records."}
                               "id" {:type "string"
                                     :description "[get/metadata/promote/demote/feedback/tags/reembed] Memory entry ID. On 'metadata' it is a by-id lookup: returns that one entry in metadata shape, or an error if it does not exist."}
                               "ids" {:type "array"
@@ -331,6 +400,10 @@
                                                      :description "[query/search] Include child project memories (HCR). Default true — pass false to restrict to current project only."}
                               "force" {:type "boolean"
                                        :description "[reembed] Force re-embed even if content-hash unchanged (currently no-op; reserved)"}
+                              "purge" {:type "boolean"
+                                       :description "[reconcile] Ask for the orphan-vector purge. Alone it is a dry run (counts only); deletes only with i_mean_it true. Never touches entry-store rows."}
+                              "i_mean_it" {:type "boolean"
+                                           :description "[reconcile] Must be boolean true with purge=true, or nothing is deleted: a JSON true. Sent straight to this tool, a string (\"true\" included) is NOT a confirmation. Routed through the multi tool, which decodes declared booleans before the handler runs, the strings \"true\", \"yes\" and \"1\" (any case) arrive as true and DO confirm. Any other value is a dry run or a decode error."}
                               ;; KG params
                               "from" {:type "string" :description "[kg edge] Source node ID"}
                               "to" {:type "string" :description "[kg edge] Target node ID"}

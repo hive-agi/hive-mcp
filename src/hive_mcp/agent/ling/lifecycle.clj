@@ -112,7 +112,8 @@
 
 (defn ling-ctx
   "Build a context map from a Ling record for strategy calls.
-   :turn-budget is the lease spec hive-agent's build-spawn-config reads."
+   :turn-budget is the lease spec hive-agent's build-spawn-config reads;
+   :time-budget-ms is the run's wall-clock budget, read the same way."
   [ling]
   (cond-> {:id (:id ling)
            :cwd (:cwd ling)
@@ -128,6 +129,7 @@
     (:chat-run-id ling) (assoc :chat-run-id (:chat-run-id ling))
     (:token-budget ling) (assoc :token-budget (:token-budget ling))
     (:turn-budget ling) (assoc :turn-budget (:turn-budget ling))
+    (:time-budget-ms ling) (assoc :time-budget-ms (:time-budget-ms ling))
     (:sliding-window-size ling) (assoc :sliding-window-size (:sliding-window-size ling))
     (:agents ling) (assoc :agents (:agents ling))
     (some? (:sandbox ling)) (assoc :sandbox (:sandbox ling))))

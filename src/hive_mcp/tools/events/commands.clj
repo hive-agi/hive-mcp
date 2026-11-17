@@ -236,7 +236,17 @@
     (let [status (resolve-or-throw 'hive-mcp.nats.bus/bus-status)]
       (ok :bus-status (status)))))
 
+(defn handle-transport-status
+  "Every transport chain port: its chain, the active adapter and whether it is
+   the preferred one, each adapter's status and last-ok-at, and recent
+   :active switches."
+  [_params]
+  (r/rescue (err :transport-status "Internal error in events.transport-status")
+    (let [status (resolve-or-throw 'hive-mcp.transport.registry/status)]
+      (ok :transport-status (status)))))
+
 (m/=> handle-bus-status [:=> [:cat EventsParams] EventsReply])
+(m/=> handle-transport-status [:=> [:cat EventsParams] EventsReply])
 
 (def help-text
   (str "events tool — hive-agent observability surface\n"
@@ -256,6 +266,11 @@
        "      Register a handler at runtime by fully-qualified symbol.\n"
        "  unreg-fx {:fx-id KW}\n"
        "      Drop a registered fx handler from hive.events.fx.\n"
+       "  bus-status\n"
+       "      Which event backbone is active and whether it is connected.\n"
+       "  transport-status\n"
+       "      Every transport chain port: chain, active adapter, per-adapter\n"
+       "      status and last-ok-at, recent :active switches.\n"
        "  help\n"
        "      Show this text."))
 

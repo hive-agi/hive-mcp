@@ -93,7 +93,7 @@
 (deftest text-context-factory-test
   (testing "->text-context creates a TextContext record"
     (let [ctx (dispatch/->text-context "test prompt")]
-      (is (instance? hive_mcp.protocols.dispatch.TextContext ctx))
+      (is (instance? hive_spi.swarm.dispatch_context.TextContext ctx))
       (is (= "test prompt" (:prompt ctx))))))
 
 ;;; ============================================================================
@@ -170,7 +170,7 @@
 (deftest ref-context-factory-test
   (testing "->ref-context creates a RefContext record with defaults"
     (let [ctx (dispatch/->ref-context "prompt" {})]
-      (is (instance? hive_mcp.protocols.dispatch.RefContext ctx))
+      (is (instance? hive_spi.swarm.dispatch_context.RefContext ctx))
       (is (= "prompt" (:prompt ctx)))
       (is (= {} (:ctx-refs ctx)))
       (is (= [] (:kg-node-ids ctx)))

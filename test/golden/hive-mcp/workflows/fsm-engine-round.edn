@@ -27,10 +27,7 @@
   :loaded? true,
   :errors []},
  :stepped-own-id
- {:success? false,
-  :step-id ":wf/work",
-  :context {:n 5},
-  :errors ["no handler for state"]},
+ {:success? true, :step-id ":wf/work", :context {:n 6}, :errors []},
  :cancelled
  {:success? true, :status :cancelled, :steps-completed 0, :errors []},
  :cancel-done
@@ -52,7 +49,7 @@
   :errors [],
   :warnings [],
   :dependency-order [":wf/work"]},
- :stepped-bare-id {:success? false, :step-id "wf/work"},
+ :stepped-bare-id {:success? true, :step-id "wf/work"},
  :failed
  {:success? false,
   :steps-completed 0,

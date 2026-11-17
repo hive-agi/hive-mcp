@@ -65,6 +65,7 @@
                           {:slave/id (or (:slave-id ling) (:slave_id ling))
                            :slave/name (:name ling)
                            :slave/status (keyword (or (:status ling) "idle"))
+                           ;; Emacs reports no parent: an elisp-only ling is depth 1.
                            :slave/depth 1
                            :slave/cwd (:cwd ling)
                            :slave/project-id (:project-id ling)

@@ -1,4 +1,10 @@
 {:turn-budget [{:initial 3} nil :refused],
+ :time-budget
+ [[nil 1500 1500 nil nil]
+  :refused
+  :refused
+  {:llm-retries 2, :time-budget-ms 1500}
+  {}],
  :loop-opts
  {:llm-retries 2,
   :resume {:run-id "r", :at {:seq 1}},
@@ -9,7 +15,7 @@
   :isError true},
  :normalize-sb [true :refused],
  :sandbox [nil true false true false :refused :refused],
- :grant-share {:grant nil},
+ :grant-share {:grant nil, :depth 1},
  :editor [nil true],
  :brief-refused :refused,
  :resume [nil {:run-id "r", :prompt "p"}],

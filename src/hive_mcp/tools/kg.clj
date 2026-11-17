@@ -533,6 +533,8 @@
    :relations   [:vec]
    :threshold   [:double]
    :limit       [:int]
+   :min_confidence    [:double]
+   :exclude_relations [:vec]
    :dry_run     [:boolean]
    :i_mean_it   [:boolean]
    :max_degree  [:int]})
@@ -606,7 +608,12 @@
                                         :enum ["delete" "demote"]
                                         :description "cleanup-synthetics: action on sub-threshold synthetics (default: delete)"}
                               "limit" {:type "integer"
-                                       :description "cleanup-synthetics: max synthetics per cycle (default: 50)"}
+                                       :description "traverse: max rows to return, a positive integer, counted after exclude_relations and min_confidence (the answer then carries truncated? and total-count; omit it for every row); cleanup-synthetics: max synthetics per cycle (default: 50)"}
+                              "exclude_relations" {:type "array"
+                                                   :items {:type "string"}
+                                                   :description "traverse: relation types to drop from the rows, applied before limit"}
+                              "min_confidence" {:type "number"
+                                                :description "traverse: drop rows whose edge confidence is below this (0.0-1.0; an edge without one counts as 1.0), applied before limit"}
                               "dry_run" {:type "boolean"
                                          :description "cleanup-synthetics: preview without mutating (default: false)"}}
                  :required ["command"]}

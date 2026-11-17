@@ -43,8 +43,8 @@
 
 (deftest tools-memory-gate-is-not-vacuous
   (let [report (coverage/coverage {:paths batch-files})]
-    (is (= 64 (count (:universe report))) "every public defn of the top-level files")
-    (is (= 64 (count (:covered report))))))
+    (is (= 65 (count (:universe report))) "every public defn of the top-level files")
+    (is (= 65 (count (:covered report))))))
 
 (deftest every-tools-memory-contract-generates-both-sides
   (doseq [ns-sym contracted-nss

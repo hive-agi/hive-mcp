@@ -33,8 +33,9 @@
   (let [report (coverage/coverage {:paths batch-files})]
     (is (= (set batch-nss) (set (map (comp symbol namespace) (:universe report))))
         "the universe is exactly the seventeen batch namespaces")
-    (is (= 135 (count (:universe report))) "every public defn of the batch")
-    (is (= 135 (count (:covered report))))))
+    ;; 138 = 135 + composite/loaded-var, current-at, stale-response (fix/friction-hot)
+    (is (= 138 (count (:universe report))) "every public defn of the batch")
+    (is (= 138 (count (:covered report))))))
 
 (deftest every-m24-contract-generates-both-sides
   (doseq [ns-sym batch-nss

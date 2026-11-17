@@ -1,0 +1,6 @@
+{:all-degraded-empty [],
+ :cold-config-order [:a :b :c],
+ :degraded-active [:a :c],
+ :degraded-skipped [:b :c],
+ :non-sticky-ignores-active [:a :b :c],
+ :sticky-active-first [:b :a :c]}

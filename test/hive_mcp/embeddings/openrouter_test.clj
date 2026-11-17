@@ -3,8 +3,8 @@
    config, with the active-provider slot owned and restored by the test.
    No network: the adapter touches HTTP only when a call is made.
 
-   Seam gap: embed-text / embed-batch reach the private `make-request`
-   (java.net.http built inline); no injectable transport (see f04 report)."
+   The request shape is driven through the :request-fn transport seam in
+   hive-mcp.embeddings.http-seam-test."
   (:require [clojure.test :refer [deftest is]]
             [hive-mcp.config.test-support :as cfg]
             [hive-mcp.embeddings.active :as active]

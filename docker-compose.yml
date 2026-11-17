@@ -186,6 +186,64 @@ services:
     volumes:
       - hive-qdrant-carto-data:/qdrant/storage
     restart: unless-stopped
+    # --- Memory (CLJW-QDRANT-OOM, sized 2026-11-10) ------------------------
+    # Unbounded, qdrant was the host's global-OOM victim 6x on 2026-10-31/11-01
+    # at anon-rss 6.2-7.2 GB. Measured with carto-snippets at 4.7M x 2560d:
+    # anon 5.5 GB resident + 3.3 GB swapped, allocator resident 9.9 GB.
+    # The limit is that 9.9 GB plus ~40% headroom. Page cache for the on-disk
+    # vectors/HNSW is counted against it and reclaimed first, so hitting the
+    # limit evicts mmap pages before anything gets killed. A memcg OOM then
+    # kills qdrant alone and the restart policy brings it back, rather than a
+    # host-wide OOM picking processes at random. The reservation (memory.low)
+    # keeps the hot quantized vectors and payload index from being reclaimed
+    # when the host is under pressure.
+    mem_limit: ${QDRANT_MEM_LIMIT:-14g}
+    mem_reservation: ${QDRANT_MEM_RESERVATION:-10g}
+    memswap_limit: ${QDRANT_MEMSWAP_LIMIT:-18g}
+    environment:
+      # Defaults for collections created from now on: vectors and HNSW graph
+      # live on disk (mmap) and payload stays on disk. carto-snippets already
+      # has all three; this stops new collections (hive_kanban today holds
+      # 2560d vectors in RAM) from adding anon RSS.
+      QDRANT__STORAGE__ON_DISK_PAYLOAD: "true"
+      QDRANT__STORAGE__COLLECTION__VECTORS__ON_DISK: "true"
+      QDRANT__STORAGE__HNSW_INDEX__ON_DISK: "true"
+    # Startup + liveness. start_period/start_interval act as the startup probe:
+    # loading 4.7M points takes seconds to minutes, and checks that fail inside
+    # that window do not count. After that, /readyz is the liveness check.
+    # The image has no curl/wget, so the check uses bash's /dev/tcp.
+    healthcheck:
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/6333 && printf 'GET /readyz HTTP/1.0\\r\\n\\r\\n' >&3 && head -n1 <&3 | grep -q ' 200 '"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 180s
+      start_interval: 5s
+    labels:
+      hive.watchdog.restart: "true"
+
+  # =============================================================================
+  # Core: Container watchdog (default, always starts)
+  # Docker does not restart an UNHEALTHY container. And once a restart fails
+  # (e.g. 'runc create failed: container with given ID already exists', seen
+  # 2026-08-12 and 2026-11-05/07), the restart manager stops trying and the
+  # container stays down. The watchdog fills both gaps for containers labelled
+  # hive.watchdog.restart=true. It leaves alone any container that was stopped
+  # by hand. See docker/watchdog/watchdog.sh.
+  # =============================================================================
+  watchdog:
+    image: docker:${DOCKER_CLI_VERSION:-29-cli}
+    container_name: hive-mcp-watchdog
+    entrypoint: ["/bin/sh", "/watchdog.sh"]
+    environment:
+      WATCHDOG_LABEL: hive.watchdog.restart=true
+      WATCHDOG_INTERVAL: "30"
+    volumes:
+      - ./docker/watchdog/watchdog.sh:/watchdog.sh:ro
+      # Rootless docker by default; set HIVE_DOCKER_SOCKET=/var/run/docker.sock for rootful.
+      - ${HIVE_DOCKER_SOCKET:-${XDG_RUNTIME_DIR:-/run/user/1000}/docker.sock}:/var/run/docker.sock
+    mem_limit: 64m
+    restart: unless-stopped
 
   # =============================================================================
   # Core: NATS Server (default, always starts)

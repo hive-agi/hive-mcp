@@ -182,3 +182,106 @@
 
 (m/=> check-compatible! [:=> [:cat [:map-of :keyword :any] [:maybe [:map-of :keyword :any]]]
                          EmbeddingSpace])
+
+;; =============================================================================
+;; Collection stamp
+;; =============================================================================
+;;
+;; A vector store keeps the space a collection was created in beside it, as
+;; flat scalar metadata (Chroma and Milvus both refuse nested values and nil).
+;; Keywords are written by name and read back as keywords, so the stamp
+;; survives a JSON round trip unchanged.
+
+(def stamp-keys
+  "Collection-metadata key of each space field. :embed-space-id marks a
+   collection as stamped; its absence is what makes a collection legacy."
+  {:provider           :embed-provider
+   :model              :embed-model
+   :digest             :embed-digest
+   :dimension          :embed-dimension
+   :metric             :embed-metric
+   :normalized?        :embed-normalized
+   :query-template-rev :embed-query-template-rev
+   :doc-serializer-rev :embed-doc-serializer-rev})
+
+(def StampMetadata
+  "The stamp as collection metadata: scalar values only, nil fields dropped."
+  [:map-of :keyword [:or :string :int :boolean]])
+
+(defn space->metadata
+  "The metadata that stamps a collection with `space`: every recorded field
+   under its `stamp-keys` name plus :embed-space-id. Unrecorded (nil) fields
+   are left out; reading the stamp back yields nil for them again."
+  [space]
+  (let [s (->space space)]
+    (into {:embed-space-id (space-id s)}
+          (keep (fn [k]
+                  (let [v (get s k)]
+                    (when (some? v)
+                      [(stamp-keys k) (if (keyword? v) (name v) v)]))))
+          space-keys)))
+
+(m/=> space->metadata [:=> [:cat [:map-of :keyword :any]] StampMetadata])
+
+(defn- meta-get
+  "Value of keyword K in collection metadata MD, whose keys may come back as
+   keywords or strings depending on the transport."
+  [md k]
+  (let [v (get md k ::absent)]
+    (if (= ::absent v) (get md (name k)) v)))
+
+(defn metadata->space
+  "The space a collection was stamped with, read from its metadata, or nil
+   when the metadata carries no stamp (a legacy collection). Throws like
+   `->space` when a stamp is present but malformed."
+  [md]
+  (when (and (map? md) (some? (meta-get md :embed-space-id)))
+    (let [raw (into {} (map (fn [[k mk]] [k (meta-get md mk)])) stamp-keys)]
+      (->space (cond-> raw
+                 (some? (:provider raw))      (update :provider keyword)
+                 (some? (:metric raw))        (update :metric keyword)
+                 (some? (:dimension raw))     (update :dimension long)
+                 (string? (:normalized? raw)) (update :normalized? #(= "true" %))
+                 (nil? (:metric raw))         (dissoc :metric)
+                 (nil? (:normalized? raw))    (dissoc :normalized?))))))
+
+(m/=> metadata->space [:=> [:cat [:maybe [:map-of :any :any]]] [:maybe EmbeddingSpace]])
+
+(def Admission
+  "Verdict of `admit`: the collection holds `expected`'s space (:stamped), or
+   carries no stamp at all (:legacy, read with a warning, never refused)."
+  [:map
+   [:verdict [:enum :stamped :legacy]]
+   [:collection :string]
+   [:space EmbeddingSpace]
+   [:space-id SpaceId]])
+
+(defn admit
+  "Pure guard for one collection. `expected` is the space the caller is about
+   to write or query with; `md` is the collection's metadata.
+
+     stamped, same space  => {:verdict :stamped ...}
+     no stamp             => {:verdict :legacy ...}   caller warns, proceeds
+     stamped, other space => throws ex-info :embedding-space-mismatch
+                             (see `check-compatible!`) carrying :collection
+
+   A legacy collection is admitted because refusing it would take every
+   pre-stamp collection offline; it is reported, not trusted."
+  [collection expected md]
+  (let [expected (->space expected)
+        stamped  (metadata->space md)
+        base     {:collection collection
+                  :space      expected
+                  :space-id   (space-id expected)}]
+    (if (nil? stamped)
+      (assoc base :verdict :legacy)
+      (try
+        (check-compatible! expected stamped)
+        (assoc base :verdict :stamped)
+        (catch clojure.lang.ExceptionInfo e
+          (throw (ex-info (str "Collection " collection ": " (ex-message e))
+                          (assoc (ex-data e) :collection collection)
+                          e)))))))
+
+(m/=> admit [:=> [:cat :string [:map-of :keyword :any] [:maybe [:map-of :any :any]]]
+             Admission])

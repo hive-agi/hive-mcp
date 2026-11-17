@@ -245,6 +245,25 @@
 (def ReconcileResponse
   [:map [:status [:enum "ok" "not-wired"]]])
 
+(def ReconcilePurge
+  "The :purge block of a purge request: what was decided and the counts."
+  [:map
+   [:mode [:enum "unsupported" "refused" "dry-run" "applied"]]
+   [:candidate-count [:int {:min 0}]]
+   [:skipped-nil-ids [:int {:min 0}]]
+   ;; nil: the purge port did not report a count (see :reason)
+   [:purged [:maybe [:int {:min 0}]]]
+   ;; the response's :orphan-vector-ids were listed before any delete
+   [:orphan-vector-ids-as-of [:= "before-purge"]]
+   ;; mode "applied": the ids handed to the purge port, capped at :limit
+   [:purged-ids {:optional true} [:vector [:string {:min 1}]]]
+   [:planned-count {:optional true} [:int {:min 0}]]
+   [:kept-count {:optional true} [:int {:min 0}]]
+   [:reason {:optional true} :string]])
+
+(def ReconcilePurgeResponse
+  [:map [:status [:= "ok"]] [:purge ReconcilePurge]])
+
 (def QueueGroups
   [:map-of :string [:vector any?]])
 

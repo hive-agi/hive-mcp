@@ -50,7 +50,7 @@
    {:name "hive-a", :include "25f3", :defaults nil, :var "mPc9"})},
  :case-6
  {:out
-  "(defun hive-cfg-from-plist (plist)\n  \"Create hive-cfg from PLIST.\"\n  (hive-cfg-create\n   :enabled (plist-get plist :enabled)\n   :port (or (plist-get plist :port) nil)))",
+  "(defun hive-cfg-from-plist (plist)\n  \"Create hive-cfg from PLIST.\"\n  (dM1\n   :enabled (plist-get plist :enabled)\n   :port (or (plist-get plist :port) nil)))",
   :in
   ([:map [:enabled :boolean] [:port {:optional true} [:maybe :int]]]
    {:name "hive-cfg",

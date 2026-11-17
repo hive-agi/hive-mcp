@@ -511,14 +511,19 @@
 
 (defn start-default!
   "Start the sampler with `config-opts` and the gauges in the hive-mcp
-   Prometheus registry. Idempotent; never throws (nil on failure)."
-  []
-  (try
-    (start! (assoc (config-opts) :registry (prom-raw-registry)))
-    (catch Throwable e
-      (log/warn "resources: sampler start failed (non-fatal):" (ex-message e))
-      nil)))
+   Prometheus registry. Idempotent; never throws (nil on failure).
+   The 1-arity takes the raw CollectorRegistry to register in, so a test can
+   hand it a registry of its own instead of the process-wide one."
+  ([] (start-default! (prom-raw-registry)))
+  ([raw-registry]
+   (try
+     (start! (assoc (config-opts) :registry raw-registry))
+     (catch Throwable e
+       (log/warn "resources: sampler start failed (non-fatal):" (ex-message e))
+       nil))))
 
-(m/=> start-default! [:=> [:cat] [:maybe :map]])
+(m/=> start-default! [:function
+                      [:=> [:cat] [:maybe :map]]
+                      [:=> [:cat :any] [:maybe :map]]])
 
 (m/=> config-opts [:=> [:cat] Opts])

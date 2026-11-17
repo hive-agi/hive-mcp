@@ -3,13 +3,9 @@
    same-named var of hive-agent.swarm.hivemind.conversation. Offline (no
    swarm library, this tree) a call raises addon-missing naming the var it
    reached for; the golden, property and mutants pin that. The protocol
-   itself is driven in test-swarm/ (conversation_round_trip_test).
-
-   clojure.core.async is required BEFORE the shim on purpose: the shim's
-   Chan schema names clojure.core.async/promise-chan in a :gen/fmap without
-   requiring it (pre-existing, src unchanged), so a JVM that loads the shim
-   first fails to compile it."
-  (:require [clojure.core.async]
+   itself is driven in test-swarm/ (conversation_round_trip_test)."
+  (:require [clojure.java.io :as io]
+            [clojure.test :refer [deftest is]]
             [clojure.test.check.clojure-test :refer [defspec]]
             [clojure.test.check.properties :as prop]
             [hive-mcp.hivemind.conversation]
@@ -25,6 +21,22 @@
 (def ^:private target "hive-agent.swarm.hivemind.conversation")
 (def ^:private overrides {})
 (def ^:private golden-path "test/golden/hive-mcp/hivemind/conversation-delegation.edn")
+
+;; COV-FACETS-FINDINGS-W1: the Chan schema names clojure.core.async (its
+;; :gen/fmap and the ReadPort protocol), so the shim must require it itself;
+;; otherwise a JVM that loads the shim before core.async fails to compile it.
+;; Read from source: core.async is already loaded in any test JVM.
+(deftest shim-requires-the-core-async-it-names
+  (let [ns-form (with-open [r (java.io.PushbackReader.
+                               (io/reader (io/resource "hive_mcp/hivemind/conversation.clj")))]
+                  (read r))
+        required (->> ns-form
+                      (filter #(and (seq? %) (= :require (first %))))
+                      (mapcat rest)
+                      (map #(if (vector? %) (first %) %))
+                      set)]
+    (is (contains? required 'clojure.core.async))
+    (is (contains? required 'clojure.core.async.impl.protocols))))
 
 (golden/deftest-golden conversation-delegation-golden
   golden-path

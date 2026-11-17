@@ -180,6 +180,17 @@
                     (and (instance? AddonRegistryHost out) (= (into {} host) (into {} out)))
                     (identical? host out)))]])
 
+(defn registry-host?
+  "Is HOST an AddonRegistryHost, of the current class or of an earlier one a
+   reload of this namespace left behind? The class is read HERE, at call
+   time, so a caller never compiles in a class object that a reload of this
+   namespace can make stale: an `instance?` in another namespace answers
+   false for every host built after such a reload."
+  [host]
+  (or (instance? AddonRegistryHost host) (stale-registry-host? host)))
+
+(m/=> registry-host? [:=> [:cat :any] :boolean])
+
 ;; =============================================================================
 ;; Boundary: unregister ids after teardown
 ;; =============================================================================
