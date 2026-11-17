@@ -448,8 +448,15 @@
                            {:provider provider
                             :model (if (= :cheap worker-tier) nil model)
                             :agent-type agent-type})
-                effective-model (:model resolved)
-                effective-provider (:provider resolved)
+                ;; What the host resolved is only the SEED: the :spawn/opts-overlay
+                ;; router (hive-agent's, when loaded) replaces :model/:provider
+                ;; afterwards, inside spawn!. Routing here instead — once, before
+                ;; the preflight below — is what lets this response and its log
+                ;; name the model that actually runs. spawn! honours the
+                ;; :spawn/opts-routed marker and does not route a second time, so
+                ;; the round-robin cursor advances once per spawn.
+                seed-model (:model resolved)
+                seed-provider (:provider resolved)
                 agent-id (or name (helpers/generate-agent-id agent-type))
                 effective-project-id (resolve-project-scope project_id cwd parent)]
             (case agent-type
@@ -481,8 +488,10 @@
                                                               :presets presets-vec
                                                               :project-id effective-project-id
                                                               :spawn-mode effective-spawn-mode
-                                                              :model effective-model
-                                                              :provider effective-provider}
+                                                              ;; the seed: the routed opts below
+                                                              ;; override :model/:provider
+                                                              :model seed-model
+                                                              :provider seed-provider}
                                                        normalized-agents (assoc :agents normalized-agents)
                                                        max_budget_usd    (assoc :max-budget-usd max_budget_usd)
                                                        (some? kg_compress) (assoc :kg-compress? kg_compress)
@@ -499,47 +508,73 @@
                     _ (when-let [refusal (editor-preflight-refusal (:spawn-mode ling-agent) *editor-reachable?*)]
                         (throw (ex-info refusal {:spawn-mode (:spawn-mode ling-agent)
                                                  :fallback "headless"})))
-                    _ (when-let [err (provider-preflight-refusal (:spawn-mode ling-agent) effective-provider)]
-                        (throw (ex-info (str "Provider " (clojure.core/name effective-provider)
+                    ;; The opts this spawn will run with, ROUTED: the overlay
+                    ;; (hive-agent's router when loaded) has replaced :model and
+                    ;; :provider where it has an opinion. Everything below reads
+                    ;; these, so the preflight, the log and the response describe
+                    ;; the member that actually runs, not the seed. Routing once
+                    ;; here and marking it is also what keeps the round-robin
+                    ;; cursor advancing exactly once per spawn.
+                    routed-opts (spawn-impl/route-spawn-opts
+                                 (cond-> {:task brief
+                                          :parent parent
+                                          :depth child-depth
+                                          :spawned-by (spawner params)
+                                          :kanban-task-id kanban_task_id
+                                          :spawn-mode (:spawn-mode ling-agent)
+                                          :model seed-model
+                                          :provider seed-provider
+                                          :spawn/request params}
+                                   max_budget_usd (assoc :max-budget-usd max_budget_usd)
+                                   child-grant    (assoc :grant child-grant))
+                                 ling-agent)
+                    ;; nil when no router is loaded: the seed stands.
+                    choice (:router/choice routed-opts)
+                    routed-model (:model routed-opts)
+                    routed-provider (:provider routed-opts)
+                    _ (when-let [err (provider-preflight-refusal (:spawn-mode ling-agent) routed-provider)]
+                        (throw (ex-info (str "Provider " (clojure.core/name routed-provider)
                                              " cannot serve this spawn: " (:fix err))
                                         err)))
                     _ (when-let [refusal (kanban-claim-refusal params)]
                         (throw (ex-info refusal {:kanban/claim-refused kanban_task_id})))
-                    slave-id (proto/spawn! ling-agent (cond-> {:task brief
-                                                               :parent parent
-                                                               :depth child-depth
-                                                               :spawned-by (spawner params)
-                                                               :kanban-task-id kanban_task_id
-                                                               :spawn-mode (:spawn-mode ling-agent)
-                                                               :model effective-model
-                                                               :provider effective-provider
-                                                               :spawn/request params}
-                                                        max_budget_usd (assoc :max-budget-usd max_budget_usd)
-                                                        child-grant    (assoc :grant child-grant)))]
+                    slave-id (proto/spawn! ling-agent (dissoc routed-opts :spawn/request))]
                 (log/info "Spawned ling" {:requested-id agent-id
                                           :slave-id slave-id
                                           :parent parent
                                           :spawn-mode (:spawn-mode ling-agent)
-                                          :provider effective-provider
-                                          :model effective-model
+                                          :provider routed-provider
+                                          :model routed-model
+                                          :routed? (some? choice)
+                                          :requested-model seed-model
+                                          :requested-provider seed-provider
                                           :tier worker-tier
                                           :token-budget token-budget
                                           :task-attached (some? brief)
                                           :cwd cwd :presets presets-vec
                                           :project-id effective-project-id})
+                ;; :model, :provider and :tier are the ROUTED opts — the member
+                ;; that actually runs. :requested-model/:requested-provider keep
+                ;; the pre-routing seed and :router-choice the decision, so an
+                ;; operator can see both what was asked and what was used.
                 (mcp-json (cond-> {:success true
                                    :agent-id slave-id
                                    :type :ling
                                    :parent parent
                                    :spawn-mode (:spawn-mode ling-agent)
-                                   :provider effective-provider
-                                   :model effective-model
+                                   :provider routed-provider
+                                   :model routed-model
                                    :tier worker-tier
+                                   :routed? (some? choice)
+                                   :requested-model seed-model
+                                   :requested-provider seed-provider
                                    :token-budget token-budget
                                    :task-attached (some? brief)
                                    :cwd cwd
                                    :presets presets-vec
                                    :project-id effective-project-id}
+                            choice
+                            (assoc :router-choice (select-keys choice [:pool :strategy :work-class]))
                             child-grant
                             (assoc :grant child-grant)
                             (nil? brief)

@@ -531,20 +531,41 @@
    from opts, then applies each contributor of `spawn-overlay-fns` in order as
    (f opts ctx) -> opts', each seeing the opts the one before it returned.
    Fail-soft per contributor: nil or a throw keeps the opts it was given.
-   Applied once in spawn! so plan + executor both see merged opts."
+   Applied by spawn! so plan + executor both see merged opts, and by a caller
+   that needs the opts BEFORE the spawn (see `route-spawn-opts`): opts already
+   marked :spawn/opts-routed come back untouched, so one spawn is never charged
+   two routing decisions."
   [opts ling]
-  (let [req  (:spawn/request opts)
-        opts (dissoc opts :spawn/request)]
-    (reduce (fn [acc f]
-              (or (r/rescue nil
-                    (f acc {:request req
-                            :cwd (:cwd ling)
-                            :project-id (:project-id ling)
-                            :task (:task acc)
-                            :kanban-task-id (:kanban-task-id acc)}))
-                  acc))
-            opts
-            (spawn-overlay-fns))))
+  (if (:spawn/opts-routed opts)
+    (dissoc opts :spawn/opts-routed :spawn/request)
+    (let [req  (:spawn/request opts)
+          opts (dissoc opts :spawn/request)]
+      (reduce (fn [acc f]
+                (or (r/rescue nil
+                      (f acc {:request req
+                              :cwd (:cwd ling)
+                              :project-id (:project-id ling)
+                              :task (:task acc)
+                              :kanban-task-id (:kanban-task-id acc)}))
+                    acc))
+              opts
+              (spawn-overlay-fns)))))
+
+(defn route-spawn-opts
+  "The opts a spawn with OPTS on LING will actually run with: `apply-spawn-overlay`
+   applied here rather than inside spawn!, so a caller can preflight, log and
+   report the routed :model/:provider instead of the ones the host resolved
+   before the overlay ran. Marked :spawn/opts-routed, which spawn! honours by
+   not routing again (the marker is stripped on the way, so neither the plan nor
+   the backend sees it). OPTS come back unchanged when no contributor is
+   registered, and the returned map is safe to hand straight to spawn!."
+  [opts ling]
+  (cond-> (apply-spawn-overlay opts ling)
+    (seq (spawn-overlay-fns)) (assoc :spawn/opts-routed true)))
+
+;; The routed opts are the same map shape a spawn is handed, so the answer can
+;; go straight to spawn!; LING is only read for :cwd, :project-id and :id.
+(m/=> route-spawn-opts [:=> [:cat :map :any] :map])
 
 (defn- execute-spawn-plan!
   "Execute spawn effects: catchup enrichment, store pre-registration, strategy
