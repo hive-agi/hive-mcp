@@ -81,6 +81,25 @@
   "2-arg port (target id, message): a verdict map with :delivered."
   default-shout)
 
+(defn- default-headless-backends
+  []
+  (if-let [f (soft/resolve-soft 'hive-mcp.agent.ling.headless-registry/registered-headless)]
+    (set (f))
+    #{}))
+
+(def ^:dynamic *headless-backends*
+  "0-arg port: the set of registered headless backend ids (keywords)."
+  default-headless-backends)
+
+(defn- default-io-model
+  [mode]
+  (when-let [f (soft/resolve-soft 'hive-mcp.agent.spawn-mode-registry/io-model)]
+    (f mode)))
+
+(def ^:dynamic *io-model*
+  "1-arg port (spawn mode): the mode's registry :io-model, or nil."
+  default-io-model)
+
 ;; =============================================================================
 ;; Target resolution
 ;; =============================================================================
@@ -105,7 +124,34 @@
     (*find-ling* id)      :ling
     :else                 nil))
 
+(defn spawn-mode-of
+  "The spawn mode keyword of ling `id` from its registry row, or nil."
+  [id]
+  (let [m (:ling/spawn-mode (*find-ling* id))]
+    (cond (keyword? m) m
+          (and (string? m) (not (str/blank? m))) (keyword m)
+          :else nil)))
+
+(defn headless-mode?
+  "True when a ling of spawn mode `mode` runs a headless loop: the abstract
+   :headless, a registered headless backend id (e.g. :hive-agent), or a mode
+   whose registry io-model is a subprocess or API. A missing mode is the
+   dispatch default :claude, a terminal."
+  [mode]
+  (boolean
+   (and (keyword? mode)
+        (or (= :headless mode)
+            (contains? (*headless-backends*) mode)
+            (contains? #{:stdin-stdout :api} (*io-model* mode))))))
+
+(defn- ling-route
+  "Which ling adapter serves `op`: :headless or :terminal."
+  [{:keys [spawn-mode]}]
+  (if (headless-mode? spawn-mode) :headless :terminal))
+
 (m/=> coordinator-id? [:=> [:cat :any] :boolean])
+(m/=> spawn-mode-of [:=> [:cat :any] [:maybe :keyword]])
+(m/=> headless-mode? [:=> [:cat :any] :boolean])
 (m/=> target-kind [:=> [:cat :any] [:maybe [:enum :ling :coordinator]]])
 
 ;; =============================================================================
@@ -147,10 +193,30 @@
         (unavailable :delivery/tmux-failed (str (or (:error res) "tmux did not take the message")))))))
 
 (defn- emacs-dispatch
-  [{:keys [kind params]}]
-  (if (not= :ling kind)
+  [{:keys [kind params] :as op}]
+  (cond
+    (not= :ling kind)
     (inapplicable :emacs kind "only lings take a terminal dispatch")
-    (r/ok (*ling-dispatch* params))))
+
+    (not= :terminal (ling-route op))
+    (inapplicable :emacs kind (str "spawn mode " (pr-str (:spawn-mode op))
+                                   " is not an Emacs terminal"))
+
+    :else (r/ok (*ling-dispatch* params))))
+
+(defn- headless-ling-dispatch
+  "A headless ling: the same tools.agent.dispatch/dispatch-ling! path, which
+   queues the task into the running loop's in-JVM inbox. No Emacs involved."
+  [{:keys [kind params] :as op}]
+  (cond
+    (not= :ling kind)
+    (inapplicable :headless-ling kind "only lings run a headless loop")
+
+    (not= :headless (ling-route op))
+    (inapplicable :headless-ling kind (str "spawn mode " (pr-str (:spawn-mode op))
+                                           " is not headless"))
+
+    :else (r/ok (*ling-dispatch* params))))
 
 (defn- shout-last-resort
   [{:keys [to message]}]
@@ -177,14 +243,28 @@
     (if (running?) (r/ok :running) (unavailable :delivery/emacs-down "no Emacs daemon answers"))
     (unavailable :delivery/emacs-absent "no Emacs client")))
 
+(defn- probe-headless
+  "Healthy while at least one headless backend is registered."
+  []
+  (if (seq (*headless-backends*))
+    (r/ok :registered)
+    (unavailable :delivery/headless-absent "no headless backend is registered")))
+
+;; :serves names the lanes (target kinds) an adapter takes part in, so a
+;; coordinator delivery and a ling delivery each keep their own sticky
+;; :active instead of flipping one shared one (registry lanes).
+
 (defmethod reg/open-adapter [:delivery :nats-inbox] [_ _]
-  {:call nats-send :probe probe-nats})
+  {:call nats-send :probe probe-nats :serves #{:coordinator}})
 
 (defmethod reg/open-adapter [:delivery :tmux] [_ _]
-  {:call tmux-say :probe probe-tmux})
+  {:call tmux-say :probe probe-tmux :serves #{:coordinator}})
+
+(defmethod reg/open-adapter [:delivery :headless-ling] [_ _]
+  {:call headless-ling-dispatch :probe probe-headless :serves #{:ling}})
 
 (defmethod reg/open-adapter [:delivery :emacs] [_ _]
-  {:call emacs-dispatch :probe probe-emacs})
+  {:call emacs-dispatch :probe probe-emacs :serves #{:ling}})
 
 (defmethod reg/open-adapter [:delivery :hivemind-shout] [_ _]
   {:call shout-last-resort})
@@ -195,11 +275,14 @@
 
 (defn deliver!
   "Deliver op {:to id :message text :from id? :params dispatch-params?} through
-   the :delivery chain. An id that is neither a coordinator nor a registered
-   ling is an addressing error (:error/kind :addressing) and no adapter runs."
+   the :delivery chain, in the lane of the target's kind (:coordinator, or
+   :ling, which keeps its own sticky :active). An id that is neither a
+   coordinator nor a registered ling is an addressing error (:error/kind
+   :addressing) and no adapter runs."
   [{:keys [to] :as op}]
   (if-let [kind (target-kind to)]
-    (reg/call! :delivery (assoc op :kind kind))
+    (reg/call! :delivery (cond-> (assoc op :kind kind :lane kind)
+                           (= :ling kind) (assoc :spawn-mode (spawn-mode-of to))))
     (r/err :delivery/unknown-target
            {:error/kind :addressing
             :to         to

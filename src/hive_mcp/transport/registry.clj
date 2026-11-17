@@ -48,6 +48,7 @@
 (def Switch
   [:map
    [:port :keyword]
+   [:lane {:optional true} :keyword]
    [:from [:maybe :keyword]]
    [:to [:maybe :keyword]]
    [:reason SwitchReason]
@@ -63,6 +64,15 @@
    [:fails :int]
    [:last-err [:maybe :map]]])
 
+(def LaneView
+  "One lane of a port: its narrowed chain, its own :active adapter and the
+   health each adapter has in that lane."
+  [:map
+   [:chain [:vector :keyword]]
+   [:active [:maybe :keyword]]
+   [:resolved-by [:maybe [:enum :primary :fallback]]]
+   [:adapters [:map-of :keyword chain/AdapterStatus]]])
+
 (def PortView
   [:map
    [:chain [:vector :keyword]]
@@ -72,6 +82,7 @@
    [:probe-interval-ms :int]
    [:probe-loop? :boolean]
    [:adapters [:map-of :keyword AdapterView]]
+   [:lanes {:optional true} [:map-of :keyword LaneView]]
    [:switches [:vector Switch]]])
 
 (def Status
@@ -106,19 +117,23 @@
 (defn rebind-state
   "Carry `state` from a chain ordered `old-chain` over to `spec`: adapters
    still in the chain keep their history, new ones start :unknown, dropped
-   ones go. :active survives only when it is still in the chain and nothing
-   now ranks above it that did not before; otherwise it is cleared, so the
-   next call walks the new config order (config order is the preference)."
+   ones go. :active (the port's, and each lane's) survives only when it is
+   still in the chain and nothing now ranks above it that did not before;
+   otherwise it is cleared, so the next call walks the new config order
+   (config order is the preference)."
   [state old-chain spec]
   (let [chain-kws (:chain spec)
         fresh     (chain/init-state spec)
         kept      (select-keys (:adapters state) chain-kws)
-        active    (:active state)
-        above     (fn [ch] (set (take-while #(not= active %) ch)))
-        keep?     (and (some #(= active %) chain-kws)
-                       (every? (above old-chain) (above chain-kws)))]
-    {:active   (when keep? active)
-     :adapters (merge (:adapters fresh) kept)}))
+        above     (fn [active ch] (set (take-while #(not= active %) ch)))
+        keep      (fn [active]
+                    (when (and (some #(= active %) chain-kws)
+                               (every? (above active old-chain) (above active chain-kws)))
+                      active))
+        lanes     (into {} (map (fn [[l a]] [l (keep a)])) (:lanes state))]
+    (cond-> {:active   (keep (:active state))
+             :adapters (merge (:adapters fresh) kept)}
+      (seq lanes) (assoc :lanes lanes))))
 
 (defn switch-reason
   "Why :active moved from `from` to `to` on a chain ranked by `chain-kws`.
@@ -159,6 +174,61 @@
     :else    nil))
 
 ;; =============================================================================
+;; Lanes: one sticky :active per kind of target
+;; =============================================================================
+;;
+;; An op may name a :lane (e.g. the delivery port's target kinds). A lane walks
+;; the port's chain narrowed to the adapters that serve it (an adapter's
+;; optional :serves set; no :serves serves every lane) and keeps its OWN
+;; :active in the port state under [:lanes lane]. Adapter health stays one map
+;; per port: an adapter that is down is down for every lane. So a call for one
+;; kind of target never moves the :active another kind relies on.
+
+(defn- serves?
+  "True when adapter `a` serves `lane`. An unregistered adapter (nil) and one
+   without :serves serve every lane."
+  [a lane]
+  (let [s (:serves a)]
+    (or (nil? a) (nil? s) (contains? (set s) lane))))
+
+(defn- lane-chain
+  "The port chain narrowed to the adapters serving `lane`, config order kept."
+  [spec adapters lane]
+  (filterv #(serves? (get adapters %) lane) (:chain spec)))
+
+(defn- lane-view
+  "The ChainState a lane sees: its own :active over the port's adapter health."
+  [state lane]
+  {:active (get-in state [:lanes lane]) :adapters (:adapters state)})
+
+(defn- merge-lane
+  "Fold a lane's ChainState `v` back into the port `state`."
+  [state lane v]
+  (-> state
+      (assoc :adapters (:adapters v))
+      (assoc-in [:lanes lane] (:active v))))
+
+(defn- lane-atom
+  "An atom-like view of `lane` inside the port's `state-atom`: deref answers
+   `lane-view`, swap! applies f to it and folds the result back atomically,
+   so run-chain! and the probe drive a lane exactly as they drive a port."
+  [state-atom lane]
+  (let [apply-f (fn [f & args]
+                  (lane-view (swap! state-atom
+                                    (fn [s] (merge-lane s lane (apply f (lane-view s lane) args))))
+                             lane))]
+    (reify
+      clojure.lang.IDeref
+      (deref [_] (lane-view @state-atom lane))
+      clojure.lang.IAtom
+      (swap [_ f] (apply-f f))
+      (swap [_ f x] (apply-f f x))
+      (swap [_ f x y] (apply-f f x y))
+      (swap [_ f x y more] (apply apply-f f x y more))
+      (compareAndSet [_ _ _] (throw (UnsupportedOperationException. "lane views do not compare-and-set")))
+      (reset [_ v] (lane-view (swap! state-atom merge-lane lane v) lane)))))
+
+;; =============================================================================
 ;; Registry state
 ;; =============================================================================
 
@@ -179,8 +249,9 @@
 ;; =============================================================================
 
 (defn- switch-message
-  [{:keys [port from to reason]}]
-  (str "transport " (name port) ": " (or from "none") " -> " (or to "none")
+  [{:keys [port lane from to reason]}]
+  (str "transport " (name port) (when lane (str "[" (subs (str lane) 1) "]"))
+       ": " (or from "none") " -> " (or to "none")
        " (" (name reason) ")"))
 
 (defn- shout-switch!
@@ -188,7 +259,7 @@
   [sw]
   (when-let [shout! (requiring-resolve 'hive-mcp.hivemind.messaging/shout!)]
     (shout! "transport" :progress
-            (assoc (select-keys sw [:port :from :to :reason])
+            (assoc (select-keys sw [:port :lane :from :to :reason])
                    :message (switch-message sw)
                    :status-neutral? true))))
 
@@ -204,9 +275,11 @@
 (m/=> set-switch-sink! [:=> [:cat [:maybe ifn?]] ifn?])
 
 (defn- record-switch!
-  "Record and announce `port` moving :active from `from` to `to`."
-  [port reason from to at]
-  (let [sw {:port port :from from :to to :reason reason :at at}]
+  "Record and announce `port` (`lane` of it, when non-nil) moving :active
+   from `from` to `to`."
+  [port lane reason from to at]
+  (let [sw (cond-> {:port port :from from :to to :reason reason :at at}
+             lane (assoc :lane lane))]
     (swap! switch-log #(vec (take-last switch-log-cap (conj % sw))))
     (log/info (switch-message sw))
     (r/rescue-log "transport switch sink" nil (@switch-sink sw))
@@ -216,15 +289,18 @@
   "Run `f` (which may move `state-atom`'s :active any number of times) and
    record ONE switch when :active ends elsewhere than it started: a failover
    inside one call is a->b, not a->none->b. `reason` nil derives it from the
-   chain order. Answers what f answers."
-  [port chain-kws state-atom reason f]
-  (let [from (:active @state-atom)
-        out  (f)
-        to   (:active @state-atom)]
-    (when (not= from to)
-      (record-switch! port (or reason (switch-reason chain-kws from to))
-                      from to (System/currentTimeMillis)))
-    out))
+   chain order. `lane` names the lane whose state this is (nil: the port's
+   own). Answers what f answers."
+  ([port chain-kws state-atom reason f]
+   (tracked! port chain-kws state-atom reason f nil))
+  ([port chain-kws state-atom reason f lane]
+   (let [from (:active @state-atom)
+         out  (f)
+         to   (:active @state-atom)]
+     (when (not= from to)
+       (record-switch! port lane (or reason (switch-reason chain-kws from to))
+                       from to (System/currentTimeMillis)))
+     out)))
 
 ;; =============================================================================
 ;; Status view (pure)
@@ -244,22 +320,37 @@
 (defn port-view
   "What `transport status` shows for one port: the chain, the active adapter
    and whether it is the preferred one, each adapter's health and the age of
-   its last success, and the port's recent switches."
+   its last success, the port's recent switches, and, for a port called with
+   lanes, each lane's narrowed chain and its own active adapter."
   [spec state adapters switches loop? now]
-  (let [active (:active state)]
-    {:chain             (:chain spec)
-     :active            active
-     :resolved-by       (when active
-                          (if (= active (first (:chain spec))) :primary :fallback))
-     :sticky?           (boolean (:sticky? spec))
-     :probe-interval-ms (:probe-interval-ms spec)
-     :probe-loop?       (boolean loop?)
-     :adapters          (into {}
-                              (map (fn [k]
-                                     [k (adapter-view (get-in state [:adapters k])
-                                                      (get adapters k) now)]))
-                              (:chain spec))
-     :switches          (vec switches)}))
+  (let [active (:active state)
+        lanes  (:lanes state)]
+    (cond->
+     {:chain             (:chain spec)
+      :active            active
+      :resolved-by       (when active
+                           (if (= active (first (:chain spec))) :primary :fallback))
+      :sticky?           (boolean (:sticky? spec))
+      :probe-interval-ms (:probe-interval-ms spec)
+      :probe-loop?       (boolean loop?)
+      :adapters          (into {}
+                               (map (fn [k]
+                                      [k (adapter-view (get-in state [:adapters k])
+                                                       (get adapters k) now)]))
+                               (:chain spec))
+      :switches          (vec switches)}
+      (seq lanes)
+      (assoc :lanes
+             (into {}
+                   (map (fn [[l a]]
+                          (let [ch (lane-chain spec adapters l)]
+                            [l {:chain       ch
+                                :active      a
+                                :resolved-by (when a (if (= a (first ch)) :primary :fallback))
+                                :adapters    (into {}
+                                                   (map (fn [k] [k (get-in state [:adapters k :status] :unknown)]))
+                                                   ch)}])))
+                   lanes)))))
 
 (m/=> port-view [:=> [:cat chain/ChainSpec chain/ChainState [:map-of :keyword :map]
                       [:sequential Switch] :boolean :int]
@@ -355,12 +446,22 @@
   "Run `op` through `port`'s chain (`chain/run-chain!`): sticky active first,
    retry with backoff, fall back in config order. The Result names :via,
    :resolved-by and :skipped. An unconfigured port is an addressing error.
+   An op map carrying :lane walks only the adapters serving that lane and
+   keeps that lane's own sticky :active (see `lane-atom`), so :resolved-by
+   is relative to the head of the lane's chain.
    opts: :now-fn / :sleep-fn (tests)."
   ([port op] (call! port op nil))
   ([port op opts]
    (if-let [{:keys [spec state adapters]} (refresh-adapters! port)]
-     (tracked! port (:chain spec) state nil
-               #(chain/run-chain! spec state (update-vals adapters :call) op opts))
+     (let [lane (when (map? op) (:lane op))
+           calls (update-vals adapters :call)]
+       (if lane
+         (let [lspec (assoc spec :chain (lane-chain spec adapters lane))]
+           (tracked! port (:chain lspec) (lane-atom state lane) nil
+                     #(chain/run-chain! lspec (lane-atom state lane) calls op opts)
+                     lane))
+         (tracked! port (:chain spec) state nil
+                   #(chain/run-chain! spec state calls op opts))))
      (unknown-port port))))
 
 (m/=> call! [:function
@@ -374,31 +475,52 @@
     (catch Exception e
       (r/err :transport/probe-exception {:error/kind :unavailable :message (ex-message e)}))))
 
+(defn- probe-round!
+  "One probe round over one chain view (the port's, or one lane's): in config
+   order, every adapter ranked above :active that is due and has a :probe fn
+   is tested and folded through `chain/step`; the first success stops the
+   round. Answers {:probed [..] :active kw}."
+  [port lane spec state adapters now-fn force?]
+  (loop [todo   (chain/probe-candidates @state
+                                        (cond-> spec force? (assoc :probe-interval-ms 0))
+                                        (now-fn))
+         probed []]
+    (let [k (first todo)
+          p (get-in adapters [k :probe])]
+      (cond
+        (nil? k) {:probed probed :active (:active @state)}
+        (nil? p) (recur (rest todo) probed)
+        :else
+        (let [out (run-probe p)]
+          (tracked! port (:chain spec) state nil
+                    #(swap! state chain/step k out (now-fn))
+                    lane)
+          (if (r/ok? out)
+            {:probed (conj probed {:adapter k :ok? true}) :active (:active @state)}
+            (recur (rest todo) (conj probed {:adapter k :ok? false}))))))))
+
 (defn probe-port!
   "Probe `port` once: in config order, every adapter ranked above :active
    that is due (`chain/probe-candidates`) and has a :probe fn is tested, each
    outcome folded through `chain/step`. The first success stops the round and,
    being ranked above :active, takes over (law 4). Adapters without a :probe
-   are not probed. Answers {:port :probed [{:adapter :ok?}] :active}."
+   are not probed. A port called with lanes is probed once per lane, on the
+   lane's narrowed chain and against the lane's own :active, so an adapter
+   degraded in any lane gets its recovery probe. Answers {:port :probed
+   [{:adapter :ok?}] :active}."
   ([port] (probe-port! port nil))
   ([port {:keys [now-fn force?] :or {now-fn #(System/currentTimeMillis)}}]
    (if-let [{:keys [spec state adapters]} (refresh-adapters! port)]
-     (loop [todo   (chain/probe-candidates @state
-                                           (cond-> spec force? (assoc :probe-interval-ms 0))
-                                           (now-fn))
-            probed []]
-       (let [k (first todo)
-             p (get-in adapters [k :probe])]
-         (cond
-           (nil? k) {:port port :probed probed :active (:active @state)}
-           (nil? p) (recur (rest todo) probed)
-           :else
-           (let [out (run-probe p)]
-             (tracked! port (:chain spec) state nil
-                       #(swap! state chain/step k out (now-fn)))
-             (if (r/ok? out)
-               {:port port :probed (conj probed {:adapter k :ok? true}) :active (:active @state)}
-               (recur (rest todo) (conj probed {:adapter k :ok? false})))))))
+     (let [lanes (keys (:lanes @state))]
+       (if (seq lanes)
+         {:port   port
+          :probed (into [] (mapcat (fn [l]
+                                     (:probed (probe-round! port l
+                                                            (assoc spec :chain (lane-chain spec adapters l))
+                                                            (lane-atom state l) adapters now-fn force?))))
+                        lanes)
+          :active (:active @state)}
+         (assoc (probe-round! port nil spec state adapters now-fn force?) :port port)))
      {:port port :probed [] :active nil})))
 
 (def ^:private ProbeReport

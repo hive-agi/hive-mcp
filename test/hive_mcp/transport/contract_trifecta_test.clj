@@ -51,8 +51,8 @@
 
 (deftest transport-gate-is-not-vacuous
   (let [r (coverage/coverage {:paths ["src/hive_mcp/transport"]})]
-    (is (= 109 (count (:universe r))))
-    (is (= 109 (count (:covered r))))))
+    (is (= 111 (count (:universe r))))
+    (is (= 111 (count (:covered r))))))
 
 (deftest swarm-gate-covers-task-dispatch
   (let [r (coverage/coverage {:paths ["src/hive_mcp/scheduler/task_dispatch.clj"]})]

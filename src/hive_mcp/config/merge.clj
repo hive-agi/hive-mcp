@@ -28,7 +28,7 @@
   {:defaults   {:retry             {:attempts 3 :backoff-ms [200 1000 5000]}
                 :probe-interval-ms 30000
                 :sticky?           true}
-   :delivery   {:chain [:nats-inbox :tmux :emacs :hivemind-shout]}
+   :delivery   {:chain [:nats-inbox :tmux :headless-ling :emacs :hivemind-shout]}
    :events     {:chain [:nats :local-channel]
                 :retry {:attempts 1 :backoff-ms [0]}
                 :probe-interval-ms 5000}
