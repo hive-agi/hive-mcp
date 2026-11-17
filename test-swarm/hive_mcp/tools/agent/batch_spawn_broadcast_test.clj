@@ -132,6 +132,85 @@
               (is (not (:isError resp)) (:text resp))
               (is (= 2 (count (hb/calls-of b :spawn!)))))))))))
 
+(defn- heap-reading-per-spawn
+  "An :agent/heap-probe stub: the Nth reading answers the Nth level of
+   `levels`, and the last level stands for every reading after it. The
+   decision stays heap-admission's (kill switch, watermarks, only :hard
+   refuses); only the heap figure is stubbed."
+  [levels]
+  (let [n (atom -1)]
+    (fn [_watermarks]
+      (let [level (nth levels (min (swap! n inc) (dec (count levels))))
+            pct   ({:ok 40 :soft 85 :hard 95} level)]
+        {:level level :basis :post-gc :heap-pct pct :now-pct pct :post-gc-pct pct
+         :pool "G1 Old Gen"}))))
+
+(defn- batch-rows
+  "The per-operation spawn bodies of a batch-spawn response, in op order."
+  [resp]
+  (mapv (fn [{:keys [result]}]
+          (json/read-str (:text (if (sequential? result) (first result) result))
+                         :key-fn keyword))
+        (:results (json/read-str (:text resp) :key-fn keyword))))
+
+(deftest a-soft-heap-reading-admits-every-member-of-a-batch
+  ;; friction 20261111145728-573b7979: the soft watermark warns, it no longer
+  ;; refuses. Every member reads :soft and every member spawns.
+  (let [b (hb/->backend :test-headless)]
+    (hb/with-backend :test-headless b
+      (with-extension :agent/heap-probe (heap-reading-per-spawn [:soft])
+        (fn []
+          (let [resp (agent/handle-agent
+                      {:command "batch-spawn" :_caller_id caller
+                       :operations [(assoc base :name "soft-1")
+                                    (assoc base :name "soft-2")
+                                    (assoc base :name "soft-3")]})
+                rows (batch-rows resp)]
+            (is (not (:isError resp)) (:text resp))
+            (is (= 3 (count (hb/calls-of b :spawn!))) "every member reached the backend")
+            (is (every? :success rows) (pr-str rows))
+            (is (not-any? :refused rows) (pr-str rows))))))))
+
+(deftest a-hard-watermark-crossed-mid-batch-refuses-the-later-members
+  ;; kanban 20261014203049-18f1d5f2 (COV-OPS-heap): heap admission must be
+  ;; re-read on EVERY spawn of a batch, not once per batch.
+  ;;
+  ;; Deliberately NO :bx/j override here. The wave executor then defaults to
+  ;; `mapv` (batch.clj execute-wave), so op N has finished spawning before op
+  ;; N+1 reads the heap. Under the concurrent :bx/j of the tests above, every
+  ;; op could read before any other has spawned, so a stub keyed on reading
+  ;; count would pass or fail on thread scheduling. Sequential is what makes
+  ;; "crossed after op 2" a fact rather than a race.
+  ;;
+  ;; Op 1 reads :ok, op 2 :soft (admitted), then the heap reads :hard for op 3
+  ;; and every later op.
+  (let [b (hb/->backend :test-headless)]
+    (hb/with-backend :test-headless b
+      (with-extension :agent/heap-probe (heap-reading-per-spawn [:ok :soft :hard])
+        (fn []
+          (let [resp (agent/handle-agent
+                      {:command "batch-spawn" :_caller_id caller
+                       :operations [(assoc base :name "heap-1")
+                                    (assoc base :name "heap-2")
+                                    (assoc base :name "heap-3")
+                                    (assoc base :name "heap-4")]})
+                rows (batch-rows resp)]
+            (is (not (:isError resp)) (:text resp))
+            (testing "the members read below the hard watermark spawned"
+              (is (every? :success (take 2 rows)) (pr-str (take 2 rows)))
+              (is (= 2 (count (hb/calls-of b :spawn!))) "only ops 1 and 2 reached the backend"))
+            (testing "the later members were refused on the freshly re-read heap"
+              (doseq [r (drop 2 rows)]
+                (is (false? (:success r)) (pr-str r))
+                (is (true? (:refused r)) (pr-str r))
+                (is (not (contains? r :deferred)) (pr-str r))
+                (is (false? (:brief_kept r)) (pr-str r))
+                (is (= {:reason "heap-pressure" :level "hard" :basis "post-gc"
+                        :heap_post_gc_pct 95 :heap_now_pct 95}
+                       (select-keys r [:reason :level :basis :heap_post_gc_pct
+                                       :heap_now_pct]))
+                    (pr-str r))))))))))
+
 (deftest with-no-gate-contributed-core-spawns-as-before
   (let [b (hb/->backend :test-headless)]
     (hb/with-backend :test-headless b

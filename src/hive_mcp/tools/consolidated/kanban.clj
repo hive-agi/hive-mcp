@@ -7,11 +7,14 @@
    hive-spi.catchup.registry. An addon that owns the board does the same at
    its initialize! and replaces both."
   (:require [clojure.tools.logging :as log]
+            [hive-mcp.extensions.registry :as ext]
             [hive-mcp.tools.cli :refer [make-cli-handler make-batch-handler]]
+            [hive-mcp.tools.core :refer [mcp-error mcp-json]]
             [hive-mcp.tools.kanban.catchup-block :as catchup-block]
             [hive-mcp.tools.kanban.port :as port]
             [hive-mcp.tools.memory-kanban :as mem-kanban]
-            [hive-mcp.plan.tool :as plan-tool]))
+            [hive-mcp.plan.tool :as plan-tool])
+  (:import [java.time Instant]))
 
 (port/register!)
 (catchup-block/register!)
@@ -89,6 +92,102 @@
   (let [inner (make-batch-handler batch-allowed-handlers)]
     (inner (assoc params :operations (with-default-command operations "retag")))))
 
+;; =============================================================================
+;; Timeline / evolution — thin, var-backed forwarders onto the hive-knowledge
+;; extensions (:tl/timeline, :tl/evolution).
+;;
+;; The read model lives in the addon; this side owns only what a caller sees:
+;; the parameter shape, the compact row projection and the one error a
+;; caller can act on (the extension is not mounted). Both handlers re-resolve
+;; the extension per call, so mounting or evicting the addon is picked up
+;; without a reload.
+;; =============================================================================
+
+(def ^:private timeline-unavailable
+  "timeline and evolution are provided by the hive-knowledge addon; it is not mounted.")
+
+(defn- extension
+  "The registered extension fn under `k`, or nil."
+  [k]
+  (try (ext/get-extension k) (catch Throwable _ nil)))
+
+(defn- iso
+  "Epoch ms -> ISO-8601 UTC, or nil."
+  [ms]
+  (when (integer? ms)
+    (str (Instant/ofEpochMilli (long ms)))))
+
+(defn- compact-event
+  "One timeline event, projected: instants as ISO text, keywords as names,
+   absent sides dropped."
+  [{:keys [at kind from to source]}]
+  (cond-> {:at (iso at) :kind (name kind)}
+    from   (assoc :from (name from))
+    to     (assoc :to (name to))
+    source (assoc :source (name source))))
+
+(defn- compact-timeline
+  "A schema/Timeline as the caller sees it: the task identity, the ordered
+   events and the derived metrics. The title is kept — a timeline with no
+   title is unreadable — the scope is not (the caller named it)."
+  [{:keys [task events derived]}]
+  {:id          (:id task)
+   :title       (:title task)
+   :status      (some-> (:status task) name)
+   :events      (mapv compact-event events)
+   :lead_time_ms      (:lead-time-ms derived)
+   :cycle_time_ms     (:cycle-time-ms derived)
+   :reopened          (:reopened? derived)
+   :touches           (:touches derived)})
+
+(defn- compact-evolution
+  "A schema/Evolution as the caller sees it: scope, window, totals and the
+   non-empty months. A dense all-zero month is noise over six months."
+  [{:keys [scope from to tasks months totals]}]
+  {:scope  (if (set? scope) (vec (sort scope)) scope)
+   :from   from
+   :to     to
+   :tasks  tasks
+   :totals totals
+   :months (into [] (remove #(every? zero? ((juxt :created :started :done) %))) months)})
+
+(defn- forward
+  "Call extension `k` with `params`; an absent extension, a refusal
+   ({:error kw :message s}) and a throw all become one MCP error."
+  [k params compact]
+  (if-let [f (extension k)]
+    (let [result (try (f params)
+                      (catch Throwable t
+                        {:error :tl/failed :message (or (ex-message t) (str (class t)))}))]
+      (if (:error result)
+        (mcp-error (str "kanban " (name k) ": " (str (:error result)) " — " (:message result)))
+        (mcp-json (compact result))))
+    (mcp-error timeline-unavailable)))
+
+(defn- handle-kanban-timeline
+  "[timeline] One task's history: created/started/moved/done/deleted/archived
+   events with their source, plus lead and cycle time. Points at the
+   hive-knowledge :tl/timeline extension."
+  [params]
+  (forward :tl/timeline
+           (cond-> {:task_id (:task_id params)}
+             (some? (:dedupe_window_ms params))
+             (assoc :dedupe-window-ms (:dedupe_window_ms params)))
+           compact-timeline))
+
+(defn- handle-kanban-evolution
+  "[evolution] A scope's per-month created/started/done histogram over a
+   window (from/to as YYYY-MM, or window like \"6m\"). Points at the
+   hive-knowledge :tl/evolution extension."
+  [params]
+  (forward :tl/evolution
+           {:project_id (:project_id params)
+            :from       (:from params)
+            :to         (:to params)
+            :window     (:window params)
+            :zone       (:zone params)}
+           compact-evolution))
+
 (def ^:private canonical-handlers
   "The `kanban` verbs, stored as VARS so a reload reaches this table
    (20260817195749-0d407e9c). The deprecated aliases below read their target
@@ -105,8 +204,12 @@
                        (handle-batch-update params)
                        (mem-kanban/handle-mem-kanban-move params)))
    :delete         #'mem-kanban/handle-mem-kanban-delete
+   :history        #'mem-kanban/handle-mem-kanban-history
+   :restore        #'mem-kanban/handle-mem-kanban-restore
    :status         #'mem-kanban/handle-mem-kanban-stats
    :retag          #'mem-kanban/handle-mem-kanban-retag
+   :timeline       #'handle-kanban-timeline
+   :evolution      #'handle-kanban-evolution
    :sync           (fn [_] {:success true :message "Memory kanban is single-backend, no sync needed"})
    :plan-to-kanban #'plan-tool/handle-plan-to-kanban
    :plan-schema    #'plan-tool/handle-plan-schema
@@ -146,19 +249,21 @@
 (def tool-def
   {:name "kanban"
    :consolidated true
-   :description "Kanban task management: list (all/filtered tasks), get (single task/entry by id — unified across the kanban store AND the default memory store, since they are separate backends; surfaces full fields + KG edges; on miss returns semantic-search suggestions), create (new task), update (move status via new_status and/or edit title/description/priority in place; both in one call move first, then edit), delete (hard-remove task by id; no archival, no completion — use for duplicates/cancellations), retag (scope-move via project_id + optional ±tags; preserves entry id + KG edges, no re-embed), status (board overview + milestones), sync (backends), plan-to-kanban (convert plan to tasks, supports plan_id or plan_path), plan-schema (the plan-memory EDN contract: JSON-schema + example + how-to, so a type=plan memory can be authored without reading source), batch-update (bulk status changes; per-op :command respected — pass :command \"delete\" inside an op to mix delete in), batch-delete (sweep many task_ids; mirror of batch-update), batch-retag (sweep many scope-moves). Aliases (deprecated): move→update, roadmap→status, my-tasks→list. Use command='help' to list all. HCR: a list shows its own scope + ANCESTORS (parent tasks, always — 'child sees parent'); include_descendants=true (default) also aggregates DESCENDANT (child) project tasks; scope=\"all\" lifts the project filter entirely for a cross-workspace whole-board view. List filters: query (substring), tags (extra required tags), tag_match (any|all), created_after / updated_after (ISO-8601), limit / offset (pagination), fields (projection). Session todos: cards tagged session-todo (an agent's private todo_write step list) are HIDDEN by default from list, status and the catchup kanban block; opt in with include_session_todos=true or by naming the session-todo tag in tags."
-   :inputSchema {:type "object"
+   :description "Kanban task management: list (all/filtered tasks), get (single task/entry by id — unified across the kanban store AND the default memory store, since they are separate backends; surfaces full fields + KG edges; on miss returns semantic-search suggestions), create (new task), update (move status via new_status and/or edit title/description/priority in place; both in one call move first, then edit; a replaced description is kept in the card's description-history, append_description adds a note instead of replacing), history (a task's earlier descriptions, numbered rev 1.. oldest first, with replaced-at and agent), restore (put revision rev from history back as the description; the replaced text joins the history), delete (hard-remove task by id; no archival, no completion — use for duplicates/cancellations), retag (scope-move via project_id + optional ±tags; preserves entry id + KG edges, no re-embed), status (board overview + milestones), sync (backends), plan-to-kanban (convert plan to tasks, supports plan_id or plan_path; plan_id must name a type=plan memory, an already-converted active plan answers already-converted, force re-converts a spent one), plan-schema (the plan-memory EDN contract: JSON-schema + example + how-to, so a type=plan memory can be authored without reading source), batch-update (bulk status changes; per-op :command respected — pass :command \"delete\" inside an op to mix delete in), batch-delete (sweep many task_ids; mirror of batch-update), batch-retag (sweep many scope-moves). Aliases (deprecated): move→update, roadmap→status, my-tasks→list. Use command='help' to list all. HCR: a list shows its own scope + ANCESTORS (parent tasks, always — 'child sees parent'); include_descendants=true (default) also aggregates DESCENDANT (child) project tasks; scope=\"all\" lifts the project filter entirely for a cross-workspace whole-board view. List filters: query (substring), tags (extra required tags), tag_match (any|all), created_after / updated_after (ISO-8601), limit / offset (pagination), fields (projection). Session todos: cards tagged session-todo (an agent's private todo_write step list) are HIDDEN by default from list, status and the catchup kanban block; opt in with include_session_todos=true or by naming the session-todo tag in tags. timeline (ONE task's history: created/started/moved/done/deleted/archived events with their source, plus lead and cycle time; task_id), evolution (a scope's per-month created/started/done histogram over a window; project_id + from/to as YYYY-MM or window like \"6m\"). Both come from the hive-knowledge addon and error when it is not mounted."   :inputSchema {:type "object"
                  :properties {"command" {:type "string"
-                                         :enum ["list" "get" "create" "move" "status" "update" "delete" "retag" "roadmap" "my-tasks" "sync" "plan-to-kanban" "plan-schema" "batch-update" "batch-delete" "batch-create" "batch-retag" "help"]
+                                         :enum ["list" "get" "create" "move" "status" "update" "delete" "history" "restore" "retag" "roadmap" "my-tasks" "sync" "plan-to-kanban" "plan-schema" "batch-update" "batch-delete" "batch-create" "batch-retag" "timeline" "evolution" "help"]
                                          :description "Kanban operation to perform"}
                               "status" {:type "string"
                                         :enum ["todo" "inprogress" "inreview" "done"]
                                         :description "Filter by task status"}
                               "title" {:type "string"
                                        :description "[create|update] Task title. On update a non-blank value replaces the current title in place — entry id, KG edges, status and scope are preserved."}
+                              "steal_claim" {:type "boolean"
+                                             :description "[update] A move to inprogress claims the card for you (owner + since on the card); a card another live agent or coordinator claims is refused, naming the holder. true takes it over. todo/done clear the claim."}
                               "description" {:type "string"
-                                             :description "[create|update] Task description. On update a non-blank value replaces the current description in place."}
-                              "append_description" {:type "string" :description "[update] Append text to the existing description; description replaces it."}
+                                             :description "[create|update] Task description. On update a non-blank value replaces the current description; the old text is kept in the card's description-history (see history/restore). To add a note, use append_description."}
+                              "append_description" {:type "string" :description "[update] Append text to the existing description after a blank line, without replacing it. Applied after description when both are given."}
+                              "rev" {:type "integer" :description "[restore] Revision number from `history` (1 = oldest) to put back as the description"}
                               "task_id" {:type "string"
                                          :description "Task ID to get/move/update/retag/delete"}
                               "id" {:type "string"
@@ -176,6 +281,8 @@
                                          :description "Memory entry ID containing the plan (for plan-to-kanban). Call command='plan-schema' for the plan EDN contract (schema + example + how-to)."}
                               "plan_path" {:type "string"
                                            :description "File path to a plan file (alternative to plan_id for plan-to-kanban). Slurps file content directly — zero-token plan loading for large plans."}
+                              "force" {:type "boolean"
+                                       :description "[plan-to-kanban] Convert even when the plan is done: a plan that is completed or superseded refuses without it, and an ACTIVE plan with task ids answers {already-converted true} with the ids it already has instead of posting a duplicate board. A plan_path has no entry to remember, so it converts every time."}
                               "operations" {:type "array"
                                             :items {:type "object"
                                                     :properties {"command"        {:type "string"
@@ -189,6 +296,7 @@
                                                                  "remove_tags"    {:type "array" :items {:type "string"}}
                                                                  "title"          {:type "string"}
                                                                  "description"    {:type "string"}
+                                                                 "append_description" {:type "string"}
                                                                  "priority"       {:type "string"
                                                                                    :enum ["high" "medium" "low"]}}}
                                             :description "Array of operations for batch-update / batch-delete / batch-create / batch-retag. Each op may specify :command to mix verbs in one batch; otherwise the wrapper's default applies."}
@@ -226,7 +334,17 @@
                               "fields" {:type "array" :items {:type "string"}
                                         :description "[list] Project each result to a subset of fields (e.g. ['id' 'title'])"}
                               "parallel" {:type "boolean"
-                                          :description "Run batch operations in parallel (default: false)"}}
+                                          :description "Run batch operations in parallel (default: false)"}
+                              "dedupe_window_ms" {:type "integer"
+                                                  :description "[timeline] Collapse consecutive same-kind events this many ms apart (default 120000). 0 keeps every event."}
+                              "from" {:type "string"
+                                      :description "[evolution] First month of the window, YYYY-MM (inclusive). Omit to let `window` decide."}
+                              "to" {:type "string"
+                                    :description "[evolution] Last month of the window, YYYY-MM (inclusive). Omit to end at the current month."}
+                              "window" {:type "string"
+                                        :description "[evolution] Window BACK FROM NOW instead of from/to, e.g. \"6m\", \"30d\", \"2w\", \"1y\"."}
+                              "zone" {:type "string"
+                                      :description "[evolution] IANA zone the months are bucketed in (default UTC)."}}
                  :required ["command"]}
    :handler #'handle-kanban})
 

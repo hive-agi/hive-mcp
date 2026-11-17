@@ -144,7 +144,12 @@
   "The optional opts map of record-co-access!."
   [:maybe [:map
            [:scope {:optional true} Scope]
-           [:created-by {:optional true} [:maybe :string]]]])
+           [:created-by {:optional true} [:maybe :string]]
+           [:max-degree {:optional true} nat-int?]]])
+
+(def DegreeMap
+  "Node id -> :co-accessed edge count, as record-co-access! tallies it."
+  [:map-of :string nat-int?])
 
 (def AllEdgesOpts
   "The opts map of get-all-edges."

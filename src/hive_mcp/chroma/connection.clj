@@ -2,6 +2,8 @@
   "Chroma connection configuration, collection management, and health status."
   (:require [hive-mcp.chroma.client :as chroma]
             [hive-mcp.embeddings.active :as emb]
+            [hive-mcp.embeddings.service :as embedding-service]
+            [hive-mcp.embeddings.space :as space]
             [taoensso.timbre :as log] [hive-dsl.result :refer [rescue]]
             [malli.core :as m]))
 
@@ -60,13 +62,16 @@
   (rescue nil (deref (chroma/get-collection coll-name) 10000 nil)))
 
 (defn- create-new-collection
-  "Create a new Chroma collection with dimension metadata."
-  [coll-name dim]
-  (let [result (deref (chroma/create-collection coll-name {:metadata {:dimension dim :created-by "hive-mcp"}})
-                      15000 ::timeout)]
-    (when (= result ::timeout)
-      (throw (ex-info "Chroma create-collection timed out" {:collection coll-name})))
-    result))
+  "Create a new Chroma collection with dimension metadata, plus the embedding
+   space `stamp` (space/space->metadata) when the caller can name one."
+  ([coll-name dim] (create-new-collection coll-name dim nil))
+  ([coll-name dim stamp]
+   (let [result (deref (chroma/create-collection
+                        coll-name {:metadata (merge {:dimension dim :created-by "hive-mcp"} stamp)})
+                       15000 ::timeout)]
+     (when (= result ::timeout)
+       (throw (ex-info "Chroma create-collection timed out" {:collection coll-name})))
+     result)))
 
 (defn- cache-collection!
   "Cache and return collection, logging action."
@@ -75,39 +80,88 @@
   (log/info log-msg)
   coll)
 
-(defn get-or-create-collection
-  "Get existing collection or create new one."
-  []
-  (or @collection-cache
-      (let [coll-name (:collection-name @config)
-            _ (emb/require-embedding!)
-            dim (emb/embedding-dimension (emb/get-embedding-provider))]
-        (if-let [existing (try-get-collection coll-name)]
-          (cache-collection! existing (str "Using existing Chroma collection: " coll-name))
-          (cache-collection! (create-new-collection coll-name dim)
-                             (str "Created Chroma collection: " coll-name " dimension: " dim))))))
-
-(m/=> get-or-create-collection [:=> [:cat] chroma/Coll])
-
 (defonce ^:private named-collection-cache (atom {}))
+
+(def metric
+  "Distance Chroma scores a collection with when no hnsw:space is given."
+  :l2)
+
+(defonce ^:private legacy-warned (atom #{}))
+
+(declare admit-space!)
+
+(defn get-or-create-collection
+  "Get the default (unnamed) collection or create it. A new one is stamped
+   with the global provider's space when that space can be named.
+
+   With `space` (an EmbeddingSpace) the collection must hold it, as in
+   `get-or-create-named-collection`: a stamped collection of another space
+   throws ex-info :embedding-space-mismatch, an unstamped (legacy) one is
+   admitted with a warning. No argument, or a nil `space`, skips the guard."
+  ([] (get-or-create-collection nil))
+  ([space]
+   (let [coll-name (:collection-name @config)
+         coll (or @collection-cache
+                  (let [_ (emb/require-embedding!)
+                        dim (emb/embedding-dimension (emb/get-embedding-provider))]
+                    (if-let [existing (try-get-collection coll-name)]
+                      (cache-collection! existing (str "Using existing Chroma collection: " coll-name))
+                      (cache-collection!
+                       (create-new-collection
+                        coll-name dim
+                        (some-> (or space (embedding-service/default-space {:metric metric}))
+                                space/space->metadata))
+                       (str "Created Chroma collection: " coll-name " dimension: " dim)))))]
+     (if space (admit-space! coll-name coll space) coll))))
+
+(m/=> get-or-create-collection
+      [:function
+       [:=> [:cat] chroma/Coll]
+       [:=> [:cat [:maybe space/EmbeddingSpace]] chroma/Coll]])
+
+(defn- admit-space!
+  "Guard `coll` (named `coll-name`) for vectors of `space`. A stamped
+   collection of another space throws :embedding-space-mismatch; an unstamped
+   one is legacy: admitted, with one warning per collection per process."
+  [coll-name coll space]
+  (let [{:keys [verdict space-id]} (space/admit coll-name space (when (map? coll) (:metadata coll)))]
+    (when (and (= :legacy verdict) (not (contains? @legacy-warned coll-name)))
+      (swap! legacy-warned conj coll-name)
+      (log/warn "Embedding space unrecorded for legacy collection" coll-name
+                "- admitting vectors of space" space-id
+                "unverified; isolate or re-embed to stamp it"))
+    coll))
 
 (defn get-or-create-named-collection
   "Get or create a named collection with explicit dimension.
-   Caches per collection-name. Used by type-based embedder routing."
-  [coll-name dimension]
-  (or (get @named-collection-cache coll-name)
-      (let [coll (or (try-get-collection coll-name)
-                     (create-new-collection coll-name dimension))]
-        (swap! named-collection-cache assoc coll-name coll)
-        (log/info "Named collection ready:" coll-name "dimension:" dimension)
-        coll)))
+   Caches per collection-name. Used by type-based embedder routing.
 
-(m/=> get-or-create-named-collection [:=> [:cat :string pos-int?] chroma/Coll])
+   With `space` (an EmbeddingSpace) a new collection is stamped with it, and
+   an existing one must hold it: a stamped collection of another space throws
+   ex-info :embedding-space-mismatch, so vectors of two spaces never share a
+   collection; an unstamped (legacy) collection is admitted with a warning.
+   A nil `space` (provider without a nameable space) skips the guard."
+  ([coll-name dimension] (get-or-create-named-collection coll-name dimension nil))
+  ([coll-name dimension space]
+   (let [coll (or (get @named-collection-cache coll-name)
+                  (let [coll (or (try-get-collection coll-name)
+                                 (create-new-collection coll-name dimension
+                                                        (some-> space space/space->metadata)))]
+                    (swap! named-collection-cache assoc coll-name coll)
+                    (log/info "Named collection ready:" coll-name "dimension:" dimension)
+                    coll))]
+     (if space (admit-space! coll-name coll space) coll))))
+
+(m/=> get-or-create-named-collection
+      [:function
+       [:=> [:cat :string pos-int?] chroma/Coll]
+       [:=> [:cat :string pos-int? [:maybe space/EmbeddingSpace]] chroma/Coll]])
 
 (defn reset-collection-cache!
   "Reset the collection cache (for testing/reconnection)."
   []
   (reset! collection-cache nil)
+  (reset! legacy-warned #{})
   (reset! named-collection-cache {}))
 
 (m/=> reset-collection-cache! [:=> [:cat] [:map-of {:max 0} :any :any]])
@@ -135,6 +189,21 @@
         false))))
 
 (m/=> chroma-available? [:=> [:cat] [:maybe :boolean]])
+
+(defn provider-spec
+  "Build the embedding space spec for a provider, including its resolved host
+   when present. Return nil when the provider has no configured model."
+  [provider-type model provider]
+  (when model
+    (cond-> {:impl provider-type :model (str model)}
+      (:host provider) (assoc :host (str (:host provider))))))
+
+(m/=> provider-spec
+      [:=> [:cat :keyword :any [:maybe [:map [:host {:optional true} :any]]]]
+       [:maybe [:map
+                [:impl :keyword]
+                [:model :string]
+                [:host {:optional true} :string]]]])
 
 (defn reinitialize-embeddings!
   "Fix hot-reload protocol mismatch by reloading namespaces and reinitializing."
@@ -167,7 +236,8 @@
                    :ollama ((resolve 'hive-mcp.embeddings.ollama/->provider) opts)
                    :openai ((resolve 'hive-mcp.embeddings.openai/->provider) opts)
                    :openrouter ((resolve 'hive-mcp.embeddings.openrouter/->provider) opts))]
-    (emb/set-embedding-provider! provider)
+    (emb/set-embedding-provider! provider
+                                 (provider-spec provider-type (:model opts) provider))
 
     (let [fixed? (satisfies? emb/EmbeddingProvider provider)]
       (if fixed?

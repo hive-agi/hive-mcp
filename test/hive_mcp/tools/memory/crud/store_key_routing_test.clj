@@ -12,6 +12,7 @@
             [hive-mcp.crystal.recall]
             [hive-mcp.knowledge-graph.connection]
             [hive-mcp.protocols.memory :as proto]
+            [hive-mcp.test-support.registry-isolation :as isolation]
             [hive-mcp.tools.memory.crud.write :as wr]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
@@ -44,19 +45,18 @@
     (store-status   [_] {:slot slot-tag})
     (reset-store!   [_] nil)))
 
-(use-fixtures :each
-  (fn [f]
-    (let [snapshot (proto/registered-stores)]
+(defn- with-routing-slots
+  "Clear :default and :kanban for F. Refuses a running addon server before any
+   slot is touched and restores the exact prior slot map in one atomic swap,
+   instead of unregistering and re-registering slot by slot."
+  [f]
+  (isolation/with-restored-store-registry
+    (fn []
       (proto/unregister-store! :default)
       (proto/unregister-store! :kanban)
-      (try
-        (f)
-        (finally
-          (proto/unregister-store! :default)
-          (proto/unregister-store! :kanban)
-          (doseq [[k store] snapshot]
-            (when (#{:default :kanban} k)
-              (proto/register-store! k store))))))))
+      (f))))
+
+(use-fixtures :each with-routing-slots)
 
 (deftest do-add-default-store-key-routes-to-default-slot
   (let [lookups (atom {})]

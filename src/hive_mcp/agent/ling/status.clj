@@ -1,7 +1,8 @@
 (ns hive-mcp.agent.ling.status
   "Status/query operations for Ling agents: lookups from DataScript and
    interrupt. Split from `hive-mcp.agent.ling` (hotspot #20)."
-  (:require [hive-mcp.agent.ling.lifecycle :as lifecycle]
+  (:require [hive-mcp.agent.grant :as grant]
+            [hive-mcp.agent.ling.lifecycle :as lifecycle]
             [hive-mcp.agent.ling.spawn :as spawn]
             [hive-mcp.agent.ling.strategy :as strategy]
             [hive-mcp.swarm.datascript.queries :as ds-queries]
@@ -25,7 +26,7 @@
                  (ds-queries/get-slaves-by-project project-id)
                  (ds-queries/get-all-slaves))]
     (->> slaves
-         (filter #(= 1 (:slave/depth %)))
+         (filter grant/ling-row?)
          (map #(spawn/->ling (:slave/id %) (spawn/slave->ling-opts %))))))
 
 (m/=> list-lings [:=> [:cat [:? [:maybe :string]]] [:sequential spawn/LingValue]])

@@ -45,8 +45,12 @@
   3. Environment variables (OLLAMA_HOST, OPENROUTER_API_KEY, etc.) as fallback
   4. Built-in endpoint defaults (hosts only). Embedding models have no default:
      embeddings.ollama.model / embeddings.openrouter.model must be set, and a
-     missing one is logged as an error naming the key."
-  []
+     missing one is logged as an error naming the key.
+
+  Optional opts :ollama-provider-fn is the provider-factory seam for the
+  global fallback (default `ollama/->provider`, whose constructor probes
+  <host>/api/tags over HTTP)."
+  [& [{:keys [ollama-provider-fn] :or {ollama-provider-fn ollama/->provider}}]]
   (result/rescue-log "init-embedding-provider!" false
     ;; Load global config to get :embeddings section
                  (let [cfg (global-config/get-global-config)
@@ -115,7 +119,8 @@
 
         ;; Global fallback provider (Ollama), only with a configured model
                      (when ollama-model
-                       (chroma/set-embedding-provider! (ollama/->provider {:host ollama-host :model ollama-model}))
+                       (chroma/set-embedding-provider! (ollama-provider-fn {:host ollama-host :model ollama-model})
+                                                       {:impl :ollama :host ollama-host :model (str ollama-model)})
                        (log/info "Global fallback embedding provider: Ollama at" ollama-host))
 
                      (log/info "Embedding config from config.edn:" {:ollama-host ollama-host
@@ -125,4 +130,5 @@
                      true))))
 
 ;; rescue-log answers false on any failure; success answers true.
-(m/=> init-embedding-provider! [:=> [:cat] :boolean])
+(m/=> init-embedding-provider!
+      [:=> [:cat [:? [:map [:ollama-provider-fn {:optional true} ifn?]]]] :boolean])

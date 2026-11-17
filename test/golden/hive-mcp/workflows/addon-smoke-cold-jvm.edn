@@ -8,6 +8,6 @@
   :unresolved [],
   :missing-methods [:dag-wave :forge-belt :saa]},
  :report-prefix "FAIL:",
- :ir-seam :throws-file-not-found,
+ :ir-seam {:ok? false, :ir-loadable? false},
  :required ["hive.workflows.progress" "hive.workflows.strategy"],
  :methods [:dag-wave :forge-belt :saa]}

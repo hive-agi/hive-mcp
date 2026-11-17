@@ -6,8 +6,11 @@
             [clojure.core.async :as async :refer [go-loop <!]]
             [clojure.data.json :as json]
             [taoensso.timbre :as log] [hive-dsl.result :refer [rescue]]
-            [malli.core :as m])
-  (:import [java.io File]))
+            [malli.core :as m]
+            [hive-mcp.transport.origin :as origin]
+            [hive-mcp.transport.exposure :as exposure])
+  (:import [java.io File]
+           [java.net InetSocketAddress]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -76,14 +79,20 @@
       socket)))
 
 ;; Public API
-(defn start-server! [{:keys [port project-dir input-ch output-ch]}]
-  (let [handler (ws-handler input-ch output-ch)
-        server (http/start-server handler {:port (or port 0)})
+(defn start-server!
+  "Start the WebSocket MCP server on :host (loopback when nil) and :port (any
+   free port when nil or 0). An upgrade whose Origin is not loopback answers
+   403. Writes the Claude IDE lockfile for the bound port and returns that
+   port; a bind failure throws."
+  [{:keys [host port project-dir input-ch output-ch]}]
+  (let [handler (origin/wrap-loopback-origin (ws-handler input-ch output-ch))
+        addr (InetSocketAddress. ^String (or host exposure/loopback) (int (or port 0)))
+        server (http/start-server handler {:socket-address addr})
         actual-port (netty/port server)]
     (create-lockfile! actual-port project-dir)
     (register-shutdown-hook! actual-port)
     (reset! server-atom {:server server :port actual-port})
-    (log/info "WebSocket server started on port" actual-port)
+    (log/info "WebSocket server started on" (or host exposure/loopback) "port" actual-port)
     actual-port))
 
 (def Chan
@@ -94,6 +103,7 @@
 ;; Answers the port actually bound; a bind failure throws (the caller rescues).
 (m/=> start-server!
       [:=> [:cat [:map
+                  [:host {:optional true} [:maybe :string]]
                   [:port {:optional true} [:maybe [:int {:min 0 :max 65535}]]]
                   [:project-dir {:optional true} [:maybe :string]]
                   [:input-ch {:optional true} [:maybe Chan]]

@@ -1,10 +1,9 @@
 (ns hive-mcp.server.permissions-test
   "Facets for hive-mcp.server.permissions (cov-facets f07). get-tier is pure and
    is driven from its contract with inputs built to reach every tier; escalate!
-   is pinned only on its :allowed and :tier-1 arms. Its :tier-2 / :tier-3 arms
-   call hivemind/ask! (a concretion, no injected port) and block for a
-   decision, so they are not reachable without with-redefs: recorded as a
-   missing seam."
+   is pinned on its :allowed and :tier-1 arms by golden, and on its :tier-2 /
+   :tier-3 arms through the injected :ask! / :emit! reviewer ports
+   (COV-FACETS-FINDINGS-W2; they used to call hivemind/ask! directly)."
   (:require [clojure.test :refer [deftest is]]
             [hive-mcp.server.permissions :as perm]
             [hive-schemas.test :refer [deftrifecta-from-schema]]
@@ -81,3 +80,26 @@
 (deftest bash-operations-are-tier-3
   (is (= :tier-3 (perm/get-tier "bash" {"command" "rm -rf x"})))
   (is (= :allowed (perm/get-tier "kanban" nil))))
+
+(deftest escalate-reviewer-arms-go-through-the-ports
+  ;; COV-FACETS-FINDINGS-W2 (f07 seam gap): tier-2/3 asked hivemind/ask!
+  ;; directly and blocked; escalate! now takes :ask! / :emit! ports.
+  (let [asked   (atom [])
+        emitted (atom [])
+        ports   (fn [decision]
+                  {:ask!  (fn [agent q opts] (swap! asked conj [agent opts (boolean (re-find #"TIER" q))])
+                            {:decision decision})
+                   :emit! (fn [t data] (swap! emitted conj [t (:tier data) (:tool data)]))})]
+    (is (= {:approved true :tier :tier-2 :reviewer :coordinator :reason nil}
+           (perm/escalate! "ling-1" "file_edit" {"file_path" "src/core.clj" "new_string" "x"}
+                           (ports "yes"))))
+    (is (= {:approved false :tier :tier-2 :reviewer :coordinator :reason "Coordinator denied"}
+           (perm/escalate! "ling-1" "file_edit" {"file_path" "src/core.clj"} (ports "no"))))
+    (is (= {:approved true :tier :tier-3 :reviewer :human :reason nil}
+           (perm/escalate! "ling-1" "bash" {"command" "rm x"} (ports "approve"))))
+    (is (= {:approved false :tier :tier-3 :reviewer :human :reason "Human denied"}
+           (perm/escalate! "ling-1" "bash" {"command" "rm x"} (ports "deny"))))
+    (is (= [["ling-1" ["yes" "no"] true] ["ling-1" ["yes" "no"] true]
+            ["ling-1" ["approve" "deny"] true] ["ling-1" ["approve" "deny"] true]]
+           @asked))
+    (is (= [[:approval-request :tier-3 "bash"] [:approval-request :tier-3 "bash"]] @emitted))))

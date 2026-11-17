@@ -12,7 +12,7 @@
    alone and this namespace cannot perturb another suite in the same JVM."
   (:require [clojure.test :refer [deftest is testing]]
             [hive-hot.core :as hot]
-            [hive-mcp.protocols.dispatch]
+            [hive-mcp.protocols.event-backbone]
             [hive-mcp.server.init :as init]
             [hive-mcp.hot.core :as hot-core]
             [clojure.string :as str]
@@ -68,7 +68,7 @@
             "no :no-reload means a reload of a protocol namespace orphans every instance built against it")
         (is (pos? (count no-reload))
             "an empty set is the same as no interlock, and passes a some? check")
-        (is (contains? no-reload 'hive-mcp.protocols.dispatch)
+        (is (contains? no-reload 'hive-mcp.protocols.event-backbone)
             "a real core protocol namespace must be in the protected set")))))
 
 (deftest a-disabled-watcher-starts-nothing

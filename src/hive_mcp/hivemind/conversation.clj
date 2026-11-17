@@ -3,7 +3,10 @@
 
    Compat shim: moved to hive-agent.swarm.hivemind.conversation in hive-agent. Every public var delegates there
    through requiring-resolve; hive-mcp does not compile-depend on hive-agent."
-  (:require [hive-mcp.swarm.delegate :as delegate]
+  ;; Chan names both (its :gen/fmap and the ReadPort predicate).
+  (:require [clojure.core.async]
+            [clojure.core.async.impl.protocols]
+            [hive-mcp.swarm.delegate :as delegate]
             [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;

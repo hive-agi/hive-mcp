@@ -1,6 +1,22 @@
 (ns hive-mcp.protocols.dispatch
-  "Polymorphic dispatch context protocol for agent communication."
+  "Dispatch context for agent communication: a host facade over
+   `hive-spi.swarm.dispatch-context`.
+
+   The protocol and the TextContext / RefContext records are hive-spi's, not
+   redefined here: two defprotocols of one name split `satisfies?`, so a
+   context built on one side would not be a context on the other (the
+   event-backbone defect). This namespace re-exports them and keeps only what
+   is host-side:
+
+     ->ref-context    injects the host default reconstruct-fn
+                      (hive-mcp.context.reconstruction/reconstruct-context,
+                      resolved by symbol at call time)
+     ->graph-context  looks up the :dp/graph-ctx extension
+
+   Protocol methods are defn delegates, not `def` aliases: an alias captures
+   the method fn at load time and misses an impl registered later by `extend`."
   (:require [hive-dsl.result :refer [rescue]]
+            [hive-spi.swarm.dispatch-context :as spi]
             [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
@@ -8,53 +24,39 @@
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
 
 ;;; ============================================================================
-;;; IDispatchContext Protocol
+;;; Re-exports from hive-spi (never a second defprotocol)
 ;;; ============================================================================
 
-(defprotocol IDispatchContext
-  "Protocol for resolving task context for agent dispatch."
+(def IDispatchContext
+  "hive-spi's IDispatchContext, the one dispatch-context protocol."
+  spi/IDispatchContext)
 
-  (resolve-context [this]
-    "Return a consumable map with at minimum {:prompt string}.")
+(defn resolve-context
+  "Delegates to `spi/resolve-context`: a map with at minimum {:prompt string}."
+  [ctx]
+  (spi/resolve-context ctx))
 
-  (context-type [this]
-    "Return keyword identifying the context type."))
+(defn context-type
+  "Delegates to `spi/context-type`: the keyword naming the context kind."
+  [ctx]
+  (spi/context-type ctx))
 
-;;; ============================================================================
-;;; TextContext Record (OSS Implementation)
-;;; ============================================================================
+(def ->TextContext "hive-spi's TextContext positional constructor." spi/->TextContext)
+(def map->TextContext "hive-spi's TextContext map constructor." spi/map->TextContext)
+(def ->RefContext "hive-spi's RefContext positional constructor." spi/->RefContext)
+(def map->RefContext "hive-spi's RefContext map constructor." spi/map->RefContext)
 
-(defrecord TextContext [prompt]
-  IDispatchContext
-  (resolve-context [_] {:prompt prompt})
-  (context-type [_] :text))
+(defn- dispatch-context?
+  "Does `x` satisfy the (hive-spi) IDispatchContext protocol?"
+  [x]
+  (satisfies? spi/IDispatchContext x))
 
-;;; ============================================================================
-;;; RefContext Record (Pass-by-Reference + Compressed)
-;;; ============================================================================
+(def ^:private AnyContext
+  "Any IDispatchContext; generates TextContexts."
+  [:fn {:gen/schema :string :gen/fmap spi/->TextContext} dispatch-context?])
 
-(defrecord RefContext [prompt ctx-refs kg-node-ids scope reconstruct-fn]
-  ;; prompt         - Base task prompt string (always present for fallback)
-  ;; ctx-refs       - Map of category->ctx-id for context-store lookups
-  ;;                  e.g. {:axioms "ctx-123" :conventions "ctx-456"}
-  ;; kg-node-ids    - Vector of node IDs for context resolution
-  ;; scope          - Project scope for context resolution (e.g. "hive-mcp")
-  ;; reconstruct-fn - Function (fn [ctx-refs kg-node-ids scope] -> string)
-  ;;                   that reconstructs compressed context from references.
-  ;;                   Injected at creation time to avoid protocol coupling.
-  IDispatchContext
-  (resolve-context [_]
-    (let [reconstructed (when reconstruct-fn
-                          (try
-                            (reconstruct-fn ctx-refs kg-node-ids scope)
-                            (catch Throwable e
-                              (str "Context reconstruction failed: " (.getMessage e)))))]
-      (cond-> {:prompt prompt}
-        (seq ctx-refs)      (assoc :refs (vec (vals ctx-refs)))
-        (seq kg-node-ids)   (assoc :kg-nodes kg-node-ids)
-        reconstructed       (assoc :reconstructed reconstructed
-                                   :prompt (str reconstructed "\n\n---\n\n" prompt)))))
-  (context-type [_] :ref))
+(m/=> resolve-context [:=> [:cat AnyContext] [:map [:prompt :any]]])
+(m/=> context-type [:=> [:cat AnyContext] :keyword])
 
 ;;; ============================================================================
 ;;; Factory Functions
@@ -63,37 +65,35 @@
 (defn ->text-context
   "Create a TextContext wrapping a plain text prompt."
   [prompt]
-  (->TextContext prompt))
+  (spi/->text-context prompt))
 
 (def DispatchContext
   "Any value satisfying IDispatchContext; generates TextContexts."
-  [:fn {:gen/schema :string :gen/fmap ->TextContext}
-   #(satisfies? IDispatchContext %)])
+  [:fn {:gen/schema :string :gen/fmap spi/->TextContext}
+   dispatch-context?])
 
 (def TextContextValue
   "A TextContext record."
-  [:fn {:gen/schema :string :gen/fmap ->TextContext}
-   #(instance? TextContext %)])
+  [:fn {:gen/schema :string :gen/fmap spi/->TextContext}
+   #(instance? hive_spi.swarm.dispatch_context.TextContext %)])
 
 (m/=> ->text-context [:=> [:cat :any] TextContextValue])
 
-(defn ->ref-context
-  "Create a RefContext for pass-by-reference dispatch."
+(defn- host-reconstruct
+  "The host default reconstruct-fn, resolved lazily to avoid circular deps:
+   hive-mcp.context.reconstruction loads at call time, not at require time."
+  [refs nodes scope]
+  (when-let [f (rescue nil (requiring-resolve
+                            'hive-mcp.context.reconstruction/reconstruct-context))]
+    (f refs nodes scope)))
 
-  [prompt {:keys [ctx-refs kg-node-ids scope reconstruct-fn]}]
-  (let [;; Default reconstruct-fn: resolve lazily to avoid circular deps.
-        ;; Uses requiring-resolve to load hive-mcp.context.reconstruction
-        ;; at call time, not at require time.
-        effective-fn (or reconstruct-fn
-                         (fn [refs nodes sc]
-                           (when-let [f (rescue nil (requiring-resolve
-                                                     'hive-mcp.context.reconstruction/reconstruct-context))]
-                             (f refs nodes sc))))]
-    (->RefContext prompt
-                  (or ctx-refs {})
-                  (vec (or kg-node-ids []))
-                  scope
-                  effective-fn)))
+(defn ->ref-context
+  "Create a RefContext for pass-by-reference dispatch. Without a
+   :reconstruct-fn the host default reconstruction is injected."
+  [prompt {:keys [reconstruct-fn] :as opts}]
+  (spi/->ref-context prompt
+                     (assoc (or opts {}) :reconstruct-fn
+                            (or reconstruct-fn host-reconstruct))))
 
 (def RefContextOpts
   "The options `->ref-context` destructures; nil reads as {}."
@@ -106,7 +106,7 @@
 (def RefContextValue
   "A RefContext record."
   [:fn {:gen/schema :string :gen/fmap (fn [p] (->ref-context p {}))}
-   #(instance? RefContext %)])
+   #(instance? hive_spi.swarm.dispatch_context.RefContext %)])
 
 (m/=> ->ref-context [:=> [:cat :any RefContextOpts] RefContextValue])
 
@@ -118,7 +118,7 @@
                (when-let [get-ext (requiring-resolve 'hive-mcp.extensions.registry/get-extension)]
                  (get-ext :dp/graph-ctx)))]
     (f task-node-id kg-store)
-    (->TextContext (str "Extension context unavailable. Task node: " task-node-id))))
+    (spi/->text-context (str "Extension context unavailable. Task node: " task-node-id))))
 
 (m/=> ->graph-context [:=> [:cat :any :any] DispatchContext])
 
@@ -129,8 +129,6 @@
 (defn ensure-context
   "Coerce a string or IDispatchContext into an IDispatchContext."
   [prompt-or-context]
-  (if (satisfies? IDispatchContext prompt-or-context)
-    prompt-or-context
-    (->TextContext (str prompt-or-context))))
+  (spi/ensure-context prompt-or-context))
 
 (m/=> ensure-context [:=> [:cat :any] DispatchContext])

@@ -18,15 +18,16 @@
 
 (def ^:private kg-nss
   '[hive-mcp.tools.kg.batch hive-mcp.tools.kg.commands
-    hive-mcp.tools.kg.queries hive-mcp.tools.kg.synthetics])
+    hive-mcp.tools.kg.queries hive-mcp.tools.kg.synthetics
+    hive-mcp.tools.kg.derived-excess])
 
 (coverage/deftest-contract-coverage tools-kg-contracts
   {:paths [kg-dir]})
 
 (deftest tools-kg-gate-is-not-vacuous
   (let [report (coverage/coverage {:paths [kg-dir]})]
-    (is (= 28 (count (:universe report))) "every public defn of tools/kg")
-    (is (= 28 (count (:covered report))))))
+    (is (= 31 (count (:universe report))) "every public defn of tools/kg")
+    (is (= 31 (count (:covered report))))))
 
 (deftest every-tools-kg-contract-generates-both-sides
   (doseq [ns-sym kg-nss

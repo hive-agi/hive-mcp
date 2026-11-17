@@ -129,7 +129,7 @@
 (def tool-def
   {:name "agent"
    :consolidated true
-   :description "Unified agent operations: spawn (create ling), status (query agents), digest (compact per-agent progress roster — turn, last event, idle time — the PULL view now that shouts reach only the spawner; pass agent_id for just your own children, verbose for rendered text), kill (terminate), kill-batch (terminate multiple agents in one call), batch-spawn (spawn multiple agents at once via operations array), dispatch (send task — also the way to STEER a running agent), interrupt (interrupt current query of agent-sdk ling), claims (file ownership), list (deprecated alias for status), collect (get task result; task_id, or agent_id alone for its latest task), broadcast (prompt only caller's children by default; scope=project or all explicitly expands recipients, response lists recipient-ids), cleanup (remove orphan agents after Emacs restart). Type: 'ling' (agentic worker). Nested: dag (start/stop/status DAGWave scheduler). Use command='help' to list all."
+   :description "Unified agent operations: spawn (create ling), status (query agents), digest (compact per-agent progress roster — turn, last event, idle time — the PULL view now that shouts reach only the spawner; pass agent_id for just your own children, verbose for rendered text), kill (terminate), kill-batch (terminate multiple agents in one call; an id lands in :killed only once its run loop has exited, an id whose loop is still finishing its turn lands in :aborting and stays registered, so kill it again), batch-spawn (spawn multiple agents at once via operations array), dispatch (send task — also the way to STEER a running agent), interrupt (interrupt current query of agent-sdk ling), claims (file ownership), list (deprecated alias for status), collect (get task result; task_id, or agent_id alone for its latest task), broadcast (prompt only caller's children by default; scope=project or all explicitly expands recipients, response lists recipient-ids), cleanup (remove orphan agents after Emacs restart). Type: 'ling' (agentic worker). Nested: dag (start/stop/status DAGWave scheduler). Use command='help' to list all."
    :inputSchema {:type "object"
                  :properties {"command" {:type "string"
                                          :enum ["spawn" "status" "digest" "batch-spawn" "dispatch" "interrupt" "claims" "list" "collect" "broadcast" "cleanup" "dag start" "dag stop" "dag status" "help"]
@@ -154,6 +154,8 @@
                                                :description "[spawn] Context-reconstruction token ceiling for this ling."}
                               "turn_budget" {:type "object"
                                              :description "[spawn] Turn lease for the ling (hive-agent headless backend): {initial, hard_cap?, max_extensions?, judge? (policy|llm|hivemind), wrap_up?, judge_model?, warn_pct?, escalation_ladder?, escalate_after?, ask_timeout_ms?}. snake or kebab keys. Omitted = the backend default (50 turns, policy judge, cap 4x initial). judge hivemind routes request_turns to the parent as an ask answered by `ss reply`."}
+                              "time_budget_ms" {:type "integer"
+                                                :description "[spawn] Wall-clock budget in ms for the ling's run (hive-agent headless backend), counted from the run's start. Once it passes, the run gets one tool-less wrap-up turn and ends with termination time-budget (announced truncated, collectable). Must be a positive integer; omitted, 0 or negative = no deadline."}
                               "provider" {:type "string"
                                           :enum ["openrouter" "venice" "groq" "together" "fireworks" "openai" "ollama-compat" "anthropic" "chatgpt" "codex" "kimi"]
                                           :description "Explicit LLM provider (overrides any 'provider:' prefix in model). anthropic, chatgpt, codex and kimi are OAuth subscriptions; the others are API-key providers, which refuse Claude, GPT and Kimi models. Usually unnecessary: the subscription families route from the model name."}
@@ -161,7 +163,7 @@
                                       :description "Initial task to dispatch on spawn (prompt is accepted as an alias). Without one the ling idles; the response then carries task-attached false and a warning."}
                               "spawn_mode" {:type "string"
                                             :enum (spawn-registry/mcp-enum)
-                                            :description "Spawn mode for lings. Default when omitted: operator config.edn [:ling :default-spawn-mode], shipped 'headless' (OS subprocess, no Emacs required); 'claude'/'vterm' run the Claude Code TUI in a terminal addon. Headless mode captures stdout to ring buffer and supports stdin dispatch. NOTE: 'headless' is ABSTRACT — the concrete backend (:hive-agent, …) is resolved at spawn time via the headless-registry: operator override in ~/.config/hive-mcp/config.edn [:headless :default-backend] wins, otherwise priority-ranked addon-contributed backends are tried in registration order. The response's :spawn-mode reflects the resolved backend, not the requested 'headless' alias. To force a specific backend, pass spawn_mode directly (e.g. 'hive-agent') instead of 'headless'."}
+                                            :description "Spawn mode for lings. Default when omitted: operator config.edn [:ling :default-spawn-mode], shipped 'headless' (OS subprocess, no Emacs required); 'claude'/'vterm' run the Claude Code TUI in an Emacs buffer and need a running Emacs daemon: spawn asks the daemon to answer first and refuses up front (naming the headless fallback) when it does not. For 'claude'/'vterm', success:true means Emacs was asked to open the session; the task is typed in only after the session reports ready, in the background, so confirm the ling started with `agent status` before relying on it. Headless mode captures stdout to ring buffer and supports stdin dispatch. NOTE: 'headless' is ABSTRACT — the concrete backend (:hive-agent, …) is resolved at spawn time via the headless-registry: operator override in ~/.config/hive-mcp/config.edn [:headless :default-backend] wins, otherwise priority-ranked addon-contributed backends are tried in registration order. The response's :spawn-mode reflects the resolved backend, not the requested 'headless' alias. To force a specific backend, pass spawn_mode directly (e.g. 'hive-agent') instead of 'headless'."}
                               "agents" {:type "object"
                                         :description "[spawn] Subagent definitions for SDK-style sessions. Map of agent-name to agent definition object. Each definition: {description: string, prompt: string, tools?: string[], model?: 'sonnet'|'opus'|'haiku'|'inherit'}. Only effective when the resolved headless backend supports subagent definitions. Ignored by other headless backends (e.g. :hive-agent)."}
 
@@ -191,7 +193,7 @@
                               ;; batch-spawn params
                               "operations" {:type "array"
                                             :items {:type "object"}
-                                            :description "Array of spawn parameter objects for batch-spawn. Each object: {type, name, cwd, presets, model, task, spawn_mode, parent, kanban_task_id, llm_retries, resume, chat_run_id, token_budget, turn_budget}"}
+                                            :description "Array of spawn parameter objects for batch-spawn. Each object: {type, name, cwd, presets, model, task, spawn_mode, parent, kanban_task_id, llm_retries, resume, chat_run_id, token_budget, turn_budget, time_budget_ms}"}
                               "parallel" {:type "boolean"
                                           :description "Run batch operations in parallel (default: false)"}
                               "project_id" {:type "string"
@@ -216,7 +218,9 @@
                               "parent" {:type "string"
                                         :description "Parent agent ID for spawn"}
                               "kanban_task_id" {:type "string"
-                                                :description "Kanban task ID to link to ling. On session_complete, linked task auto-moves to done."}
+                                                :description "Kanban task ID to link to ling. On session_complete, linked task auto-moves to done. Spawn claims the card for the spawner (parent); a card another live coordinator/agent claims is refused, naming the holder and since."}
+                              "steal_claim" {:type "boolean"
+                                             :description "[spawn] Take over the kanban_task_id card even when another live owner claims it."}
                               ;; kill params
                               "force" {:type "boolean"
                                        :description "Force kill even if critical ops in progress"}

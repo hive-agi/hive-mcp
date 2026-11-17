@@ -5,7 +5,9 @@
    holds under every kanban-store mode), pinned clock, and a recording
    write-events listener. No backend."
   (:require [clojure.test :refer [deftest is testing use-fixtures]]
+            [hive-mcp.addons.core :as addons]
             [hive-mcp.events.write-events :as write-events]
+            [hive-mcp.test-support.registry-isolation :as isolation]
             [hive-mcp.protocols.memory :as mem-proto]
             [hive-mcp.test.stub.memory-store :as stub]
             [hive-mcp.tools.catchup.block-cache :as bc]
@@ -18,16 +20,37 @@
 (def ^:private store (atom nil))
 
 (defn- stub-store-fixture
-  "One stub store under :default AND :kanban; restore the prior registry."
+  "One stub store under :default AND :kanban. Refuses a running addon server
+   before either slot is touched and restores the exact prior slot map in one
+   atomic swap; it never calls the global reset-registry!."
   [f]
-  (stub/with-stub-store
+  (isolation/with-restored-store-registry
     (fn []
-      (let [s (mem-proto/get-store)]
+      (let [s (stub/install! (stub/->stub))]
         (mem-proto/register-store! :kanban s)
         (reset! store s)
         (f)))))
 
-(use-fixtures :each stub-store-fixture (fn [t] (bc/reset-cache!) (t) (bc/reset-cache!)))
+(def ^:private cache-atoms
+  "The block cache's private state atoms."
+  [#'bc/entries #'bc/refreshing #'bc/counters])
+
+(defn- isolated-cache-fixture
+  "Run F against an empty block cache, then put the prior cache state back.
+   Refuses a running addon server first: the old fixture called the global
+   bc/reset-cache! before and after, wiping a live server's catchup cache."
+  [f]
+  (isolation/refuse-live-addons!)
+  (let [atoms (mapv var-get cache-atoms)
+        prior (mapv deref atoms)]
+    (try
+      (bc/reset-cache!)
+      (f)
+      (finally
+        (doseq [[a v] (map vector atoms prior)]
+          (reset! a v))))))
+
+(use-fixtures :each stub-store-fixture isolated-cache-fixture)
 
 (defn- recording-listener
   "Register a write-events listener that records every write. Returns the
@@ -94,3 +117,39 @@
                         (= #{"kanban" "todo"} (set (:tags %))))
                   @seen)))
       (finally (write-events/unregister-listener! ::recorder)))))
+
+(deftest fixtures-cannot-clobber-a-live-registry-or-cache-test
+  ;; Test isolation (card 20260629165759-7b9fd43c): stub-store-fixture rode
+  ;; with-stub-store but then registered :kanban itself, and the cache fixture
+  ;; called the global bc/reset-cache! before and after every test, so loading
+  ;; this ns in a live nREPL wiped the server's catchup cache.
+  (let [computes (atom 0)
+        _        (bc/run-block (counting-kanban-block computes) {:project-id "p"})
+        stores   (mem-proto/registered-stores)
+        cache    (bc/stats)]
+    (is (= 1 (:entries cache)) "a cached block to protect")
+    (testing "a throwing body leaves the exact prior slot map and cache behind"
+      (is (thrown? Exception
+                   (stub-store-fixture
+                    (fn []
+                      (isolated-cache-fixture
+                       (fn []
+                         (is (zero? (:entries (bc/stats))) "the body sees an empty cache")
+                         (throw (Exception. "body failed"))))))))
+      (is (= stores (mem-proto/registered-stores)))
+      (is (= cache (bc/stats))))
+    (testing "a running addon server is refused before any store or cache write"
+      (let [ran?   (atom false)
+            writes (atom 0)
+            live   (constantly {:total 1 :active 1 :registered 0 :error 0})]
+        (with-redefs [addons/registry-status live
+                      stub/install! (fn [s] (swap! writes inc) s)
+                      bc/reset-cache! (fn [] (swap! writes inc) nil)]
+          (doseq [fixture [stub-store-fixture isolated-cache-fixture]]
+            (is (= :live-addon-registry
+                   (:reason (ex-data (try (fixture (fn [] (reset! ran? true)))
+                                          (catch clojure.lang.ExceptionInfo e e))))))))
+        (is (false? @ran?))
+        (is (zero? @writes))
+        (is (= stores (mem-proto/registered-stores)))
+        (is (= cache (bc/stats)))))))

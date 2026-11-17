@@ -31,7 +31,9 @@
    ;; Folded standalone root (visibility-gated) re-exposed as an ergonomic
    ;; subdomain: `swarm preset list`. preset/handlers is a flat leaf map, so
    ;; lazy-resolve merges it directly — no prefix-strip adapter needed.
-   :preset   (composite/lazy-resolve-handlers 'hive-mcp.tools.consolidated.preset/handlers)})
+   :preset   (composite/lazy-resolve-handlers 'hive-mcp.tools.consolidated.preset/handlers)
+   ;; Session inbox on HIVE_INBOX: `swarm inbox arm|send|read|status`.
+   :inbox    (composite/lazy-resolve-handlers 'hive-mcp.tools.consolidated.inbox/handlers)})
 
 (def handlers canonical-handlers)
 
@@ -58,13 +60,14 @@
                                 hive-mcp.tools.consolidated.hivemind/tools
                                 hive-mcp.tools.consolidated.agora/tools
                                 hive-mcp.tools.consolidated.olympus/tools
-                                hive-mcp.tools.consolidated.preset/tools]))]
+                                hive-mcp.tools.consolidated.preset/tools
+                                hive-mcp.tools.consolidated.inbox/tools]))]
     {:name "swarm"
      :consolidated true
      ;; Verb roots folded under this domain: verbs an addon contributes under
      ;; them (hive-mcp.dispatch.verbs) join this tool's advertised schema.
      :verb-roots ["agent"]
-     :description "Unified agent operations: spawn (create ling), status (query agents), kill (terminate), kill-batch (terminate multiple agents in one call), batch-spawn (spawn multiple agents at once via operations array), dispatch (send task), interrupt (interrupt current query of agent-sdk ling), claims (file ownership), list (deprecated alias for status), collect (get task result), broadcast (only caller's children by default; explicit scope=project or all expands recipients and returns recipient-ids), cleanup (remove orphan agents after Emacs restart). Nested: dag (start/stop/status DAGWave scheduler). Addons may contribute further subdomains. Use command='help' to list all."
+     :description "Unified agent operations: spawn (create ling), status (query agents), kill (terminate), kill-batch (terminate multiple agents in one call), batch-spawn (spawn multiple agents at once via operations array), dispatch (send task), interrupt (interrupt current query of agent-sdk ling), claims (file ownership), list (deprecated alias for status), collect (get task result), broadcast (only caller's children by default; explicit scope=project or all expands recipients and returns recipient-ids), cleanup (remove orphan agents after Emacs restart). Nested: dag (start/stop/status DAGWave scheduler); inbox (arm/send/read/status, session inbox on HIVE_INBOX). Addons may contribute further subdomains. Use command='help' to list all."
      :inputSchema {:type "object"
                    :properties (merge
                                 {"command" {:type "string"

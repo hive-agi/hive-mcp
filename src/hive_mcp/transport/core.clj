@@ -78,6 +78,7 @@
   [:map
    [:type {:optional true} [:maybe :keyword]]
    [:path {:optional true} [:maybe :string]]
+   [:host {:optional true} [:maybe :string]]
    [:port {:optional true} [:maybe [:int {:min 0 :max 65535}]]]
    [:on-message {:optional true} [:maybe ifn?]]
    [:on-connect {:optional true} [:maybe ifn?]]])
@@ -474,13 +475,15 @@
 
    Options:
      :port       - TCP port (required)
+     :host       - Address to listen on (default 127.0.0.1: the channel has
+                   no authentication)
      :on-message - Callback for received messages (fn [msg])
      :on-connect - Callback when client connects (fn [client-id])
 
    Returns TCPServer record."
-  [{:keys [port on-message on-connect]
+  [{:keys [host port on-message on-connect]
     :or {port 9998}}]
-  (let [addr (java.net.InetSocketAddress. ^int port)
+  (let [addr (java.net.InetSocketAddress. ^String (or host "127.0.0.1") (int port))
         server-ch (doto (ServerSocketChannel/open)
                     (.bind addr))
         clients (atom {})
@@ -493,7 +496,7 @@
              ^Runnable
              #(accept-loop! server-ch clients running? executor
                             on-connect on-message
-                            "TCP" (str "TCP server listening on port " port)))
+                            "TCP" (str "TCP server listening on " (.getHostString addr) ":" port)))
     server))
 
 (m/=> start-tcp-server!

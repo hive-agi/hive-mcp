@@ -79,6 +79,19 @@
     (is (= (proto/content-hash "alpha BETA gamma")
            (:content-hash (second (first @(:writes store))))))))
 
+(deftest find-replace-leaves-duration-and-expires-alone
+  (testing "a content edit on a permanent axiom writes no duration or expires"
+    (let [store    (stub-store {:id "ax-1" :type "axiom" :content "alpha beta"
+                                :duration :permanent :expires nil})
+          response (edit-with store {:id "ax-1" :find "beta" :replace "BETA"})
+          written  (second (first @(:writes store)))]
+      (is (not (:isError response)))
+      (is (not (str/includes? (:text response) "duration")))
+      (is (not (str/includes? (:text response) "expires")))
+      (is (= #{:content :content-hash :updated} (set (keys written))))
+      (is (= :permanent (:duration (get @(:entries store) "ax-1"))))
+      (is (nil? (:expires (get @(:entries store) "ax-1")))))))
+
 (deftest edit-find-replace-is-literal
   (testing "regex metacharacters and $ in find/replace are taken verbatim"
     (let [store (stub-store {:id "m-1" :type "note" :content "cost: a.b (x)"})]

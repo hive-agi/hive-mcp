@@ -1,6 +1,6 @@
 (ns hive-mcp.tools.memory.search-nil-id-trifecta-test
   "A search port may return a stale hit without an ID; pin the public response."
-  (:require [clojure.test :refer [is]]
+  (:require [clojure.test :refer [deftest is]]
             [clojure.data.json :as json]
             [clojure.test.check.generators :as gen]
             [hive-test.trifecta :refer [deftrifecta]]
@@ -43,6 +43,30 @@
         (if prior
           (mem-proto/register-store! :default prior)
           (mem-proto/unregister-store! :default))))))
+
+(defn- search-warning
+  "The :warning of one search over HITS, or ::none when absent."
+  [hits]
+  (let [prior (get (mem-proto/registered-stores) :default)]
+    (try
+      (mem-proto/register-store! :default (->SearchPort hits))
+      (let [response (search/handle-search-semantic
+                      {:query "needle" :limit 20 :scope "all"
+                       :exclude_tags [] :directory "/tmp"})]
+        (get (json/read-str (:text response) :key-fn keyword) :warning ::none))
+      (finally
+        (if prior
+          (mem-proto/register-store! :default prior)
+          (mem-proto/unregister-store! :default))))))
+
+(deftest empty-with-dropped-hits-warns-not-absence
+  (let [w (search-warning [{:id nil :content "needle" :type "note" :tags [] :distance 0.1}])]
+    (is (string? w) "count 0 with dropped hits must carry a warning")
+    (is (re-find #"(?i)not evidence of absence" (str w))))
+  (is (= ::none (search-warning [])) "a truly empty store carries no warning")
+  (is (= ::none (search-warning [{:id "a" :content "needle" :type "note" :tags [] :distance 0.1}
+                                 {:id nil :content "needle" :type "note" :tags [] :distance 0.1}]))
+      "a non-empty result needs no absence warning"))
 
 (defn- hit [id]
   {:id id :content "needle" :type "note" :tags [] :distance 0.1})

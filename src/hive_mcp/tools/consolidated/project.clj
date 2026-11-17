@@ -152,7 +152,22 @@
 ;; Tool Definition
 ;; =============================================================================
 
-(def tool-def
+(def ^:private subdomain-props
+  "Params advertised by every subdomain whose handlers this root folds, through
+   the shared resolver (composite/lazy-resolve-schema-props), as swarm and
+   memory do. Without it a subdomain param is dropped at the MCP boundary and
+   its handler silently runs on the default."
+  (delay
+    (dissoc (apply merge-with merge
+                   (map composite/lazy-resolve-schema-props
+                        '[hive-mcp.tools.consolidated.kanban/tools
+                          hive-mcp.tools.consolidated.config/tools
+                          hive-mcp.tools.consolidated.session/tools
+                          hive-mcp.tools.consolidated.workflow/tools
+                          hive-mcp.tools.consolidated.migrate-kanban/tools]))
+            "command")))
+
+(def ^:private base-tool-def
   {:name "project"
    :consolidated true
    :description "Projectile project operations: info (project details), files (list files), search (content search), find (find by filename), recent (recently visited), list (all projects), scan (discover .hive-project.edn hierarchy), tree (query cached hierarchy), staleness (check if rescan needed). Use command='help' to list all."
@@ -174,8 +189,10 @@
                                             :description "Project ID to query tree for / [kanban list] exact-match project filter / [kanban retag] alias for new_project_id"}
                               ;; Kanban params
                               "title" {:type "string" :description "[kanban create|update] Task title. On update a non-blank value replaces the current title in place — entry id, KG edges, status and scope are preserved."}
-                              "description" {:type "string" :description "[kanban create|update] Task description. On update a non-blank value replaces the current description in place."}
-                              "task_id" {:type "string" :description "[kanban get|update|delete|retag] Task ID"}
+                              "description" {:type "string" :description "[kanban create|update] Task description. On update a non-blank value replaces the current description; the old text is kept in the card's description-history (kanban history / kanban restore). To add a note, use append_description."}
+                              "append_description" {:type "string" :description "[kanban update] Append text to the existing description after a blank line, without replacing it"}
+                              "rev" {:type "integer" :description "[kanban restore] Revision number from kanban history (1 = oldest) to put back as the description"}
+                              "task_id" {:type "string" :description "[kanban get|update|delete|retag|history|restore] Task ID"}
                               "id" {:type "string" :description "[kanban get] Alias for task_id — entry id to fetch from either store"}
                               "new_status" {:type "string"
                                             :enum ["todo" "inprogress" "inreview" "done"]
@@ -250,5 +267,12 @@
                                           :description "Run batch operations in parallel (default: false)"}}
                  :required ["command"]}
    :handler #'handle-project})
+
+(def tool-def
+  ;; Subdomain params merge UNDER the hand-written ones above, so a root
+  ;; description wins over the subdomain's and every subdomain param that the
+  ;; root does not restate still reaches its handler.
+  (update-in base-tool-def [:inputSchema :properties]
+             #(merge @subdomain-props %)))
 
 (def tools [tool-def])

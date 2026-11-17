@@ -134,9 +134,13 @@
         _ (when (and resolved (not no-embed?))
             (embedding-service/validate-content-size! embed-text resolved))
         coll (if resolved
+               ;; Space-guarded: a collection stamped with another embedding
+               ;; space refuses the write (:embedding-space-mismatch).
                (conn/get-or-create-named-collection
-                 (:collection-name resolved) (:dimension resolved))
-               (conn/get-or-create-collection))
+                 (:collection-name resolved) (:dimension resolved)
+                 (embedding-service/space-for-resolved resolved {:metric conn/metric}))
+               (conn/get-or-create-collection
+                 (embedding-service/default-space {:metric conn/metric})))
         provider (if resolved (:provider resolved) (emb/get-embedding-provider))
         embed-1 (fn [p] (emb/embed-text p embed-text))
         embedding (if no-embed?
@@ -152,6 +156,11 @@
                           (do (log/warn "Embed via" (:provider-key resolved)
                                         "failed for entry" entry-id "— failing over to"
                                         (:provider-key alt) "(" (.getMessage e1) ")")
+                              ;; The sibling must embed into the collection's own
+                              ;; space too: a stamped collection refuses it.
+                              (conn/get-or-create-named-collection
+                                (:collection-name alt) (:dimension alt)
+                                (embedding-service/space-for-resolved alt {:metric conn/metric}))
                               (try (embed-1 (:provider alt))
                                    (catch Throwable e2
                                      (log/error "Embed failover also failed for entry"
@@ -190,10 +199,14 @@
 (defn index-memory-entries!
   "Index multiple memory entries in batch with full metadata.
    Uses the shared provider gate for the complete embed-batch call. Entries should have :id pre-set.
-   A transient string :embed-text is embedded in place of the document and never persisted."
+   A transient string :embed-text is embedded in place of the document and never persisted.
+   Space-guarded: a default collection stamped with another embedding space
+   than the global provider's refuses the batch (:embedding-space-mismatch)
+   before anything is embedded or written."
   [entries]
   (emb/require-embedding!)
-  (let [coll (conn/get-or-create-collection)
+  (let [coll (conn/get-or-create-collection
+               (embedding-service/default-space {:metric conn/metric}))
         now  (h/iso-timestamp)
         stored (mapv strip-transient entries)
         docs (mapv h/memory-to-document stored)

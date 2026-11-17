@@ -33,20 +33,39 @@ so hive-mcp core must stay small enough to hold in one engineer's head.
 Every addon-shaped branch that leaks into core inflates the blast radius of
 a single change.
 
+> **Historical note (2026-11-14).** This Context is the pre-migration audit
+> snapshot; the migration it motivates has since landed and the file:line
+> citations are as of the audit. The JVM shutdown hook in `server/lifecycle.clj`
+> no longer calls `olympus-ws/stop!` or `mark-coordinator-terminated!` inline:
+> it runs the registry-driven sequence `run-shutdown-sequence!`, and the
+> concrete hooks now live in `src/hive_mcp/system/shutdown/in_core.clj`. That
+> namespace no longer requires any addon (no `olympus-ws`); it requires only the
+> protocol, registry and `swarm.sync` namespaces.
+> `src/hive_mcp/agent/headless.clj`'s `watchdog-sweep!` is no longer a private fn
+> with its own scheduler; it is driven by the `HeadlessWatchdog` `ISweepable`
+> impl registered on the sweep coordinator. The `kill!` body cited below now
+> sits near the end of `src/hive_mcp/agent/ling/spawn.clj` (no longer at
+> 299-333). The repo has no tracked `plans/` directory; the Plan path in
+> Cross-references was an out-of-tree location.
+
 ## Decision
 
-hive-mcp core defines three lifecycle protocols — `IShutdownHook`,
-`ISweepable`, `IResourceOwner` — and owns three registries plus two
-orchestrators (a JVM shutdown hook and a sweep coordinator).
+hive-mcp core defines three lifecycle protocols (`IShutdownHook`,
+`ISweepable`, `IResourceOwner`, later joined by `IShutdownBudget`) and owns
+three registries plus two orchestrators (a JVM shutdown hook and a sweep
+coordinator).
 
-- **Protocols** live in `src/hive_mcp/protocols/lifecycle.clj`.
-- **Registries** (`shutdown-registry`, `sweep-registry`, `resource-registry`)
-  live under `src/hive_mcp/system/registry.clj` as atoms of
-  priority-ordered vectors keyed by participant id.
+- **Protocols** live in `hive-spi.lifecycle.ports` and are re-exported as
+  `def` aliases from `src/hive_mcp/protocols/lifecycle.clj`, so an addon can
+  implement them without compile-depending on hive-mcp. The aliases also
+  cover `IShutdownBudget`, added after this ADR.
+- **Registries** (`register-shutdown!`, `register-sweep!`,
+  `register-resource-owner!`) live under `src/hive_mcp/system/registry.clj`,
+  storing into `hive-spi.lifecycle.registry` keyed by participant id.
 - **Orchestrators**: the shutdown orchestrator in `server/lifecycle.clj`
-  iterates `shutdown-registry` in priority order under a wall-clock budget;
-  the sweep coordinator in `system/sweep_coordinator.clj` schedules all
-  `ISweepable` participants on one shared executor.
+  iterates `reg/registered-shutdown-hooks` in priority order under a
+  wall-clock budget; the sweep coordinator in `system/sweep_coordinator.clj`
+  schedules all `ISweepable` participants on one shared executor.
 - **Concrete implementations** live in their addon projects (hive-agent,
   hive-knowledge, hive-nats, hive-qdrant, lsp-mcp, etc.) and register onto
   the hive-mcp registries via `requiring-resolve` from inside the addon's
@@ -58,9 +77,9 @@ orchestrators (a JVM shutdown hook and a sweep coordinator).
                 hive-mcp (core)
   ┌─────────────────────────────────────────┐
   │ protocols/lifecycle.clj                 │
-  │   IShutdownHook, ISweepable, IResourceOwner
+  │   IShutdownHook, ISweepable, IResourceOwner, IShutdownBudget
   │ system/registry.clj                     │
-  │   shutdown-registry, sweep-registry, resource-registry
+  │   register-shutdown!, register-sweep!, register-resource-owner!
   │ system/sweep_coordinator.clj            │
   │ server/lifecycle.clj  (orchestrator)    │
   └──────────────▲──────────────────────────┘
@@ -143,7 +162,8 @@ their band in the registration call and the orchestrator sorts ascending.
 
 ## Cross-references
 
-- Plan: `/home/leibniz/PP/hive/hive-mcp/plans/cluster-a-lifecycle-protocols.edn`
+- Plan: `plans/cluster-a-lifecycle-protocols.edn` (an out-of-tree `plans/`
+  dir; no `plans/` is tracked in this repo)
 - Decision: 20260202004516-45e16b85 (Interface-Agnostic Box Architecture)
 - Convention: 20260215011959-7e07b9cf (IAddon Composability Principle)
 - Axiom: 20260122235103-7151cc29 (test isolation via injected fixtures)

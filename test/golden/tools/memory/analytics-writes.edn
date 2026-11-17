@@ -8,7 +8,7 @@
   :access-count 3,
   :project-id "proj-a"},
  :log-cross-project
- {:tags "xpoll:project:proj-b,xpoll:project:proj-c",
+ {:tags ["xpoll:project:proj-b" "xpoll:project:proj-c"],
   :content "two",
   :type "note",
   :id "e2",
@@ -20,7 +20,7 @@
   :project-id "proj-a"},
  :log-missing {:error "Entry not found"},
  :fb-helpful
- {:tags "xpoll:project:proj-b,xpoll:project:proj-c",
+ {:tags ["xpoll:project:proj-b" "xpoll:project:proj-c"],
   :content "two",
   :helpful-count 1,
   :type "note",
@@ -46,4 +46,4 @@
   {:id "e2",
    :access-count 1,
    :helpful-count 1,
-   :tags "xpoll:project:proj-b,xpoll:project:proj-c"}]}
+   :tags ["xpoll:project:proj-b" "xpoll:project:proj-c"]}]}

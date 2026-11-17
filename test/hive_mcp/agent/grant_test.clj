@@ -22,15 +22,19 @@
   (or (= held :all) (and (not= wanted :all) (every? (fn [w] (some #(or (= % w) (str/starts-with? w (str % ":"))) held)) wanted))))
 
 (def ^:private stub-domain
-  {:from-wire (fn [m] (when m (into {} (map (fn [[k v]] [(keyword (name k)) (if (= v "all") :all (if (coll? v) (set v) v))])) m)))
+  {:from-wire (fn [m] (when m (into {} (map (fn [[k v]] [(keyword (str/replace (name k) "_" "-")) (if (= v "all") :all (if (coll? v) (set v) v))])) m)))
    :->wire    (fn [g] (into {} (map (fn [[k v]] [k (if (set? v) (vec (sort v)) (if (keyword? v) (name v) v))])) g))
    :attenuate (fn [p q] (let [c (merge {:tools :all} p q)]
                           (if (set-sub? (get p :tools :all) (:tools c))
                             {:ok c}
                             {:error :grant/widening :message "wider on tools"})))
-   :refusal   (fn [g {:keys [capability tool command]}]
+   :refusal   (fn [g {:keys [capability tool command depth]}]
                 (case capability
-                  :spawn (when (false? (:may-spawn g)) {:message "no spawn" :grant/missing {:capability :may-spawn}})
+                  :spawn (cond
+                           (false? (:may-spawn g)) {:message "no spawn" :grant/missing {:capability :may-spawn}}
+                           (and (:max-depth g) (some? depth) (> depth (:max-depth g)))
+                           {:message (str "Grant does not permit depth " depth " (max-depth held: " (:max-depth g) ").")
+                            :grant/missing {:capability :depth :dimension :max-depth :wanted depth :held (:max-depth g)}})
                   :tool  (let [e (if command (str tool ":" (name command)) tool)]
                            (when-not (set-sub? (get g :tools :all) #{e})
                              {:message (str "Grant does not permit tool " e) :grant/missing {:capability :tool :wanted e}}))))})
@@ -64,6 +68,45 @@
       (is (= 2 (grant/depth-of get-slave "ling-b")))
       (is (= 0 (grant/depth-of get-slave "coordinator:s1")))
       (is (= 0 (grant/depth-of get-slave "nobody"))))))
+
+(deftest ling-depth-predicates
+  (testing "every depth of 1 or more is a ling; 0, nil and non-integers are not"
+    (is (false? (grant/ling-depth? 0)))
+    (is (true? (grant/ling-depth? 1)))
+    (is (true? (grant/ling-depth? 2)))
+    (is (false? (grant/ling-depth? nil)))
+    (is (false? (grant/ling-depth? "1"))))
+  (testing "ling-row? reads :slave/depth"
+    (is (true? (grant/ling-row? {:slave/depth 2})))
+    (is (false? (grant/ling-row? {:slave/depth 0})))
+    (is (false? (grant/ling-row? {})))
+    (is (false? (grant/ling-row? nil)))))
+
+(deftest depth-from-the-parent-chain
+  (let [rows {"coordinator:s1" {:slave/id "coordinator:s1" :slave/depth 0}
+              "ling-a" {:slave/id "ling-a" :slave/depth 1 :slave/parent {:slave/id "coordinator:s1"}}
+              ;; rehydrated rows: no :slave/depth recorded
+              "ling-b" {:slave/id "ling-b" :slave/parent {:slave/id "ling-a"}}
+              "ling-c" {:slave/id "ling-c" :slave/parent "ling-b"}
+              "orphan" {:slave/id "orphan"}
+              "loop-x" {:slave/id "loop-x" :slave/parent "loop-y"}
+              "loop-y" {:slave/id "loop-y" :slave/parent "loop-x"}}
+        get-slave (registry rows)]
+    (testing "a recorded depth answers as is"
+      (is (= 1 (grant/depth-of-known get-slave "ling-a"))))
+    (testing "a row without depth is derived from its parent chain"
+      (is (= 2 (grant/depth-of-known get-slave "ling-b")))
+      (is (= 3 (grant/depth-of-known get-slave "ling-c:bb-1")))
+      (is (= 3 (grant/depth-of get-slave "ling-c"))))
+    (testing "a coordinator is 0 with or without a row; an unknown id is 0"
+      (is (= 0 (grant/depth-of-known get-slave "coordinator:s1")))
+      (is (= 0 (grant/depth-of-known get-slave "coordinator:zz")))
+      (is (= 0 (grant/depth-of-known get-slave "nobody"))))
+    (testing "an underivable chain is nil, and depth-of never answers 0 for a registered row"
+      (is (nil? (grant/depth-of-known get-slave "orphan")))
+      (is (nil? (grant/depth-of-known get-slave "loop-x")))
+      (is (= 1 (grant/depth-of get-slave "orphan")))
+      (is (= 1 (grant/depth-of get-slave "loop-x"))))))
 
 ;; =============================================================================
 ;; Spawn decision
@@ -228,3 +271,26 @@
         (is (:isError res))
         (is (str/includes? (:text res) "`grant` must be a JSON object"))
         (is (not (str/includes? (:text res) "ClassCast")))))))
+
+(deftest spawn-handler-lineage-depth
+  ;; Measured 2026-11-09: every ling was recorded at depth 1, because the
+  ;; child depth the handler computed never reached the registry row, so a
+  ;; grant's max_depth never refused anything.
+  (let [rows {"coordinator:s1" {:slave/id "coordinator:s1" :slave/depth 0}
+              "ling-a" {:slave/id "ling-a" :slave/depth 1
+                        :slave/parent {:slave/id "coordinator:s1"}}}]
+    (testing "a child of a coordinator is recorded at depth 1"
+      (let [{:keys [res opts]} (spawn-with rows {:_caller_id "coordinator:s1"})]
+        (body res)
+        (is (= 1 (:depth opts)))))
+    (testing "a grandchild (a child of a ling) is recorded at depth 2"
+      (let [{:keys [res opts]} (spawn-with rows {:_caller_id "ling-a:bb"})]
+        (body res)
+        (is (= 2 (:depth opts))))))
+  (testing "max_depth=1 lets a ling exist but refuses its child, naming max-depth"
+    (let [rows {"ling-a" {:slave/id "ling-a" :slave/depth 1
+                          :slave/grant {"max_depth" 1}}}
+          {:keys [res opts]} (spawn-with rows {:_caller_id "ling-a:bb"})]
+      (is (nil? opts) "nothing is spawned")
+      (is (:isError res))
+      (is (str/includes? (:text res) "max-depth")))))

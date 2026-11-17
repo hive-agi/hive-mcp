@@ -5,7 +5,7 @@
    threading in build-middleware-chain.
 
    Execution order (request flows inward):
-   handler → nats-notify → retry → async → [default-async] → guard
+   handler → nats-notify → observe → retry → async → [default-async] → guard
    → normalize → compress → piggybacks → context → response
 
    DDD: Application Service layer — request processing pipeline."
@@ -213,6 +213,9 @@
    call, shared by its subagents, distinct per session even when every
    session's agent-id is nil.
 
+   Session start is recorded under `ctx/session-agent-id` of the agent id and
+   caller id, the same key a wrap resolves through `crystal/resolve-agent`.
+
    Identity: the spawn credential the transport carries as
    `:_caller_credential` is verified here (hive-mcp.agent.identity) and
    STRIPPED from the args before anything else sees them, so no handler,
@@ -247,7 +250,8 @@
           (let [agent-id (id/extract-agent-id args nil)
                 project-id (id/extract-project-id args)
                 directory (id/extract-directory args)]
-            (crystal/record-session-start! agent-id)
+            (crystal/record-session-start!
+             (ctx/session-agent-id agent-id (:_caller_id args)))
             (touch-caller-activity! *identity-get-slave* (:_caller_id args))
             (metrics/record! [:mcp/mw :context] (- (System/nanoTime) t0) :ok)
             (ctx/with-request-context {:agent-id agent-id
@@ -804,8 +808,54 @@
 
 (m/=> wrap-handler-metrics [:=> [:cat Handler ToolName] Handler])
 
+(def tool-observe-ext-key
+  "Extension key of the post-call tool observer: (fn [observation]), result ignored."
+  :tool/observe)
+
+(defn tool-observation
+  "The observation handed to the `:tool/observe` seam for one finished call:
+   `guard-raw-context` (tool, input, cwd, identity sources) plus :command (the
+   whole command string, nil when absent), :at (epoch ms) and `outcome`
+   ({:outcome :ok :result r} or {:outcome :error :error throwable})."
+  [tool-name args at outcome]
+  (merge (guard-raw-context tool-name args)
+         {:command (some-> (or (get args :command) (get args "command")) name)
+          :at at}
+         outcome))
+
+(m/=> tool-observation [:=> [:cat ToolName [:maybe :map] :int
+                             [:map [:outcome [:enum :ok :error]]]]
+                        [:map [:tool ToolName] [:command [:maybe :string]] [:at :int]
+                         [:outcome [:enum :ok :error]]]])
+
+(defn wrap-handler-observe
+  "Report each finished call to the `:tool/observe` seam, then return the result
+   or rethrow, unchanged. Soft seam: with no extension registered the handler
+   is called directly. An observer that throws is logged and ignored. Sits
+   inside retry, so a retried attempt is reported once per attempt."
+  [handler tool-name]
+  (fn [args]
+    (if-let [observe (ext/get-extension tool-observe-ext-key)]
+      (let [report (fn [outcome]
+                     (try
+                       (observe (tool-observation tool-name args
+                                                  (System/currentTimeMillis) outcome))
+                       (catch Throwable e
+                         (log/debug "tool observer threw; ignored"
+                                    {:tool tool-name :error (.getMessage e)}))))]
+        (try
+          (let [result (handler args)]
+            (report {:outcome :ok :result result})
+            result)
+          (catch Throwable e
+            (report {:outcome :error :error e})
+            (throw e))))
+      (handler args))))
+
+(m/=> wrap-handler-observe [:=> [:cat Handler ToolName] Handler])
+
 (defn build-middleware-chain
-  "Compose the 10-layer middleware chain around a raw tool handler.
+  "Compose the 11-layer middleware chain around a raw tool handler.
    Testable in isolation — no tool definition machinery needed.
 
    The metrics layer is OUTERMOST: it times the whole call, every other layer
@@ -820,6 +870,7 @@
   [handler tool-name default-async-commands]
   (-> handler
       (wrap-handler-nats-notify tool-name)
+      (wrap-handler-observe tool-name)
       wrap-handler-retry
       (wrap-handler-async tool-name)
       (cond-> (seq default-async-commands)

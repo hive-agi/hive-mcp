@@ -14,7 +14,8 @@
             [hive-spi.memory.ids :as ids]
             [hive-spi.memory.ports :as ports]
             [malli.core :as m]
-            [hive-spi.memory.registry :as sreg]))
+            [hive-spi.memory.registry :as sreg]
+            [hive-mcp.protocols.memory-read :as mread]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -71,14 +72,18 @@
   (ports/delete-entry! store id))
 
 (defn query-entries
-  "See `hive-spi.memory.ports/query-entries`."
+  "See `hive-spi.memory.ports/query-entries`.
+   A store error Result (e.g. :milvus/read-incomplete) answers as an empty
+   vector marked incomplete (`hive-mcp.protocols.memory-read/read-answer`)."
   [store opts]
-  (ports/query-entries store opts))
+  (mread/read-answer :query-entries (ports/query-entries store opts)))
 
 (defn search-similar
-  "See `hive-spi.memory.ports/search-similar`."
+  "See `hive-spi.memory.ports/search-similar`.
+   A store error Result (e.g. :milvus/read-incomplete) answers as an empty
+   vector marked incomplete (`hive-mcp.protocols.memory-read/read-answer`)."
   [store query-text opts]
-  (ports/search-similar store query-text opts))
+  (mread/read-answer :search-similar (ports/search-similar store query-text opts)))
 
 (defn supports-semantic-search?
   "See `hive-spi.memory.ports/supports-semantic-search?`."
@@ -244,9 +249,11 @@
 (def IMemoryStoreBatch ports/IMemoryStoreBatch)
 
 (defn get-entries
-  "See `hive-spi.memory.ports/get-entries`."
+  "See `hive-spi.memory.ports/get-entries`.
+   A store error Result answers as an empty vector marked incomplete
+   (`hive-mcp.protocols.memory-read/read-answer`)."
   [store ids]
-  (ports/get-entries store ids))
+  (mread/read-answer :get-entries (ports/get-entries store ids)))
 
 (defn batch-read-store?
   "Check if the store can fetch many entries in one backend round-trip."

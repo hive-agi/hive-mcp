@@ -37,6 +37,19 @@
       {:edge-ids    []
        :edge-errors (mapv #(assoc % :error (error-message e)) requests)})))
 
+(defn outcome-check
+  "How a caller learns the final outcome of edges a memory add could not
+   confirm. nil when nothing is unconfirmed. `edge-errors` are edge writes that
+   failed or outran their stage budget (they may still land);
+   `link-pending` is the :kg-outgoing link of edges that exist."
+  [entry-id edge-errors link-pending]
+  (when (or (seq edge-errors) link-pending)
+    {:status  "unconfirmed"
+     :how     (str "memory get id=" entry-id " include_kg=true"
+                   " (kg_outgoing lists the edges that landed), or"
+                   " kg traverse start_node=" entry-id " direction=outgoing")
+     :targets (vec (distinct (map :to edge-errors)))}))
+
 ;;; =============================================================================
 ;;; Contracts
 ;;; =============================================================================
@@ -66,3 +79,7 @@
 (m/=> edge-requests [:=> [:cat KgParams] [:vector EdgeRequest]])
 
 (m/=> attempt-edges [:=> [:cat ifn? [:sequential EdgeRequest]] EdgeOutcome])
+
+(m/=> outcome-check
+  [:=> [:cat :string [:maybe [:sequential :map]] [:maybe :map]]
+   [:maybe [:map [:status :string] [:how :string] [:targets [:vector :any]]]]])

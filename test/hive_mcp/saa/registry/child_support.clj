@@ -27,9 +27,8 @@
    write (:ok, :replaced) leaves `id` in this owner's index set; a :conflict
    leaves it out (another owner holds the id). Either way the id is stored.
 
-   Reads the snapshot, not all-ids: all-ids SORTS the ids and throws a
-   ClassCastException once a keyword id and a uuid id are both registered
-   (recorded as a defect in the f05 report), which these mixed ids reach."
+   Reads the snapshot directly: the owner index lives there, and all-ids only
+   answers the (type-totally-ordered) id vector."
   [snapshot]
   (fn [[owner id _] out]
     (let [data (:data (snapshot))

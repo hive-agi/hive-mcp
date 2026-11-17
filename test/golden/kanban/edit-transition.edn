@@ -9,7 +9,10 @@
    :title "t",
    :description "d",
    :status "todo",
-   :priority "low"},
+   :priority "low",
+   :description-history
+   [{:description "original description",
+     :replaced-at "2026-01-01T00:00:00+0000"}]},
   :new-tags
   ["priority-low"
    "kanban"
@@ -40,7 +43,10 @@
    :title "original title",
    :description "new description",
    :status "todo",
-   :priority "medium"},
+   :priority "medium",
+   :description-history
+   [{:description "original description",
+     :replaced-at "2026-01-01T00:00:00+0000"}]},
   :new-tags nil},
  :nil-is-ignored
  {:old-title "original title",

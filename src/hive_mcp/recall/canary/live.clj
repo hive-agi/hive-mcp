@@ -20,7 +20,8 @@
             [hive-mcp.protocols.memory :as mem-proto]
             [hive-mcp.recall.canary :as canary]
             [taoensso.timbre :as log]
-            [malli.core :as m]))
+            [malli.core :as m]
+            [hive-spi.memory.contract :as contract]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -97,15 +98,21 @@
                                                      :limit 1}))))
 
 (defn- create-fixture!
+  "Write the fixture for ROLE; answer its id, or nil when nothing searchable
+   landed. A refusal (hive-spi.memory.contract/failure?) or a queued ack
+   (contract/queued?) is not an id: passing it on as one would make the probes
+   treat an absent fixture as present instead of skipping."
   [st role]
-  (let [{:keys [type content tags]} (canary/fixture role)]
-    (result/rescue nil
-                   (mem-proto/add-entry! st {:type type
-                                             :content content
-                                             :tags tags
-                                             :duration "permanent"
-                                             :abstraction-level 2
-                                             :project-id fixture-project}))))
+  (let [{:keys [type content tags]} (canary/fixture role)
+        answer (result/rescue nil
+                              (mem-proto/add-entry! st {:type type
+                                                        :content content
+                                                        :tags tags
+                                                        :duration "permanent"
+                                                        :abstraction-level 2
+                                                        :project-id fixture-project}))]
+    (when-not (or (nil? answer) (contract/failure? answer) (contract/queued? answer))
+      answer)))
 
 (defn- link-supersession!
   "Write the :supersedes edge current -> superseded. Returns true on success."
@@ -137,8 +144,10 @@
     (assoc ids :created (vec (keys created)) :linked? linked?)))
 
 (def FixtureId
-  "A fixture's id: the found entry's :id, or what add-entry! answered (an id,
-   or a queued / failure map); nil when the store refused."
+  "A fixture's id: the found entry's :id, or the id add-entry! answered; nil
+   when the store refused or only queued the write (create-fixture! maps a
+   hive-spi failure or queued answer to nil). The schema still admits :map
+   so existing callers and generators keep validating."
   [:maybe [:or :string :int :uuid :keyword :map]])
 
 (def FixtureIds

@@ -172,7 +172,8 @@
       (is (contains? commands :cleanup-synthetics))
       (is (contains? commands :batch-edge))
       (is (contains? commands :batch-traverse))
-      (is (= 13 (count commands)) "13 kg commands")))
+      (is (contains? commands :prune-derived-excess))
+      (is (= 14 (count commands)) "14 kg commands")))
   (testing "every wired command is advertised in the tool's command enum"
     (let [advertised (set (get-in kg/tool-def
                                   [:inputSchema :properties "command" :enum]))]
