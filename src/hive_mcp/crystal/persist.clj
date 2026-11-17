@@ -51,12 +51,18 @@
   "multi-project")
 
 (def Wrap
-  "One fan-out element: `{:pid <pid-or-:umbrella> :entry <synth entry>}`."
+  "One fan-out element: `{:pid <pid-or-:umbrella> :entry <synth entry>}`.
+
+   `:consolidate-into <id>` is set by `crystal.consolidate/apply-folds` on a
+   same-day re-wrap: the wrap is then merged into that already-persisted entry
+   (id and KG edges preserved) instead of added. It lives at the WRAP level, not
+   inside `:entry`, so it can never reach `add-entry!`."
   [:map [:pid [:or [:= :umbrella] [:maybe :string]]]
    [:entry [:map [:type {:optional true} [:or :keyword :string]]
             [:duration {:optional true} [:or :keyword :string]]
             [:content {:optional true} :any]
-            [:tags {:optional true} [:maybe [:sequential :string]]]]]])
+            [:tags {:optional true} [:maybe [:sequential :string]]]]]
+   [:consolidate-into {:optional true} [:maybe :string]]])
 
 (def PersistReport
   [:map [:total [:int {:min 0}]] [:persisted [:int {:min 0}]] [:failed [:int {:min 0}]]
@@ -131,6 +137,12 @@
 ;; Public API: persist-wraps!
 ;; =============================================================================
 
+;; `upgrade-one!` is defined below `persist-wraps!` but a same-day re-wrap needs
+;; it here: the fold decision (which wrap merges into which stored entry) is made
+;; by `crystal.consolidate` before the write, and `persist-wraps!` is the
+;; boundary that honours it.
+(declare upgrade-one!)
+
 (defn persist-wraps!
   "Iterate `wraps` (output of `fanout/synthesize-wraps`) and write each
    to the IMemoryStore. Returns a result map:
@@ -141,6 +153,12 @@
     :failed     <count of !success?>
     :results    [{:pid :project-id :id :success? :error?} ...]}
    ```
+
+   A wrap carrying `:consolidate-into <id>` (stamped by
+   `crystal.consolidate/apply-folds` on a same-day re-wrap) is MERGED into that
+   stored entry through `upgrade-one!` instead of added, so the day keeps one
+   summary and that summary keeps its id and every KG edge. A wrap without the
+   marker is added, exactly as before.
 
    Optional `store-key` (default `:default`) selects the multi-store
    slot — wraps land in the same backend that holds session-summary
@@ -157,7 +175,11 @@
       :results []
       :error "IMemoryStore not registered"}
      (let [store (mem-proto/get-store store-key)
-           results (mapv (partial persist-one! store) wraps)]
+           results (mapv (fn [{:keys [consolidate-into] :as wrap}]
+                           (if consolidate-into
+                             (upgrade-one! store consolidate-into wrap)
+                             (persist-one! store wrap)))
+                         wraps)]
        {:total     (count results)
         :persisted (count (filter :success? results))
         :failed    (count (remove :success? results))

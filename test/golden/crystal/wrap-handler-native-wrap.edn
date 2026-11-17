@@ -15,5 +15,6 @@
    :total 0,
    :persisted 0,
    :failed 0,
-   :wraps []}},
+   :wraps [],
+   :chained {:linked 0, :failed 0}}},
  :writes 0}
