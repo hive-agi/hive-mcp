@@ -8,9 +8,13 @@
 
 (deftest registry-structure
   (testing "Registry is an ordered map with expected keys"
+    ;; hive-agent 18b2ee8 registered the ling exit events truncated,
+    ;; context-death and aborted; 41322a4 the :parked terminal event.
     (is (map? er/registry))
-    (is (= 9 (count er/registry)))
-    (is (= [:started :progress :completed :error :blocked :wrap_notify
+    (is (= 13 (count er/registry)))
+    (is (= [:started :progress :completed :error
+            :truncated :context-death :aborted :parked
+            :blocked :wrap_notify
             :conversation/tell :conversation/ask :conversation/respond]
            (keys er/registry))))
 
@@ -33,12 +37,14 @@
 (deftest all-event-types-test
   (testing "all-event-types is the complete set"
     (is (= #{:started :progress :completed :error :blocked :wrap_notify
+             :truncated :context-death :aborted :parked
              :conversation/tell :conversation/ask :conversation/respond}
            er/all-event-types))))
 
 (deftest all-event-type-strings-test
   (testing "all-event-type-strings matches keyword names"
     (is (= #{"started" "progress" "completed" "error" "blocked" "wrap_notify"
+             "truncated" "context-death" "aborted" "parked"
              "tell" "ask" "respond"}
            er/all-event-type-strings))))
 
@@ -205,13 +211,13 @@
 
 (deftest mcp-enum-test
   (testing "mcp-enum returns the MCP-visible event type strings"
+    ;; truncated and context-death are MCP-visible ling exit events
+    ;; (hive-agent 18b2ee8); aborted and parked are not.
     (let [enum (er/mcp-enum)]
       (is (vector? enum))
-      (is (= 5 (count enum)))
-      (is (not (contains? (set enum) "wrap_notify")))
-      (is (not (contains? (set enum) "tell")))
-      (is (not (contains? (set enum) "ask")))
-      (is (not (contains? (set enum) "respond"))))))
+      (is (= 7 (count enum)))
+      (doseq [hidden ["wrap_notify" "tell" "ask" "respond" "aborted" "parked"]]
+        (is (not (contains? (set enum) hidden)) hidden)))))
 
 ;; =============================================================================
 ;; Backward Compatibility Tests
@@ -230,7 +236,9 @@
       :blocked   :blocked)))
 
 (deftest backward-compat-mcp-enum-test
-  (testing "MCP enum contains exactly the same values as hardcoded enums"
+  (testing "MCP enum keeps every value of the original hardcoded enum"
+    ;; The original five stay; the enum has since grown the ling exit events
+    ;; truncated and context-death (hive-agent 18b2ee8).
     (let [original-enum #{"progress" "completed" "error" "blocked" "started"}
           registry-enum (set (er/mcp-enum))]
-      (is (= original-enum registry-enum)))))
+      (is (= (into original-enum #{"truncated" "context-death"}) registry-enum)))))

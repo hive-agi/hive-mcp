@@ -1,4 +1,4 @@
-(ns hive-mcp.swarm.lifecycle.boot-reconcile-test
+(ns hive-mcp.swarm.lifecycle.boot-reconcile-unit-test
   "Facets for boot reconciliation, through the 1-arity's injected registry
    ports (no swarm library, no with-redefs).
 

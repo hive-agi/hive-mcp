@@ -1,4 +1,4 @@
-(ns hive-mcp.swarm.claim.span-test
+(ns hive-mcp.swarm.claim.span-unit-test
   "Facets for hive-mcp.swarm.claim.span, a compat shim over
    hive-agent.swarm.claim.span.
 

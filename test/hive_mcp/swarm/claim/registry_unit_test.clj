@@ -1,4 +1,4 @@
-(ns hive-mcp.swarm.claim.registry-test
+(ns hive-mcp.swarm.claim.registry-unit-test
   "Facets for hive-mcp.swarm.claim.registry on the unit classpath.
 
    The registry reads and writes claim rows through hive-mcp.swarm.datascript

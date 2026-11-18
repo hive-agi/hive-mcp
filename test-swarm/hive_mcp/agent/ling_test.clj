@@ -25,15 +25,28 @@
             hive-mcp.isolation-methods
             [hive-mcp.test.stub.terminal-addon :as terminal-stub]
             [hive-mcp.test.stub.swarm-rows :as rows]
-            [hive-mcp.agent.ling.terminal-registry :as treg]))
+            [hive-mcp.agent.ling.terminal-registry :as treg]
+            [hive-mcp.agent.ling.start-preflight :as preflight]))
 
 ;; =============================================================================
 ;; Test Fixtures
 ;; =============================================================================
 
+(defn- trust-tmp-fixture
+  "Run the test with a folder-trust source that trusts /tmp. The :claude
+   spawn preflight (start-preflight/ensure-startable!) otherwise reads the
+   host's ~/.claude.json and refuses every spawn whose cwd it has not
+   trusted, so the result would depend on the machine running the suite."
+  [f]
+  (binding [preflight/*folder-trust* (reify preflight/IFolderTrust
+                                       (trusted-roots [_] #{"/tmp"})
+                                       (checkout-root [_ _] nil))]
+    (f)))
+
 (use-fixtures :each
   (iso/with-isolations :swarm-ds)
-  terminal-stub/with-terminal)
+  terminal-stub/with-terminal
+  trust-tmp-fixture)
 
 ;; =============================================================================
 ;; Mock Helpers
@@ -456,11 +469,14 @@
     ;; add-live-slave!, not add-slave! — get-all-slaves filters on liveness.
     (rows/add-live-slave! "ling-1" {:status :idle :depth 1})
     (rows/add-live-slave! "ling-2" {:status :working :depth 1})
-    ;; A nested slave (depth 2) should be filtered out
+    ;; A grandchild (depth 2) is a ling too: every depth of 1 or more is
+    ;; (grant/ling-row?, RRS-S5A). Depth 0 is a coordinator row.
     (rows/add-live-slave! "nested-1" {:status :idle :depth 2})
+    (rows/add-live-slave! "coord-0" {:status :idle :depth 0})
 
     (let [lings (ling/list-lings)]
-      (is (= 2 (count lings)) "Should return only lings (depth 1)")
+      (is (= #{"ling-1" "ling-2" "nested-1"} (set (map :id lings)))
+          "Every depth >= 1 is a ling; the depth-0 row is not")
       (is (every? #(instance? hive_mcp.agent.ling.spawn.Ling %) lings)
           "All results should be Ling records"))))
 

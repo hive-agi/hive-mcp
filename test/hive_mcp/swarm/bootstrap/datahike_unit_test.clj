@@ -1,4 +1,4 @@
-(ns hive-mcp.swarm.bootstrap.datahike-test
+(ns hive-mcp.swarm.bootstrap.datahike-unit-test
   "Facets for hive-mcp.swarm.bootstrap.datahike, a compat shim over
    hive-agent.swarm.bootstrap.datahike.
 

@@ -11,6 +11,7 @@
   :conflicts
   [{:file "src/x.clj",
     :qn nil,
+    :held-qn nil,
     :mode :file,
     :held-by "ling-a",
     :reason :file-claim}],
@@ -46,6 +47,7 @@
  :conflicts-for
  [{:file "src/x.clj",
    :qn nil,
+   :held-qn nil,
    :mode :file,
    :held-by "ling-a",
    :reason :file-claim}],

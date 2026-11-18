@@ -363,11 +363,13 @@
 
 (deftest handle-swarm-collect-completed-test
   (testing "Returns proper MCP response format when task completed"
-    ;; Single JSON string - unwrap-emacs-string already handles emacsclient quoting
+    ;; Single JSON string - unwrap-emacs-string already handles emacsclient quoting.
+    ;; The Emacs poll is taken only when asked for (select-strategy defaults
+    ;; to :strategy/jvm), so this pin of the Emacs path names it.
     (let [json-str "{\"task_id\":\"task-001\",\"status\":\"completed\",\"result\":\"Success\"}"]
       (with-addon-available (mock-elisp-timeout-success json-str)
         (with-redefs [swarm-channel/check-event-journal (constantly nil)]
-          (let [result (swarm/handle-swarm-collect {:task_id "task-001"})
+          (let [result (swarm/handle-swarm-collect {:task_id "task-001" :strategy "emacs"})
                 parsed (json/read-str (:text result) :key-fn keyword)]
             (is (= "text" (:type result)))
             (is (string? (:text result)))
@@ -394,11 +396,12 @@
 
 (deftest handle-swarm-collect-error-task-test
   (testing "Returns error status when task failed"
-    ;; Single JSON string - unwrap-emacs-string already handles emacsclient quoting
+    ;; Single JSON string - unwrap-emacs-string already handles emacsclient quoting.
+    ;; Pins the Emacs poll, which must be requested (default is :strategy/jvm).
     (let [json-str "{\"task_id\":\"task-001\",\"status\":\"error\",\"error\":\"Task crashed\"}"]
       (with-addon-available (mock-elisp-timeout-success json-str)
         (with-redefs [swarm-channel/check-event-journal (constantly nil)]
-          (let [result (swarm/handle-swarm-collect {:task_id "task-001"})
+          (let [result (swarm/handle-swarm-collect {:task_id "task-001" :strategy "emacs"})
                 parsed (json/read-str (:text result) :key-fn keyword)]
             (is (= "text" (:type result)))
             (is (string? (:text result)))
@@ -408,13 +411,16 @@
 
 (deftest handle-swarm-collect-timeout-test
   (testing "Returns timeout when collection times out"
-    ;; Single JSON string - unwrap-emacs-string already handles emacsclient quoting
+    ;; Single JSON string - unwrap-emacs-string already handles emacsclient quoting.
+    ;; Pins the Emacs poll, which must be requested (default is :strategy/jvm,
+    ;; which answers an undispatched id as unknown, not as a timeout).
     (let [json-str "{\"task_id\":\"task-001\",\"status\":\"polling\"}"]
       (with-addon-available (mock-elisp-timeout-success json-str)
         (with-redefs [swarm-channel/check-event-journal (constantly nil)]
           ;; Use very short timeout to trigger timeout
           (let [result (swarm/handle-swarm-collect {:task_id "task-001"
-                                                    :timeout_ms 1})
+                                                    :timeout_ms 1
+                                                    :strategy "emacs"})
                 parsed (json/read-str (:text result) :key-fn keyword)]
             (is (= "text" (:type result)))
             (is (string? (:text result)))
@@ -430,12 +436,17 @@
         ;; swarm.channel/check-event-journal directly, so stubbing the re-export
         ;; in hive-mcp.tools.swarm rebinds a var the poll loop never reads. This
         ;; test therefore polled for the full five minutes on every suite run.
+        ;; An Elisp eval timeout happens only on the Emacs poll, which must be
+        ;; requested: the default :strategy/jvm never evaluates Elisp, and its
+        ;; answer depends on whether some earlier test dispatched task-001.
         (let [result (swarm/handle-swarm-collect {:task_id "task-001"
-                                                  :timeout_ms 1})]
+                                                  :timeout_ms 1
+                                                  :strategy "emacs"})]
           (is (= "text" (:type result)))
           (is (true? (:isError result)))
           (let [parsed (json/read-str (:text result) :key-fn keyword)]
-            (is (= "error" (:status parsed)))))))))
+            (is (= "error" (:status parsed)))
+            (is (= "Elisp evaluation timed out" (:error parsed)))))))))
 
 (deftest handle-swarm-collect-addon-not-loaded-test
   (testing "collect is JVM-first: it works with no swarm addon, and times out cleanly"

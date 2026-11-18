@@ -1,4 +1,4 @@
-(ns hive-mcp.swarm.logic-test
+(ns hive-mcp.swarm.logic-unit-test
   "Facets for hive-mcp.swarm.logic, a compat shim over hive-agent.swarm.logic.
 
    Without hive-agent on the unit classpath, the golden pins where each of the

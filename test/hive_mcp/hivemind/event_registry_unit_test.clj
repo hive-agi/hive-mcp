@@ -1,4 +1,4 @@
-(ns hive-mcp.hivemind.event-registry-test
+(ns hive-mcp.hivemind.event-registry-unit-test
   "Facets for the event-registry compat shim: its fns delegate to the
    same-named vars of hive-agent.swarm.hivemind.event-registry, except
    event-type-schema, which answers a JSON schema itself (with the :enum
