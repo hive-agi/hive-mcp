@@ -99,13 +99,17 @@
 
 (def ResumeResult
   "What an owner's resumer answered, as resume! records it: {:ok? true
-   :value v} or {:ok? false :error message :data ex-data :attempt n}."
+   :value v} or {:ok? false :error message :data ex-data :attempt n}. A
+   deferred answer (heap pressure) carries :deferred true, and the recorded
+   failure carries :give-up? once :max-attempts is reached."
   [:map {:closed true}
    [:ok? :boolean]
    [:value {:optional true} :any]
    [:error {:optional true} [:maybe :string]]
    [:data {:optional true} [:maybe :map]]
-   [:attempt {:optional true} [:maybe :int]]])
+   [:attempt {:optional true} [:maybe :int]]
+   [:deferred {:optional true} :boolean]
+   [:give-up? {:optional true} :boolean]])
 
 (def InitReport
   "What init! answers: how many awaiters were loaded, the ids armed, the ids
@@ -180,6 +184,10 @@
                               nil))]
              (when (and aside on-corrupt) (on-corrupt aside))
              {})))))))
+
+(m/=> read-awaiters* [:function
+                      [:=> [:cat :string] [:map-of :string domain/Awaiter]]
+                      [:=> [:cat :string [:maybe [:fn ifn?]]] [:map-of :string domain/Awaiter]]])
 
 (m/=> read-awaiters [:=> [:cat :string] [:map-of :string domain/Awaiter]])
 
@@ -289,7 +297,11 @@
 
 (m/=> make-registry [:function
                      [:=> [:cat :string] Registry]
-                     [:=> [:cat :string [:map {:closed true} [:now-fn {:optional true} [:maybe [:fn ifn?]]]]] Registry]])
+                     [:=> [:cat :string [:map {:closed true}
+                                         [:now-fn {:optional true} [:maybe [:fn ifn?]]]
+                                         [:pending-ttl-ms {:optional true} [:maybe :int]]
+                                         [:max-attempts {:optional true} [:maybe :int]]]]
+                      Registry]])
 
 (defn- now [reg] ((:now-fn reg)))
 
@@ -428,6 +440,8 @@
                     (redrive! reg id)))
               result))))
       nil)))
+
+(m/=> resume! [:=> [:cat Registry domain/AwaiterId] [:maybe ResumeResult]])
 
 (defn deliver!
   "Hand the woken awaiter `id` to its resumer: persist :waking with

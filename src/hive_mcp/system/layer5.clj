@@ -119,23 +119,37 @@
 (defmethod ig/init-key :hive/await-registry
   [_ config]
   (log/info ":hive/await-registry init — restoring parked awaiters" config)
-  (let [boot!  (resolve-soft 'hive-mcp.await.registry/boot!)
-        shut!  (resolve-soft 'hive-mcp.await.registry/shutdown-process!)
-        report (when boot!
-                 (try (boot!)
-                      (catch Throwable t
-                        (log/warn t ":hive/await-registry — boot restore failed (non-fatal)")
-                        nil)))]
+  (let [boot!      (resolve-soft 'hive-mcp.await.registry/boot!)
+        shut!      (resolve-soft 'hive-mcp.await.registry/shutdown-process!)
+        install!   (resolve-soft 'hive-mcp.await.ling-events/install!)
+        uninstall! (resolve-soft 'hive-mcp.await.ling-events/uninstall!)
+        report     (when boot!
+                     (try (boot!)
+                          (catch Throwable t
+                            (log/warn t ":hive/await-registry — boot restore failed (non-fatal)")
+                            nil)))
+        ;; The :parked listener arms a parked ling's awaiter and cancels the
+        ;; pending awaiters of a ling that ended any other way. Installed even
+        ;; when the restore failed: the registry still answers lazily.
+        listener   (when (and boot! install!)
+                     (try (install!)
+                          (catch Throwable t
+                            (log/warn t ":hive/await-registry — ling-event listener not installed (non-fatal)")
+                            nil)))]
     (when-not boot!
       (log/info ":hive/await-registry — no await context in this build; nothing to restore"))
-    {:shutdown! shut!
-     :report    report
-     :status    (cond (nil? boot!)                        :absent
-                      (contains? (or report {}) :loaded)   :restored
-                      :else                               :failed)}))
+    {:shutdown!            shut!
+     :uninstall-listener!  (when listener uninstall!)
+     :listener             listener
+     :report               report
+     :status               (cond (nil? boot!)                        :absent
+                                 (contains? (or report {}) :loaded)   :restored
+                                 :else                               :failed)}))
 
 (defmethod ig/halt-key! :hive/await-registry
   [_ state]
+  (when-let [uninstall! (:uninstall-listener! state)]
+    (result/rescue nil (uninstall!)))
   (when (and (:shutdown! state) (not= :absent (:status state)))
     (log/info ":hive/await-registry halt — releasing the registry and its lock")
     (result/rescue nil ((:shutdown! state)))))
