@@ -14,7 +14,8 @@
             [taoensso.timbre :as log]
             [hive-mcp.tools.consolidated.session-config :as session-config]
             [hive-mcp.embeddings.shared-gate :as embed-gate]
-            [malli.core :as m]))
+            [malli.core :as m]
+            [hive-mcp.crystal.history :as history]))
 
 (defn- evict-agent-context!
   "Evict context-store entries for a completing agent."
@@ -277,6 +278,33 @@
 
 (m/=> handle-complete [:=> [:cat [:maybe :map]] :map])
 
+(defn history*
+  "`session history` over PORT (a `crystal.history/ISummaryHistory`, nil when
+   no store or KG is up). The project is `project_id` when given, else the
+   project of `directory` (or the request's directory). Returns a Result whose
+   :ok is the History plus its compact :text render."
+  [port {:keys [directory project_id limit]}]
+  (let [project-id (or (some-> project_id str not-empty)
+                       (scope/get-current-project-id
+                        (or directory (ctx/current-directory))))]
+    (if (nil? port)
+      (result/err :session/history-unavailable
+                  {:message "session history needs a memory store and the KG; neither port is up"
+                   :project-id project-id})
+      (result/ok (history/report port project-id limit)))))
+
+(m/=> history* [:=> [:cat :any [:maybe :map]] :map])
+
+(defn handle-history
+  "Walk the :supersedes chain of wrap summaries of the current project,
+   newest first, bounded by `limit` (default 10, max 100) and a cycle guard.
+   Answers the data shape plus a compact text render under :text."
+  [params]
+  (rb/result->mcp (rb/try-result :session/history-failed
+                                 #(history* (history/store-history) params))))
+
+(m/=> handle-history [:=> [:cat [:maybe :map]] tc/McpResponse])
+
 (def handlers
   "The `session` verbs, stored as VARS so a reload of THIS namespace reaches the
    table (20260817195749-0d407e9c). Every value is a local def, which is the
@@ -289,6 +317,7 @@
    :wrap                 #'handle-wrap
    :whoami               #'handle-whoami
    :catchup              #'handle-catchup
+   :history              #'handle-history
    :context-put          #'handle-context-put
    :context-get          #'handle-context-get
    :context-query        #'handle-context-query
@@ -302,10 +331,10 @@
 (def tool-def
   {:name "session"
    :consolidated true
-   :description "Session lifecycle: complete (commit + kanban + wrap + shout), wrap (crystallize only without commit), whoami (get agent identity context), catchup (restore session context from memory). Context store: context-put (store data, get ID), context-get (retrieve by ID), context-query (search by tags), context-evict (remove by ID), context-stats (store metrics), context-reconstruct (compressed reconstruction from refs). Use command='help' to list all."
+   :description "Session lifecycle: complete (commit + kanban + wrap + shout), wrap (crystallize only without commit), whoami (get agent identity context), catchup (restore session context from memory), history (the project's wrap summaries newest-first along their :supersedes chain, with date + one-line digest; limit default 10, max 100). Context store: context-put (store data, get ID), context-get (retrieve by ID), context-query (search by tags), context-evict (remove by ID), context-stats (store metrics), context-reconstruct (compressed reconstruction from refs). Use command='help' to list all."
    :inputSchema {:type "object"
                  :properties {"command" {:type "string"
-                                         :enum ["complete" "wrap" "whoami" "catchup"
+                                         :enum ["complete" "wrap" "whoami" "catchup" "history"
                                                 "context-put" "context-get" "context-query"
                                                 "context-evict" "context-stats"
                                                 "context-reconstruct" "help"]
@@ -318,7 +347,9 @@
                               "agent_id" {:type "string"
                                           :description "Ling's slave-id (CLAUDE_SWARM_SLAVE_ID)"}
                               "directory" {:type "string"
-                                           :description "Working directory for git/kanban scoping"}
+                                           :description "Working directory for git/kanban scoping; [history] the project whose chain is walked"}
+                              "project_id" {:type "string"
+                                            :description "[history] Project whose chain is walked (default: the project of directory)"}
                               "data" {:description "[context-put] Structured data to store (any JSON value)"}
                               "ctx_id" {:type "string"
                                         :description "[context-get/context-evict] Context entry ID"}
@@ -328,7 +359,7 @@
                               "ttl_ms" {:type "integer"
                                         :description "[context-put] Time-to-live in milliseconds (default: 300000 = 5 min)"}
                               "limit" {:type "integer"
-                                       :description "[context-query] Max entries to return (default: 100)"}
+                                       :description "[context-query] Max entries to return (default: 100) / [history] Max summaries walked (default 10, max 100)"}
                               "ctx_refs" {:type "object"
                                           :description "[context-reconstruct] Map of category->ctx-id for ref resolution"}
                               "kg_node_ids" {:type "array"
