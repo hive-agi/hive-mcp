@@ -161,3 +161,12 @@
                                (catch Throwable _kg-absent-means-no-chain nil))]
        (when-let [store (mem-proto/get-store store-key)]
          (->StoreChain store add-edge!))))))
+
+;; Contracts for the predicates and the adapter factory. The crystal contract
+;; gate (crystal.contract-coverage-test) requires every public fn here to carry
+;; one; previous-summary, chain-one! and chain-wraps! carry theirs inline.
+(m/=> summary? [:=> [:cat [:maybe Candidate]] :boolean])
+(m/=> in-scope? [:=> [:cat [:maybe :string] [:maybe Candidate]] :boolean])
+(m/=> store-chain [:function
+                   [:=> [:cat] [:maybe [:fn #(satisfies? ISummaryChain %)]]]
+                   [:=> [:cat :keyword] [:maybe [:fn #(satisfies? ISummaryChain %)]]]])
