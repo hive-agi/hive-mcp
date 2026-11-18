@@ -83,9 +83,9 @@
         ;; Schema validation (malli)
         metosin/malli {:mvn/version "0.20.2"}
 
-        ;; Chroma vector database client - BuddhiLW fork with v2 API support
-        io.github.buddhilw/clojure-chroma-client
-        {:git/tag "v0.1.0-hive" :git/sha "e575d5a"}
+        ;; Chroma is the hive-chroma IAddon (github.com/hive-agi/hive-chroma),
+        ;; which carries clojure-chroma-client. Like every backend it is NOT
+        ;; declared here: a deployment supplies it via local.deps.edn.
 
         ;; for openrouter integration
         clj-http/clj-http {:mvn/version "3.13.1"}

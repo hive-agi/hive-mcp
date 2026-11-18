@@ -70,7 +70,7 @@
   (reify proto/IHarvestSource
     (source-id [_] :memory)
     (available? [_]
-      (boolean (try (require 'hive-mcp.chroma.core) true
+      (boolean (try ((requiring-resolve 'hive-mcp.protocols.memory/store-set?))
                     (catch Exception _ false))))
     (harvest [_ opts]
       (result/rescue (harvest-error :memory {:type :rescue-caught})
@@ -78,10 +78,11 @@
               [data ms]
               (timed
                (fn []
-                 (let [chroma (requiring-resolve 'hive-mcp.chroma.core/query-entries)
-                       raw    (chroma :type "note"
-                                      :project-id (or project-id "global")
-                                      :limit 100)
+                 (let [get-store (requiring-resolve 'hive-mcp.protocols.memory/get-store)
+                       query     (requiring-resolve 'hive-mcp.protocols.memory/query-entries)
+                       raw       (query (get-store) {:type "note"
+                                                     :project-id (or project-id "global")
+                                                     :limit 100})
                        notes  (->> raw
                                    (filter #(= "ephemeral" (:duration %)))
                                    (take 50)
