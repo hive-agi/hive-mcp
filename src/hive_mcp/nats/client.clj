@@ -226,6 +226,8 @@
                                                :last-consumer-seq last-consumer-seq
                                                :suppressed-since-last suppressed})))))))
 
+(m/=> error-listener [:=> [:cat] [:fn #(instance? ErrorListener %)]])
+
 (defn start!
   "Connect to NATS without blocking boot, and keep trying forever.
 
