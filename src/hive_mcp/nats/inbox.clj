@@ -129,15 +129,20 @@
 
 (defn decode-inbox-id
   "Pure: the coordinator-lane spelling of a canonical id. Reverses
-   `encode-inbox-id` for `coordinator-<digits>` only (`coordinator-134462`
-   -> `coordinator:134462`); every other id is returned as given, because a
-   '-' elsewhere is a plain dash."
+   `encode-inbox-id` for `coordinator-<session>` where the session token is
+   one bb-mcp stamps: decimal digits (a pid, `coordinator-134462` ->
+   `coordinator:134462`) or exactly eight lowercase hex digits (a Claude Code
+   session-id prefix, `coordinator-a2f8cfa6` -> `coordinator:a2f8cfa6`,
+   kanban 20261111164432-2be7b1e6). Every other id is returned as given,
+   because a '-' elsewhere is a plain dash."
   [id]
   (let [prefix "coordinator-"
-        pid    (when (and (string? id) (str/starts-with? id prefix))
+        token  (when (and (string? id) (str/starts-with? id prefix))
                  (subs id (count prefix)))]
-    (if (and (seq pid) (every? #(Character/isDigit ^char %) pid))
-      (str "coordinator:" pid)
+    (if (and (seq token)
+             (or (every? #(Character/isDigit ^char %) token)
+                 (re-matches #"[0-9a-f]{8}" token)))
+      (str "coordinator:" token)
       id)))
 
 (m/=> decode-inbox-id [:=> [:cat :any] :any])
