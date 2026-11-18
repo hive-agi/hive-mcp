@@ -625,14 +625,17 @@
                         (str " Check edges with: " (:how kg-check))))))))
 
 (defn effective-duration
-  "Duration an add lands with: the caller's `duration` when given, else the
-   registry default of `type` (`type-registry/default-duration`, so an
-   :axiom or :principle is permanent), else \"long\". It used to be \"long\"
-   for every type, which is how approved axioms came to expire
-   (card 20261102185846-041d31e2). Pure."
+  "Duration an add lands with: the caller's `duration` when given, else
+   \"permanent\" when the registry default of `type`
+   (`type-registry/default-duration`) is \"permanent\" (:axiom, :principle),
+   else \"long\". Registry defaults other than permanent are NOT applied: an
+   add has always landed \"long\". It used to be \"long\" for every type,
+   which is how approved axioms came to expire (card 20261102185846-041d31e2).
+   Pure."
   [type duration]
   (or (some-> duration (#(if (keyword? %) (name %) (str %))) str/trim not-empty)
-      (type-registry/default-duration type)
+      (when (= "permanent" (type-registry/default-duration type))
+        "permanent")
       "long"))
 
 (m/=> effective-duration [:=> [:cat :any [:maybe [:or :string :keyword]]] :string])
