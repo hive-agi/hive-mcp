@@ -96,7 +96,6 @@
   "agent.session-state" :hive-agent
   "agent.transcript-query" :hive-agent
   "agora" :hive-agora
-  "chroma" :hive-memory
   "crystal" :hive-memory
   "emacs" :hive-emacs
   "emacs-ext" :hive-emacs
