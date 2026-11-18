@@ -19,29 +19,37 @@
    live-ratio threshold (0.2) so a demotion reliably drops protection."
   0.3)
 
+(def ^:private synthetics-query
+  '[:find (pull ?e [:kg-synthetic/members :kg-synthetic/confidence])
+    :where [?e :kg-synthetic/id]])
+
 (defn synthesis-protected-ids
   "Set of memory-entry ids that are members of at least one synthetic whose
-   confidence >= `protection-confidence-floor`. Read-only KG snapshot; never
-   throws upstream — any failure yields #{} so the reaper still runs."
-  []
-  (try
-    (let [db   (conn/db-snapshot)
-          rows (conn/query '[:find (pull ?e [:kg-synthetic/members
-                                             :kg-synthetic/confidence])
-                             :where [?e :kg-synthetic/id]]
-                           db)]
-      (into #{}
-            (comp (map first)
-                  (filter #(>= (double (or (:kg-synthetic/confidence %) 0.0))
-                               protection-confidence-floor))
-                  (mapcat :kg-synthetic/members))
-            rows))
-    (catch Throwable e
-      (log/debug "synthesis-protected-ids failed; protecting nothing:"
-                 (.getMessage e))
-      #{})))
+   confidence >= `protection-confidence-floor`. Read-only KG read; never
+   throws upstream — any failure yields #{} so the reaper still runs.
 
-(m/=> synthesis-protected-ids [:=> [:cat] [:set :string]])
+   `query-fn` is the KG read seam, (fn [q] rows) answering [[pulled] ...];
+   it defaults to `conn/query` against the active store. The query takes NO
+   extra :in inputs: passing a db value here made every backend throw
+   \"Extra inputs passed\", which the catch turned into #{} (protection off)."
+  ([] (synthesis-protected-ids conn/query))
+  ([query-fn]
+   (try
+     (into #{}
+           (comp (map first)
+                 (filter #(>= (double (or (:kg-synthetic/confidence %) 0.0))
+                              protection-confidence-floor))
+                 (mapcat :kg-synthetic/members))
+           (query-fn synthetics-query))
+     (catch Throwable e
+       (log/debug "synthesis-protected-ids failed; protecting nothing:"
+                  (.getMessage e))
+       #{}))))
+
+(m/=> synthesis-protected-ids
+      [:function
+       [:=> [:cat] [:set :string]]
+       [:=> [:cat ifn?] [:set :string]]])
 
 (defn install!
   "Register `synthesis-protected-ids` as the memory-SPI afterlife provider.

@@ -78,6 +78,10 @@
  :hive/registry-sync   {:swarm-sync #ig/ref :hive/swarm-sync}
  :hive/decay-scheduler {:embedding #ig/ref :hive/embedding}
  :hive/housekeeping    {}
+ ;; Parked awaiter registry: restored at boot, released at halt. Placed after
+ ;; housekeeping because it needs nothing from the boot beyond a directory; a
+ ;; build without the await context reports :absent and boots anyway.
+ :hive/await-registry  {}
  ;; Heartbeat for the ISweepable registry. Separate from :hive/housekeeping,
  ;; which runs its own HARDCODED task list on a 5 minute timer; this one runs
  ;; whatever has registered, at each sweep's own interval. Until this key

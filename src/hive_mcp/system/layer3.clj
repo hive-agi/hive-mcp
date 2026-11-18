@@ -130,6 +130,8 @@
           (let [load-config! (resolve 'hive-mcp.config.core/load-global-config!)
                 scan!        (resolve 'hive-mcp.tools.hive-project/scan-and-generate-missing!)]
             (load-config!)
+            (result/rescue-log ":hive/config transport chains" nil
+              ((requiring-resolve 'hive-mcp.transport.registry/install!)))
             (let [scan-result (scan!)]
               (log/info ":hive/config global config loaded + auto-gen .hive-project.edn:" scan-result)
               {:config-loaded true :scan-result scan-result})))]
@@ -140,7 +142,10 @@
   [_ _state]
   ;; Config is read-once; no resources to release.
   ;; Global config atom persists across resets (re-read on next init-key).
-  (log/info ":hive/config halt — noop (config is read-once)"))
+  ;; The transport probe loops are the one thread this key starts.
+  (result/rescue-log ":hive/config halt transport probes" nil
+    ((requiring-resolve 'hive-mcp.transport.registry/stop-probe-loops!)))
+  (log/info ":hive/config halt — config is read-once; transport probes stopped"))
 
 ;; =============================================================================
 ;; :hive/extensions — Classpath addon discovery + self-registration

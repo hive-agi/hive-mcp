@@ -7,6 +7,7 @@
    Every verb answers through the hive NATS client's live connection and
    refuses plainly, with the bus status, when there is none."
   (:require [clojure.string :as str]
+            [hive-mcp.channel.audience :as audience]
             [hive-mcp.nats.client :as client]
             [hive-mcp.nats.inbox :as inbox]
             [hive-mcp.protocols.event-backbone :as eb]
@@ -56,11 +57,44 @@
                     (:summary (eb/backbone-status))
                     "). See `events bus-status`."))))
 
-(defn- need-inbox [verb params f]
-  (if-let [id (resolve-inbox-id params (env-inbox))]
-    (f id)
+(defn- need-inbox
+  "Resolve the addressed inbox, encode it to its canonical id
+   (`coordinator:134462` -> `coordinator-134462`) and call (f id). An id that
+   is no valid inbox id after encoding is refused with :inbox/invalid-id."
+  [verb params f]
+  (if-let [raw (resolve-inbox-id params (env-inbox))]
+    (try (f (inbox/encode-inbox-id raw))
+         (catch clojure.lang.ExceptionInfo e
+           (if (= :inbox/invalid-id (:error (ex-data e)))
+             (mcp-error (str "inbox " verb ": " (.getMessage e) " [:inbox/invalid-id]"))
+             (throw e))))
     (mcp-error (str "inbox " verb ": pass `inbox` (your stable coordinator name)"
                     " or set HIVE_INBOX_ID"))))
+
+(defn auto-arm!
+  "Bind a coordinator caller to its own inbox without an explicit `inbox arm`.
+   `caller` is the transport's caller id; only a coordinator lane that names a
+   session (`coordinator:<pid>`) is armed, under its encoded id
+   (`coordinator-<pid>`). Arms the durable, binds the caller so the senses of
+   its lings are republished there, and starts the sense adapters. Never
+   throws: -> {:armed? true :inbox id} | {:armed? false :reason kw}."
+  [caller]
+  (try
+    (let [session (audience/coordinator-session caller)
+          id      (when session (inbox/safe-encode-inbox-id (str "coordinator:" session)))
+          conn    (when id (connection))]
+      (cond
+        (nil? id)   {:armed? false :reason :not-a-coordinator-session}
+        (nil? conn) {:armed? false :reason :no-bus :inbox id}
+        :else
+        (do (inbox/arm! conn id)
+            (sense-republish/bind-inbox! caller id)
+            (sense-adapters/start!)
+            {:armed? true :inbox id})))
+    (catch Throwable t
+      {:armed? false :reason :arm-failed :error (.getMessage t)})))
+
+(m/=> auto-arm! [:=> [:cat :any] :map])
 
 (defn handle-arm
   "Create or keep the durable for an inbox. Re-arm keeps the cursor. The

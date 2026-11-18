@@ -357,9 +357,12 @@
                        :terminal-modes #{}})]
     (is (nil? (sync/full-sync-from-bootstrap! bs probe {:reset! (fn [] :reset)
                                                        :register! #(swap! registered conj %)})))
+    ;; Every restored row is stamped :restored-at (hive-agent a3444f5: a ling
+    ;; the host restart cut off is told apart by it); the stamp is the clock's.
+    (is (every? #(inst? (:restored-at %)) @registered))
     (is (= [{:slave-id "a" :spawn-mode :headless :status :zombie :alive? false}
             {:slave-id "b" :process-pid 22 :liveness :verified}]
-           @registered))))
+           (mapv #(dissoc % :restored-at) @registered)))))
 
 (deftest sync-injection-slots-test
   (let [old-bs (sync/get-swarm-bootstrap)

@@ -31,9 +31,11 @@
             [:services :vector-store] [:addons]]}
    {:step  :redecorate
     :paths [[:services :seal]]
-    :after #{:memory-store}}])
+    :after #{:memory-store}}
+   {:step  :transports
+    :paths [[:transports]]}])
 
-(def Step [:enum :embeddings :memory-store :redecorate])
+(def Step [:enum :embeddings :memory-store :redecorate :transports])
 
 (defn changed-paths
   "Pure. The watched config paths whose value differs between OLD and NEW."
@@ -63,7 +65,8 @@
   "The live boot steps, by symbol. Each is a 0-arity fn."
   {:embeddings   'hive-mcp.server.init/init-embedding-provider!
    :memory-store 'hive-mcp.server.init/rewire-memory-store!
-   :redecorate   'hive-spi.memory.registry/redecorate!})
+   :redecorate   'hive-spi.memory.registry/redecorate!
+   :transports   'hive-mcp.transport.registry/rebind-from-config!})
 
 (defn- port-fn [ports step]
   (let [p (get ports step)]

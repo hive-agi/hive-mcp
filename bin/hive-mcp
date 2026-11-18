@@ -136,6 +136,15 @@ if [[ "${HIVE_MCP_COREDUMP:-0}" == "1" ]]; then
 fi
 JVM_ARGS+=(-J-XX:+CreateCoredumpOnCrash)
 
+# An OOM heap dump lands WHERE IT IS FOUND. Without HeapDumpPath the JVM
+# writes an Xmx-sized .hprof (10 GB default here) into whatever cwd the
+# launcher had, and the next exit from the boot no one can prove looks like
+# it left none at all (kanban 20261014203049-18f1d5f2). Knob:
+# HIVE_MCP_HEAP_DUMP_DIR.
+HEAP_DUMP_DIR="${HIVE_MCP_HEAP_DUMP_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/hive-mcp/heapdumps}"
+mkdir -p "$HEAP_DUMP_DIR" 2>/dev/null || true
+JVM_ARGS+=(-J-XX:HeapDumpPath="$HEAP_DUMP_DIR")
+
 # ── OOM standing: the server outlives a runaway test JVM ────────────
 # Kernel OOM killer: try to lower our oom_score_adj (inherited by the JVM).
 # Lowering needs CAP_SYS_RESOURCE; unprivileged it stays put and test JVMs

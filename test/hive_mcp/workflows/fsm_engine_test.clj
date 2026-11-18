@@ -81,12 +81,8 @@
         pending (strip (proto/get-status e (:workflow-id wf)))
         executed (proto/execute-workflow e wf {:initial-data {:n 0}})
         completed (strip (proto/get-status e (:workflow-id wf)))
-        ;; BUG (recorded, not fixed): execute-step cannot run a step of a
-        ;; loaded workflow. load-workflow names steps (str state-id), e.g.
-        ;; ":wf/work"; parse-step-id keeps that leading colon, so the state
-        ;; is not found ("no handler for state"), and the colon-less "wf/work"
-        ;; fails too (a NullPointerException inside fsm/step). Pinned as the
-        ;; current behaviour; the NPE text is JVM-specific, so only the flag.
+        ;; execute-step runs one state of the loaded workflow, by its own
+        ;; step id (":wf/work") or the colon-less form (COV-FACETS-FINDINGS-W2).
         stepped-own-id (proto/execute-step e wf (:step-id (first (:steps wf))) {:context {:n 5}})
         stepped-bare-id (proto/execute-step e wf "wf/work" {:context {:n 5}})
         cancel-done (strip (proto/cancel-workflow e (:workflow-id wf) {}))
@@ -107,3 +103,15 @@
      :cancel-done cancel-done :cancelled cancelled :cancelled-status cancelled-status
      :failed failed :failed-status failed-status
      :missing (strip missing) :unloaded unloaded :reset reset}))
+
+(clojure.test/deftest execute-step-runs-a-loaded-workflows-step
+  ;; COV-FACETS-FINDINGS-W2 (f05): execute-step could not run a loaded
+  ;; workflow's step: its own ":wf/work" id kept the colon (no handler) and the
+  ;; bare "wf/work" NPE'd inside fsm/step. Both must run the state once.
+  (let [e  (engine/create-engine)
+        wf (proto/load-workflow e :two-step {})]
+    (doseq [sid [(:step-id (first (:steps wf))) "wf/work"]]
+      (let [r (proto/execute-step e wf sid {:context {:n 5}})]
+        (clojure.test/is (true? (:success? r)) (pr-str (:errors r)))
+        (clojure.test/is (= {:n 6} (:context r)))
+        (clojure.test/is (= ":hive.events.fsm/end" (:next-step-id r)))))))

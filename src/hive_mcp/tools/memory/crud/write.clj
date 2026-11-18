@@ -9,6 +9,7 @@
             [hive-mcp.tools.core :as core :refer [mcp-json mcp-error coerce-vec!]]
             [hive-mcp.protocols.memory :as mem-proto]
             [hive-mcp.plan.plans :as plans]
+            [hive-mcp.plan.status :as plan-status]
             [hive-mcp.plan.gate :as plan-gate]
             [clojure.edn :as edn]
             [hive-mcp.knowledge-graph.connection :as kg-conn]
@@ -440,7 +441,9 @@
                     :abstraction-level abstraction-level
                     :knowledge-gaps knowledge-gaps}
         entry (if (= type "plan")
-                (cond-> (assoc base-entry :plan-status "draft")
+                (cond-> (assoc base-entry
+                               :plan-status "draft"
+                               :tags (plan-status/with-status tags-with-scope "draft"))
                   (plans/count-plan-steps content)
                   (assoc :steps-count (plans/count-plan-steps content)))
                 base-entry)
@@ -462,6 +465,36 @@
     (if failure
       (park! failure attempts)
       ok)))
+
+(defn- index-plan-entry!
+  "Mirror a freshly stored plan into the dedicated `hive-mcp-plans` index.
+
+   Plans are long-form and search badly in the shared 768-dim memory
+   collection, so they own a 4096-dim collection (see hive-mcp.plan.plans).
+   The main store stays authoritative: this index is derived state, so a
+   failure here is swallowed after a log — the entry is already persisted and
+   the caller still has to get its receipt. Indexing runs inline (not on a
+   fire-and-forget future) so a caller that searches right after an add sees
+   its own plan, but it is NOT a `*stage-budgets-ms*` stage: a slow embedding
+   provider must not be able to time out a write that already landed."
+  [entry-id {:keys [type content tags-with-scope project-id duration-str
+                    expires content-hash abstraction-level knowledge-gaps
+                    agent-id]}]
+  (try
+    (let [steps (plans/count-plan-steps content)]
+      (plans/index-plan!
+       (cond-> {:id entry-id :type type :content content
+                :tags tags-with-scope :project-id project-id
+                :duration duration-str :expires expires
+                :content-hash content-hash
+                :plan-status "draft"
+                :abstraction-level abstraction-level
+                :knowledge-gaps knowledge-gaps
+                :agent-id agent-id}
+         steps (assoc :steps-count steps))))
+    (catch Throwable t
+      (log/warn "Plan index failed for" entry-id "(entry stored, index stale):"
+                (or (ex-message t) (str (class t)))))))
 
 (def ^:private ^:const read-after-write-attempts 6)
 (def ^:private ^:const read-after-write-base-ms 40)
@@ -591,6 +624,22 @@
                       (when kg-check
                         (str " Check edges with: " (:how kg-check))))))))
 
+(defn effective-duration
+  "Duration an add lands with: the caller's `duration` when given, else
+   \"permanent\" when the registry default of `type`
+   (`type-registry/default-duration`) is \"permanent\" (:axiom, :principle),
+   else \"long\". Registry defaults other than permanent are NOT applied: an
+   add has always landed \"long\". It used to be \"long\" for every type,
+   which is how approved axioms came to expire (card 20261102185846-041d31e2).
+   Pure."
+  [type duration]
+  (or (some-> duration (#(if (keyword? %) (name %) (str %))) str/trim not-empty)
+      (when (= "permanent" (type-registry/default-duration type))
+        "permanent")
+      "long"))
+
+(m/=> effective-duration [:=> [:cat :any [:maybe [:or :string :keyword]]] :string])
+
 (defn- do-add!
   "Inner core of handle-add. Runs the memory-store/KG IO path through
    the IMemoryStore registered under `:store-key` (default `:default`).
@@ -638,10 +687,11 @@
                            (scope/get-current-project-id directory))
             agent-id (or agent_id (ctx/current-agent-id)
                          (System/getenv "CLAUDE_SWARM_SLAVE_ID"))
-            tags-with-scope (build-entry-tags tags-vec agent-id (ctx/current-attribution agent-id) kg-vecs project-id)
+            tags-with-scope (cond-> (build-entry-tags tags-vec agent-id (ctx/current-attribution agent-id) kg-vecs project-id)
+                              (= type "plan") (plan-status/with-status "draft"))
             store (mem-proto/get-store store-key)
             content-hash (mem-proto/content-hash content)
-            duration-str (or duration "long")
+            duration-str (effective-duration type duration)
             expires (dur/calculate-expires duration-str)
             existing (run-stage! progress :dedup-lookup
                                  #(with-stage-resilience
@@ -679,6 +729,8 @@
                               "Backend is likely degraded or offline — "
                               "check store health and retry."))
               (let [_ (recall/register-created-id! entry-id project-id type)
+                    _ (when (= type "plan")
+                        (index-plan-entry! entry-id entry-ctx))
                     kg-params {:kg_implements (:kg-implements-vec kg-vecs)
                                :kg_supersedes (:kg-supersedes-vec kg-vecs)
                                :kg_depends_on (:kg-depends-on-vec kg-vecs)

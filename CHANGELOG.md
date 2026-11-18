@@ -35,6 +35,14 @@ bump, not a quiet minor, because a consumer's storage would change under it.
 
 ## [Unreleased]
 
+### Changed
+
+- The catchup drain's floor-lane compaction left core. `drain-projection`
+  now consults `hive-spi.projection.ports` (hive-spi 1.4.17) and sends a floor
+  entry WHOLE when no projection is installed; the prompting addon installs
+  one. `hive-mcp.channel.axiom-projection` (compaction and the unused
+  LLMLingua-2 tags) is removed from core.
+
 ### Fixed
 
 - `git stage`/`commit`/`batch-commit` when the Emacs bridge is down or racing.

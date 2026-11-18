@@ -21,6 +21,7 @@
   "channel"
   "delivery"
   "nats"
+  "await"
   "messaging"
   "events"
   "concurrency"
@@ -67,6 +68,7 @@
   hive-mcp.tools.consolidated.hot
   hive-mcp.tools.consolidated.hot-eject-fallback
   hive-mcp.tools.consolidated.inbox
+  hive-mcp.tools.consolidated.await
   hive-mcp.tools.consolidated.addon
   hive-mcp.tools.consolidated.config
   hive-mcp.tools.consolidated.session-config
@@ -127,6 +129,7 @@
   "saa" :hive-workflows
   "scheduler.dag-eligibility" :hive-workflows
   "scheduler.dag-waves" :hive-workflows
+  "scheduler.task-dispatch" :hive-workflows
   "scheduler.decay" :hive-memory
   "scheduler.kg-gc" :hive-memory
   "scheduler.vulcan" :hive-workflows

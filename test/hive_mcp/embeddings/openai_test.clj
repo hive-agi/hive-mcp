@@ -3,9 +3,8 @@
    no network: the adapter touches HTTP only when a call is made). The golden
    pins the known-model dimension table and both refusals.
 
-   Seam gap: embed-text / embed-batch reach the private `make-request`, which
-   builds its own java.net.http request; there is no injectable transport, so
-   the request shape is not facet-tested here (see the f04 report)."
+   The request shape is driven through the :request-fn transport seam in
+   hive-mcp.embeddings.http-seam-test."
   (:require [clojure.test :refer [deftest is]]
             [hive-mcp.config.test-support :as cfg]
             [hive-mcp.embeddings.openai :as openai]

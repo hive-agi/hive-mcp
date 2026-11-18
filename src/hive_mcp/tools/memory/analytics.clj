@@ -52,13 +52,15 @@
                               :last-accessed (str (ZonedDateTime/now))}
                 updates (if (and cross-project-id
                                  (not (has-xpoll-tag? entry cross-project-id)))
+                          ;; A vector, like every other update-entry! caller: a
+                          ;; joined string reads back as a string, and the next
+                          ;; access's (vec ...) splits it into characters.
                           (let [new-tags (conj (vec (or (:tags entry) []))
-                                               (xpoll-tag cross-project-id))
-                                tag-str (str/join "," new-tags)]
+                                               (xpoll-tag cross-project-id))]
                             (log/info "Scope transfer detected: entry" id
                                       "accessed from project" cross-project-id
                                       "(origin:" (:project-id entry) ")")
-                            (assoc base-updates :tags tag-str))
+                            (assoc base-updates :tags new-tags))
                           base-updates)
                 updated (mem-proto/update-entry! store id updates)]
           ;; Temporal dual-write: record access pattern

@@ -160,15 +160,17 @@
    :num-tests 100})
 
 (deftest signature-vs-caller-arm-test
+  ;; hive-agent 937a88c tags :signature-vs-caller with :changer, naming which
+  ;; side of the overlap changes the signature (:a is overlap's first span).
   (let [sig    (span/form-span "src/a.clj" "a/f" :signature)
         caller (span/form-span "src/a.clj" "a/g")
         why    (span/overlap graph sig caller)]
-    (is (= {:reason :signature-vs-caller :qn "a/f" :caller "a/g"} why))
+    (is (= {:reason :signature-vs-caller :qn "a/f" :caller "a/g" :changer :a} why))
     (is (m/validate span/Overlap why))
     (testing "no graph, no rule"
       (is (nil? (span/overlap nil sig caller))))
-    (testing "symmetric"
-      (is (= why (span/overlap graph caller sig))))))
+    (testing "symmetric up to which side is the changer"
+      (is (= (assoc why :changer :b) (span/overlap graph caller sig))))))
 
 (deftest context-for-anchors-at-cwd-test
   (let [ctx (span/context-for "/tmp")]

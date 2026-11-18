@@ -1,0 +1,13 @@
+{:day-tag {:in {:tags ["session:2026-11-17"]}, :out "2026-11-17"},
+ :id-fallback {:in {:id "20261117120000-00000001"}, :out "2026-11-17"},
+ :malformed-tag
+ {:in {:id "20260101120000-00000001", :tags ["session:not-a-date"]},
+  :out "2026-01-01"},
+ :nil-tags
+ {:in {:id "20261117120000-00000001", :tags nil}, :out "2026-11-17"},
+ :no-evidence {:in {}, :out nil},
+ :short-id {:in {:id "2026"}, :out nil},
+ :tag-beats-id
+ {:in {:id "20260101120000-00000001", :tags ["session:2026-11-17"]},
+  :out "2026-11-17"},
+ :uid-tag-ignored {:in {:tags ["session-uid:abc123"]}, :out nil}}

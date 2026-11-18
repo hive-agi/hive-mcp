@@ -13,8 +13,9 @@
    connect and after every reconnect."
   (:require [hive-mcp.nats.client :as client]
             [hive-mcp.nats.streams :as streams]
-            [hive-mcp.nats.backbone :as nats-bb]
             [hive-mcp.protocols.event-backbone :as eb]
+            [hive-mcp.transport.events :as events]
+            [hive-mcp.transport.registry :as reg]
             [taoensso.timbre :as log]
             [malli.core :as m]))
 
@@ -63,17 +64,21 @@
 (m/=> once-per-connection [:=> [:cat ifn?] ifn?])
 
 (defn connect!
-  "Boot path. Installs NatsBackbone, registers the stream hook and each
+  "Boot path. Installs the :events chain backbone (NATS preferred, the
+   in-process channel as fallback), registers the stream hook and each
    `on-connect` fn (key -> (fn [conn])), then starts the async client.
    Everything that needs a live connection runs from the hooks, so boot
-   with the broker down and a later reconnect converge on the same state.
+   with the broker down and a later reconnect converge on the same state:
+   the chain serves :local-channel until the broker answers, and the
+   on-connect probe hands :active back to :nats at once.
    Never blocks on the broker; never throws."
   [nats-config on-connect]
-  (eb/set-backbone! (nats-bb/create-backbone))
+  (events/start!)
   (client/add-on-connect-hook! ::streams #'ensure-streams-hook)
+  (client/add-on-connect-hook! ::chain-probe (fn [_conn] (reg/probe-port! :events {:force? true})))
   (doseq [[k f] on-connect] (client/add-on-connect-hook! k f))
   (client/start! nats-config)
-  (log/info "[bus] NatsBackbone installed; client connecting asynchronously")
+  (log/info "[bus] :events chain installed; NATS client connecting asynchronously")
   nil)
 
 (m/=> connect! [:=> [:cat :map [:maybe [:map-of :any ifn?]]] :nil])

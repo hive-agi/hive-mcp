@@ -4,14 +4,24 @@
    Layer 4 of 4-layer convergence pattern:
    - ARCHITECTURAL GUARANTEE that task completion emits a shout
    - Even if ling forgot to call hivemind_shout, synthetic shout fires
-   - Ensures coordinator always sees task completion"
+   - Ensures coordinator always sees task completion
+
+   The shout is captured through the IDeliveryChannel port, not with-redefs:
+   the synthetic shout reaches this process's own delivery channels, so a
+   recording channel registered for the test sees exactly what a reader
+   sees.
+
+   Position is not evidence. A shared JVM leaves other namespaces' hooks and
+   channels in place, so a layer4 shout is found by its :source marker
+   rather than by being first in the ring."
   (:require [clojure.test :refer [deftest testing is use-fixtures run-tests]]
             [hive-mcp.swarm.sync :as sync]
             [hive-mcp.swarm.datascript :as ds]
             [hive-mcp.hooks.core :as hooks]
-            [hive-mcp.hivemind.core :as hivemind]
+            [hive-mcp.protocols.delivery-channel :as dc]
             [hive-test.isolation :as iso]
-            hive-mcp.isolation-methods))
+            hive-mcp.isolation-methods
+            [hive-mcp.dns.result :as dns]))
 
 ;; =============================================================================
 ;; Test State
@@ -23,16 +33,34 @@
 ;; Test Fixtures
 ;; =============================================================================
 
+(defn- recording-channel
+  "An IDeliveryChannel that appends every delivered event to `sink`.
+
+   Registered on the delivery port, so the shout reaches it the way it
+   reaches a real reader: through hive-mcp.delivery.fanout, with the same
+   envelope wrapping and the same fault isolation. Always available."
+  [sink]
+  (reify dc/IDeliveryChannel
+    (channel-id [_] :sync-test-recorder)
+    (available? [_] true)
+    (deliver! [_ event] (swap! sink conj event) nil)))
+
 (defn shouts-capture-fixture
-  "Bind *shouts* to a fresh atom and redirect hivemind/shout! into it."
+  "Bind *shouts* to a fresh atom and route the process's delivery fanout
+   into it through a recording IDeliveryChannel.
+
+   Only the test's own channel is registered: any channel another namespace
+   left behind would otherwise deliver at random into the same process. The
+   previous registry is restored afterwards."
   [f]
   (binding [*shouts* (atom [])]
-    (with-redefs [hive-mcp.hivemind.core/shout!
-                  (fn [agent-id event-type data]
-                    (swap! *shouts* conj {:agent-id agent-id
-                                          :event-type event-type
-                                          :data data}))]
-      (f))))
+    (let [previous (dc/get-channels)]
+      (dc/clear-channels!)
+      (dc/register-channel! (recording-channel *shouts*))
+      (try (f)
+           (finally
+             (dc/clear-channels!)
+             (doseq [ch previous] (dns/rescue nil (dc/register-channel! ch))))))))
 
 (use-fixtures :each
   (iso/with-isolations :swarm-ds)
@@ -41,6 +69,16 @@
 ;; =============================================================================
 ;; Layer 4: Synthetic Shout Tests
 ;; =============================================================================
+
+(defn- layer4-shout
+  "The synthetic shout emitted by Layer 4, wherever it sits in the capture.
+
+   A shared JVM can deliver foreign shouts into the same process (another
+   namespace's registered channel, a hook left on the registry), so the
+   layer4 shout is identified by its own :source marker rather than by
+   being first."
+  [shouts]
+  (some #(when (= "layer4-synthetic" (get-in % [:data :source])) %) shouts))
 
 (deftest layer4-synthetic-shout-on-task-complete-test
   (testing "Task completion triggers synthetic shout (Layer 4 guarantee)"
@@ -57,16 +95,40 @@
                                    :slave-id "test-ling-1"})
 
     ;; Verify: Synthetic shout was emitted
-    (is (seq @*shouts*)
-        "At least one shout should be emitted on task completion")
+    (let [shout (layer4-shout @*shouts*)]
+      (is (some? shout) "A layer4-synthetic shout should be emitted on task completion")
+      (when shout
+        (is (= "test-ling-1" (:agent-id shout))
+            "Shout should be from the completing ling")
+        (is (= :completed (:event-type shout))
+            "Shout event type should be :completed")))))
 
-    (let [shout (first @*shouts*)]
-      (is (= "test-ling-1" (:agent-id shout))
-          "Shout should be from the completing ling")
-      (is (= :completed (:event-type shout))
-          "Shout event type should be :completed")
-      (is (= "layer4-synthetic" (get-in shout [:data :source]))
-          "Shout should be marked as synthetic from Layer 4"))))
+(deftest layer4-shout-is-found-beside-a-foreign-shout-test
+  (testing "A shout another namespace left in the JVM does not shift the layer4 one out of view"
+    (ds/add-slave! "noisy-ling" {:status :working :name "noisy" :depth 1})
+    (ds/add-task! "task-noisy" "noisy-ling" {:status :dispatched :files []})
+
+    ;; Stand in for another namespace sharing this JVM: a foreign shout is
+    ;; already FIRST in the capture when the completion is handled, which is
+    ;; what a hook or channel left behind by another namespace produces.
+    (swap! *shouts* #(into [{:agent-id "someone-else"
+                             :event-type :progress
+                             :data {:source "some-other-ns"}}]
+                           %))
+
+    (when-not (sync/get-hooks-registry)
+      (sync/set-hooks-registry! (hooks/create-registry)))
+
+    (#'sync/handle-task-completed {:task-id "task-noisy"
+                                   :slave-id "noisy-ling"})
+
+    (let [shout (layer4-shout @*shouts*)]
+      (is (= 2 (count @*shouts*)) "the foreign shout is still in the capture")
+      (is (= "someone-else" (:agent-id (first @*shouts*)))
+          "the foreign shout is still first, so position alone is not enough")
+      (is (some? shout) "the layer4 shout is found by its marker, not by position")
+      (when shout
+        (is (= :completed (:event-type shout)))))))
 
 (deftest layer4-shout-includes-task-id-test
   (testing "Synthetic shout includes task-id for traceability"
@@ -79,9 +141,11 @@
     (#'sync/handle-task-completed {:task-id "task-xyz-789"
                                    :slave-id "ling-abc"})
 
-    (let [shout (first @*shouts*)]
-      (is (= "task-xyz-789" (get-in shout [:data :task-id]))
-          "Shout data should include task-id"))))
+    (let [shout (layer4-shout @*shouts*)]
+      (is (some? shout) "the layer4 shout is emitted with a task id")
+      (when shout
+        (is (= "task-xyz-789" (get-in shout [:data :task-id]))
+            "Shout data should include task-id")))))
 
 (deftest layer4-works-without-registry-test
   (testing "Handle task completion gracefully when no registry"

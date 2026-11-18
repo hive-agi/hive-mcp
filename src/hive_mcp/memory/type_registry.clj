@@ -365,6 +365,17 @@
     (or (get (registry) (keyword s))
         (when (safe-type? s) default-type-def))))
 
+(defn default-duration
+  "Registry default duration of type `t`, as a duration-name string
+   (\"permanent\", \"long\", ...). nil for an unsafe type or a type whose
+   definition declares no :duration. A write that names no duration lands on
+   this, so an :axiom or :principle is permanent unless the caller says
+   otherwise (card 20261102185846-041d31e2)."
+  [t]
+  (some-> (type-def t) :duration name))
+
+(m/=> default-duration [:=> [:cat :any] [:maybe [:enum "ephemeral" "short" "medium" "long" "permanent"]]])
+
 (m/=> type-def [:=> [:cat :any] [:maybe :map]])
 
 (defn ensure-type!

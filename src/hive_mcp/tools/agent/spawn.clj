@@ -9,6 +9,7 @@
             [hive-mcp.agent.protocol :as proto]
             [hive-mcp.agent.ling :as ling]
             [hive-mcp.agent.ling.lifecycle :as lifecycle]
+            [hive-mcp.transport.spawn :as spawn-chain]
             [hive-mcp.agent.type-registry :as agent-type-registry]
             [hive-mcp.agent.spawn-mode-registry :as spawn-registry]
             [hive-mcp.agent.openrouter :as llm-registry]
@@ -16,7 +17,6 @@
             [hive-mcp.swarm.datascript.queries :as queries]
             [hive-mcp.knowledge-graph.scope :as kg-scope]
             [hive-spi.swarm.guards :as guards]
-            [hive-mcp.config.core :as config]
             [hive-mcp.schema.tools :as schema]
             [taoensso.timbre :as log]
             [clojure.string :as str]
@@ -27,7 +27,9 @@
             [malli.core :as m]
             [hive-mcp.tools.result-bridge :as rb]
             [hive-mcp.context.request :as request-ctx]
-            [hive-mcp.agent.ling.spawn :as spawn-impl]))
+            [hive-mcp.agent.ling.spawn :as spawn-impl]
+            [hive-mcp.system.heap-admission :as heap-admission]
+            [hive-mcp.extensions.registry :as ext]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -61,44 +63,36 @@
        "If you need parallel work, use hivemind_shout to request the coordinator\n"
        "to spawn agents on your behalf."))
 
-
-(defn- heap-pressure-defer
-  "Layer 4 OOM backpressure: best-effort heap-headroom admission check.
-   Returns a {:level :heap-pct} map when a new spawn should be DEFERRED
-   (JVM heap fraction >= the soft watermark), or nil to ADMIT.
-
-   Lings launch inside (or alongside) this nREPL JVM; N concurrent
-   heavy spawns atop the multi-GB KG floor have driven kernel OOMs. We shed
-   *new* spawns under pressure rather than hard-kill live agents.
-
-   Reuses the self-contained hive-cache.mem-guard governor, lazily resolved —
-   hive-mcp does NOT statically depend on hive-cache. FAIL-OPEN: a missing
-   governor, any sampling error, or config opt-out all ADMIT (return nil), so
-   the guard can never wedge the spawn path.
-
-   Config — note hive-mcp.config.resolve/get-service-value uses (or val default)
-   which swallows boolean false, so the kill switch is a default-FALSE *disable*
-   flag, not a default-true enable flag:
-     [:swarm :heap-admission-disabled] default false; set true (or env
-       HIVE_MCP_SWARM_HEAP_ADMISSION_DISABLED=true) to force the gate off.
-     [:swarm :heap-admission-soft]      0.0-1.0 heap fraction; nil = mem-guard
-       default 0.80 (env HIVE_MCP_SWARM_HEAP_ADMISSION_SOFT)."
-  []
-  (try
-    (when-not (config/get-service-value :swarm :heap-admission-disabled
-                                        :env "HIVE_MCP_SWARM_HEAP_ADMISSION_DISABLED"
-                                        :parse #(Boolean/parseBoolean %)
-                                        :default false)
-      (when-let [check (requiring-resolve 'hive-cache.mem-guard/check)]
-        (let [soft (config/get-service-value :swarm :heap-admission-soft
-                                             :env "HIVE_MCP_SWARM_HEAP_ADMISSION_SOFT"
-                                             :parse parse-double
-                                             :default nil)
-              wm   (when (number? soft) {:soft soft})
-              {:keys [level heap-pct]} (check nil wm)]
-          (when (contains? #{:soft :hard} level)
-            {:level level :heap-pct heap-pct}))))
-    (catch Throwable _ nil)))
+(defn- heap-refusal
+  "Layer 4: the spawn refusal for a hard-pressure `reading`
+   (`hive-mcp.system.heap-admission/hard-pressure`). Nothing is queued and
+   the brief is dropped, so it says so, with the measured figures and when to
+   retry."
+  [{:keys [level basis heap-pct now-pct post-gc-pct pool watermarks]}]
+  (let [hard-pct (some-> (:hard watermarks) double (* 100.0) Math/round int)
+        retry-s  heap-admission/retry-after-s]
+    {:success            false
+     :refused            true
+     :reason             "heap-pressure"
+     :level              (some-> level clojure.core/name)
+     :basis              (clojure.core/name (or basis :instant))
+     :heap_post_gc_pct   post-gc-pct
+     :heap_now_pct       now-pct
+     :hard_watermark_pct hard-pct
+     :retry_after_s      retry-s
+     :brief_kept         false
+     :message
+     (str "Spawn refused: heap pressure. "
+          (if (= :post-gc basis)
+            (str "The JVM heap is " heap-pct "% full after its last old-gen collection"
+                 (when pool (str " (" pool ")")) ", at or above the hard watermark of "
+                 hard-pct "% (" now-pct "% in use right now, counting uncollected garbage). ")
+            (str "The JVM heap is " heap-pct "% in use, at or above the hard watermark of "
+                 hard-pct "%; no post-GC reading is available here, so this figure "
+                 "counts uncollected garbage. "))
+          "Nothing was queued and the brief was NOT kept: resend the full task text. "
+          "Retry after " retry-s "s. If the post-GC figure stays at or above "
+          hard-pct "%, the live set is too large for -Xmx: raise -Xmx or stop idle lings.")}))
 
 ;;; =============================================================================
 ;;; Spawn Handler
@@ -311,6 +305,31 @@
          "and none answered. Start Emacs (emacs --daemon) or retry with "
          "spawn_mode=\"headless\", which needs no Emacs.")))
 
+(defn resolve-spawn-mode
+  "The spawn mode of a request and how it was chosen. An explicit `requested`
+   mode stays strict: it is returned as is, with no fallback, so the preflight
+   refuses an unusable one by name. With none, the :spawn chain
+   (config.edn [:transports :spawn :chain], shipped [:headless :tmux :vterm])
+   picks the first mode that can serve: one needing Emacs is skipped, with its
+   reason, while Emacs is down. REACHABLE? is the Emacs port.
+   Answers {:mode kw :resolved-by :explicit|:primary|:fallback :skipped [..]}.
+   Throws ex-info naming every skipped mode when none can serve."
+  [requested reachable?]
+  (if requested
+    {:mode (keyword requested) :resolved-by :explicit :skipped []}
+    (let [out (spawn-chain/resolve-mode! (spawn-chain/default-env reachable?))]
+      (if-let [entry (find out :ok)]
+        (let [{:keys [via resolved-by skipped]} (val entry)]
+          {:mode via :resolved-by resolved-by :skipped skipped})
+        (throw (ex-info (str "no spawn mode can serve: "
+                             (str/join "; " (map (fn [{:keys [adapter reason error]}]
+                                                   (str (clojure.core/name adapter) " "
+                                                        (clojure.core/name reason)
+                                                        (when-let [msg (:message error)]
+                                                          (str " (" msg ")"))))
+                                                 (:skipped out))))
+                        {:skipped (:skipped out)}))))))
+
 (defn spawn-brief
   "The initial task a spawn carries: `task`, else `prompt`. Blank counts as
    absent. Throws ex-info when both are given and differ."
@@ -336,6 +355,8 @@
    raw `grant` param, nil = share). {:grant wire-or-nil} or {:refused msg}.
    See hive-mcp.agent.grant/child-grant. With no grant recorded on the
    parent's lineage and none requested, nothing changes: {:grant nil}.
+   Either answer also carries :depth, the lineage depth the child sits at
+   (parent depth + 1; a coordinator is 0), which the registry row records.
 
    `requested` is first read by `grant/requested-grant`: a JSON-object
    string is parsed (a client whose cached schema predates the parameter
@@ -348,8 +369,9 @@
       (let [get-slave *get-slave*
             parent-wire (grant/recorded-grant get-slave parent)
             child-depth (inc (long (grant/depth-of get-slave parent)))]
-        (grant/child-grant (when (or parent-wire requested) (*grant-domain*))
-                           parent-wire requested child-depth)))))
+        (assoc (grant/child-grant (when (or parent-wire requested) (*grant-domain*))
+                                  parent-wire requested child-depth)
+               :depth child-depth)))))
 
 (defn kanban-claim-refusal
   "Claim card `kanban-task-id` for the spawner before the ling starts, and
@@ -395,19 +417,15 @@
       (log/warn "Spawn denied: child ling attempted agent spawn"
                 {:role (guards/get-role) :depth (guards/ling-depth)})
       (mcp-error (build-spawn-denied-message)))
-    (if-let [defer (heap-pressure-defer)]
-      ;; Layer 4: heap-headroom backpressure — defer rather than launch.
+    (if-let [refusal (some-> (heap-admission/hard-pressure ; read per spawn: per batch member
+                               (or (ext/get-extension :agent/heap-probe) ; test port
+                                   heap-admission/heap-probe))
+                              heap-refusal)]
+      ;; Layer 4: heap admission — refused at the HARD post-GC watermark.
+      ;; Nothing is queued; the refusal says the brief was not kept.
       (do
-        (log/warn "Spawn deferred: heap pressure backpressure" defer)
-        (mcp-json {:success  false
-                   :deferred true
-                   :reason   "heap-pressure"
-                   :level    (clojure.core/name (:level defer))
-                   :heap-pct (:heap-pct defer)
-                   :message  (str "Spawn deferred: JVM heap at " (:heap-pct defer)
-                                  "% (>= soft watermark). Best-effort OOM "
-                                  "backpressure — existing agents keep running; "
-                                  "retry once active lings drain.")}))
+        (log/warn "Spawn refused: heap pressure" (dissoc refusal :message))
+        (mcp-json refusal))
       (let [agent-type (keyword type)]
       (if-not (and (agent-type-registry/valid-type? agent-type)
                    (agent-type-registry/spawnable? agent-type))
@@ -415,7 +433,7 @@
         (try
           ;; Resolve provider+model via registry chain
           (let [parent (effective-parent params)
-                {child-grant :grant grant-refusal :refused} (spawn-grant parent (:grant params))
+                {child-grant :grant grant-refusal :refused child-depth :depth} (spawn-grant parent (:grant params))
                 _ (when grant-refusal
                     (throw (ex-info grant-refusal {:grant/refused true})))
                 worker-tier (normalize-tier tier)
@@ -430,8 +448,15 @@
                            {:provider provider
                             :model (if (= :cheap worker-tier) nil model)
                             :agent-type agent-type})
-                effective-model (:model resolved)
-                effective-provider (:provider resolved)
+                ;; What the host resolved is only the SEED: the :spawn/opts-overlay
+                ;; router (hive-agent's, when loaded) replaces :model/:provider
+                ;; afterwards, inside spawn!. Routing here instead — once, before
+                ;; the preflight below — is what lets this response and its log
+                ;; name the model that actually runs. spawn! honours the
+                ;; :spawn/opts-routed marker and does not route a second time, so
+                ;; the round-robin cursor advances once per spawn.
+                seed-model (:model resolved)
+                seed-provider (:provider resolved)
                 agent-id (or name (helpers/generate-agent-id agent-type))
                 effective-project-id (resolve-project-scope project_id cwd parent)]
             (case agent-type
@@ -441,7 +466,11 @@
                                   (string? presets) [presets]
                                   (sequential? presets) (vec presets)
                                   :else [presets])
-                    effective-spawn-mode (keyword (or spawn_mode (lifecycle/default-spawn-mode)))
+                    chosen-mode (resolve-spawn-mode spawn_mode *editor-reachable?*)
+                    effective-spawn-mode (:mode chosen-mode)
+                    _ (when (seq (:skipped chosen-mode))
+                        (log/info "Spawn mode chosen through the :spawn chain"
+                                  (select-keys chosen-mode [:mode :resolved-by :skipped])))
                     _ (when-not (spawn-registry/valid-mode? effective-spawn-mode)
                         (throw (ex-info (str "spawn_mode must be one of: " (pr-str spawn-registry/mcp-modes))
                                         {:spawn-mode spawn_mode})))
@@ -459,8 +488,10 @@
                                                               :presets presets-vec
                                                               :project-id effective-project-id
                                                               :spawn-mode effective-spawn-mode
-                                                              :model effective-model
-                                                              :provider effective-provider}
+                                                              ;; the seed: the routed opts below
+                                                              ;; override :model/:provider
+                                                              :model seed-model
+                                                              :provider seed-provider}
                                                        normalized-agents (assoc :agents normalized-agents)
                                                        max_budget_usd    (assoc :max-budget-usd max_budget_usd)
                                                        (some? kg_compress) (assoc :kg-compress? kg_compress)
@@ -477,46 +508,73 @@
                     _ (when-let [refusal (editor-preflight-refusal (:spawn-mode ling-agent) *editor-reachable?*)]
                         (throw (ex-info refusal {:spawn-mode (:spawn-mode ling-agent)
                                                  :fallback "headless"})))
-                    _ (when-let [err (provider-preflight-refusal (:spawn-mode ling-agent) effective-provider)]
-                        (throw (ex-info (str "Provider " (clojure.core/name effective-provider)
+                    ;; The opts this spawn will run with, ROUTED: the overlay
+                    ;; (hive-agent's router when loaded) has replaced :model and
+                    ;; :provider where it has an opinion. Everything below reads
+                    ;; these, so the preflight, the log and the response describe
+                    ;; the member that actually runs, not the seed. Routing once
+                    ;; here and marking it is also what keeps the round-robin
+                    ;; cursor advancing exactly once per spawn.
+                    routed-opts (spawn-impl/route-spawn-opts
+                                 (cond-> {:task brief
+                                          :parent parent
+                                          :depth child-depth
+                                          :spawned-by (spawner params)
+                                          :kanban-task-id kanban_task_id
+                                          :spawn-mode (:spawn-mode ling-agent)
+                                          :model seed-model
+                                          :provider seed-provider
+                                          :spawn/request params}
+                                   max_budget_usd (assoc :max-budget-usd max_budget_usd)
+                                   child-grant    (assoc :grant child-grant))
+                                 ling-agent)
+                    ;; nil when no router is loaded: the seed stands.
+                    choice (:router/choice routed-opts)
+                    routed-model (:model routed-opts)
+                    routed-provider (:provider routed-opts)
+                    _ (when-let [err (provider-preflight-refusal (:spawn-mode ling-agent) routed-provider)]
+                        (throw (ex-info (str "Provider " (clojure.core/name routed-provider)
                                              " cannot serve this spawn: " (:fix err))
                                         err)))
                     _ (when-let [refusal (kanban-claim-refusal params)]
                         (throw (ex-info refusal {:kanban/claim-refused kanban_task_id})))
-                    slave-id (proto/spawn! ling-agent (cond-> {:task brief
-                                                               :parent parent
-                                                               :spawned-by (spawner params)
-                                                               :kanban-task-id kanban_task_id
-                                                               :spawn-mode (:spawn-mode ling-agent)
-                                                               :model effective-model
-                                                               :provider effective-provider
-                                                               :spawn/request params}
-                                                        max_budget_usd (assoc :max-budget-usd max_budget_usd)
-                                                        child-grant    (assoc :grant child-grant)))]
+                    slave-id (proto/spawn! ling-agent (dissoc routed-opts :spawn/request))]
                 (log/info "Spawned ling" {:requested-id agent-id
                                           :slave-id slave-id
                                           :parent parent
                                           :spawn-mode (:spawn-mode ling-agent)
-                                          :provider effective-provider
-                                          :model effective-model
+                                          :provider routed-provider
+                                          :model routed-model
+                                          :routed? (some? choice)
+                                          :requested-model seed-model
+                                          :requested-provider seed-provider
                                           :tier worker-tier
                                           :token-budget token-budget
                                           :task-attached (some? brief)
                                           :cwd cwd :presets presets-vec
                                           :project-id effective-project-id})
+                ;; :model, :provider and :tier are the ROUTED opts — the member
+                ;; that actually runs. :requested-model/:requested-provider keep
+                ;; the pre-routing seed and :router-choice the decision, so an
+                ;; operator can see both what was asked and what was used.
                 (mcp-json (cond-> {:success true
                                    :agent-id slave-id
                                    :type :ling
                                    :parent parent
                                    :spawn-mode (:spawn-mode ling-agent)
-                                   :provider effective-provider
-                                   :model effective-model
+                                   :provider routed-provider
+                                   :model routed-model
                                    :tier worker-tier
+                                   :routed? (some? choice)
+                                   :requested-model seed-model
+                                   :requested-provider seed-provider
                                    :token-budget token-budget
                                    :task-attached (some? brief)
                                    :cwd cwd
                                    :presets presets-vec
                                    :project-id effective-project-id}
+                            choice
+                            (assoc :router-choice (select-keys choice [:pool :strategy :work-class]))
                             child-grant
                             (assoc :grant child-grant)
                             (nil? brief)
@@ -565,8 +623,8 @@
 (def GrantDecision
   "spawn-grant's answer: a grant (nil = share) or a refusal message."
   [:or
-   [:map [:grant [:maybe :map]]]
-   [:map [:refused :string]]])
+   [:map [:grant [:maybe :map]] [:depth {:optional true} :int]]
+   [:map [:refused :string] [:depth {:optional true} :int]]])
 
 (m/=> effective-parent [:=> [:cat SpawnParams] [:maybe :string]])
 
@@ -602,6 +660,11 @@
        [:maybe [:map [:error :keyword] [:provider :keyword] [:fix :string]]]])
 
 (m/=> editor-preflight-refusal [:=> [:cat SpawnMode helpers/Port] [:maybe :string]])
+
+(m/=> resolve-spawn-mode
+      [:=> [:cat [:maybe [:or :string :keyword]] helpers/Port]
+       [:map [:mode :keyword] [:resolved-by [:enum :explicit :primary :fallback]]
+        [:skipped [:vector :map]]]])
 
 (m/=> spawn-brief [:=> [:cat SpawnParams] [:maybe :string]])
 

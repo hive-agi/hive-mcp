@@ -136,10 +136,13 @@
                              (format "(%s %s)" field-name (elisp-value (get defaults field-kw)))
                              field-name)))
           fields-str (str/join " " (map format-field field-names))
-          struct-opts (format-struct-options struct-name opts)]
-      (format "(cl-defstruct (%s %s)\n  %s)"
+          struct-opts (format-struct-options struct-name opts)
+          include-clause (when-let [include (:include opts)]
+                           (format " (:include %s)" include))]
+      (format "(cl-defstruct (%s %s%s)\n  %s)"
               struct-name
               struct-opts
+              (or include-clause "")
               fields-str))))
 
 (m/=> emit-struct-with-defaults [:=> [:cat MapSchema EmitOpts] [:string {:min 1}]])
@@ -231,7 +234,9 @@
                        :schema schema})))
 
     (let [fn-name (str struct-name "-from-plist")
-          create-fn (str struct-name "-create")
+          ;; The struct's constructor: :constructor when given, as cl-defstruct
+          ;; is emitted with (see format-struct-options).
+          create-fn (or (:constructor opts) (str struct-name "-create"))
           entries (extract-field-entries schema)
           args-str (->> entries
                         (map field->plist-arg)

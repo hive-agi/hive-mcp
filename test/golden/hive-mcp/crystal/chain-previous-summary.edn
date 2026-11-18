@@ -1,0 +1,55 @@
+{:by-tag
+ {:in
+  ["20261031000010-00000000"
+   "a"
+   [{:id "20261031000003-00000003",
+     :tags ["session-summary" "scope:project:a"]}]],
+  :out "20261031000003-00000003"},
+ :newest-of-2
+ {:in
+  ["20261031000010-00000000"
+   "a"
+   [{:id "20261031000001-00000001",
+     :project-id "a",
+     :tags ["session-summary"]}
+    {:id "20261031000005-00000005",
+     :project-id "a",
+     :tags ["session-summary"]}]],
+  :out "20261031000005-00000005"},
+ :none {:in ["20261031000010-00000000" "a" []], :out nil},
+ :not-summary
+ {:in
+  ["20261031000010-00000000"
+   "a"
+   [{:id "20261031000002-00000002",
+     :project-id "a",
+     :tags ["session-summary"]}
+    {:id "20261031000008-00000008",
+     :project-id "a",
+     :tags ["decision"]}]],
+  :out "20261031000002-00000002"},
+ :other-scope
+ {:in
+  ["20261031000010-00000000"
+   "a"
+   [{:id "20261031000001-00000001",
+     :project-id "a",
+     :tags ["session-summary"]}
+    {:id "20261031000007-00000007",
+     :project-id "b",
+     :tags ["session-summary"]}]],
+  :out "20261031000001-00000001"},
+ :self-newer
+ {:in
+  ["20261031000010-00000000"
+   "a"
+   [{:id "20261031000010-00000000",
+     :project-id "a",
+     :tags ["session-summary"]}
+    {:id "20261031000012-00000002",
+     :project-id "a",
+     :tags ["session-summary"]}
+    {:id "20261031000004-00000004",
+     :project-id "a",
+     :tags ["session-summary"]}]],
+  :out "20261031000004-00000004"}}

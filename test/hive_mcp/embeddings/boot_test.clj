@@ -4,9 +4,8 @@
    step wires Chroma and the EmbeddingService and configures no provider; the
    golden pins that across two Chroma endpoints (configured and default).
 
-   Seam gap: with a model configured the step builds a real Ollama provider
-   whose constructor probes `<host>/api/tags` over HTTP; boot takes no
-   provider factory, so that branch is not facet-tested (see f04 report)."
+   With a model configured the global fallback provider comes from the
+   :ollama-provider-fn factory seam, so that branch runs with no HTTP probe."
   (:require [clojure.test :refer [deftest is use-fixtures]]
             [hive-mcp.chroma.client :as client]
             [hive-mcp.chroma.connection :as conn]
@@ -15,7 +14,8 @@
             [hive-mcp.embeddings.boot :as boot]
             [hive-mcp.embeddings.service :as svc]
             [hive-mcp.test.stub.chroma-transport :as transport]
-            [hive-test.golden :refer [deftest-golden]]))
+            [hive-test.golden :refer [deftest-golden]]
+            [hive-mcp.embeddings.protocol :as proto]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -53,3 +53,21 @@
 
 (deftest boot-answers-a-boolean
   (is (boolean? (cfg/with-config {} (boot/init-embedding-provider!)))))
+
+(deftest boot-with-model-uses-the-provider-factory-seam
+  ;; COV-FACETS-FINDINGS-W2 (f04 seam gap): with a model configured the step
+  ;; built a real Ollama provider (HTTP probe of <host>/api/tags) and took no
+  ;; factory. :ollama-provider-fn now injects it.
+  (active/reset-embedding-provider!)
+  (let [calls (atom [])
+        fake  (reify proto/EmbeddingProvider
+                (embed-text [_ _] [0.0])
+                (embed-batch [_ ts] (mapv (constantly [0.0]) ts))
+                (embedding-dimension [_] 1))]
+    (cfg/with-config {:services {:chroma {:host "chroma.boot" :port 8123}}
+                      :embeddings {:ollama {:host "http://ollama.stub:1" :model "nomic-embed-text"}}}
+      (is (true? (boot/init-embedding-provider!
+                  {:ollama-provider-fn (fn [opts] (swap! calls conj opts) fake)}))))
+    (is (= [{:host "http://ollama.stub:1" :model "nomic-embed-text"}] @calls))
+    ;; the active provider is the injected one, behind the shared embed gate
+    (is (identical? fake (:delegate (active/get-embedding-provider) (active/get-embedding-provider))))))

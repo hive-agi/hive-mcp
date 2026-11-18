@@ -14,7 +14,8 @@
             [hive-mcp.agent.provider :as provider]
             [taoensso.timbre :as log]
             [hive-dsl.result :as r]
-            [malli.core :as m]))
+            [malli.core :as m]
+            [clojure.string :as str]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -73,15 +74,30 @@
                   {:provider provider :kind (:kind probe) :error (ex-message e)})
         nil))))
 
+(defn- provider-key
+  "`provider` as the registry keyword: a keyword unchanged, a non-blank
+   string keywordised (a leading colon dropped), anything else nil."
+  [provider]
+  (cond
+    (keyword? provider) provider
+    (string? provider)  (let [s (str/replace (str/trim provider) #"^:" "")]
+                          (when-not (str/blank? s) (keyword s)))
+    :else               nil))
+
 (defn refusal
   "nil when `provider` can be called now, else an error map with :error,
    :provider and :fix. Checks the configured secret first, then the provider's
-   credential probe when it declares one."
+   credential probe when it declares one.
+
+   `provider` may be a keyword or a string: the router's choice names it as a
+   string (\"venice\"), while the registry is keyed by keyword. It is
+   normalised here, at the one boundary every spawn preflight passes, so a
+   routed string provider is checked exactly like its keyword."
   [provider]
-  (when provider
+  (when-let [provider (provider-key provider)]
     (or (provider/missing-secret provider)
         (probe-refusal provider))))
 
 (m/=> refusal
-      [:=> [:cat [:maybe :keyword]]
+      [:=> [:cat [:maybe [:or :keyword :string]]]
        [:maybe [:map [:error :keyword] [:provider :keyword] [:fix :string]]]])

@@ -10,7 +10,8 @@
    fall back to a `kill -0 :slave/process-pid` check. A dead pid is a strong
    dead signal even when the addon channel is degraded — without this fallback
    ghost rows accumulate forever every time Emacs restarts."
-  (:require [hive-mcp.agent.ling.spawn :as ling]
+  (:require [hive-mcp.agent.grant :as grant]
+            [hive-mcp.agent.ling.spawn :as ling]
             [hive-mcp.agent.ling.terminal-registry :as terminal-reg]
             [hive-mcp.agent.protocol :as agent]
             [hive-mcp.protocols.lifecycle :as lifecycle]
@@ -27,7 +28,7 @@
 (defn- terminal-slave?
   [registered-terminals slave]
   (let [mode (:ling/spawn-mode slave)]
-    (and (= 1 (:slave/depth slave))
+    (and (grant/ling-row? slave)
          (not= false (:slave/alive? slave))
          (not= :zombie (:slave/status slave))
          (contains? registered-terminals mode))))
@@ -49,12 +50,15 @@
   [slave]
   (liveness/dead? (:slave/process-pid slave)))
 
-(defn- probe-terminal
+(defn- terminal-status
+  "The live terminal status of SLAVE, through its ling's IAgent."
   [slave]
+  (agent/status (ling/->ling (:slave/id slave) (ling/slave->ling-opts slave))))
+
+(defn- probe-terminal
+  [status-of slave]
   (try
-    (let [slave-id (:slave/id slave)
-          ling (ling/->ling slave-id (ling/slave->ling-opts slave))
-          status (agent/status ling)]
+    (let [status (status-of slave)]
       {:slave slave
        :status status
        :dead? (dead-status? status)})
@@ -70,9 +74,9 @@
                                     :pid-fallback? true}))))))
 
 (defn- mark-zombie!
-  [now-ms {:keys [slave status]}]
+  [update! now-ms {:keys [slave status]}]
   (let [slave-id (:slave/id slave)]
-    (ds-lings/update-slave! slave-id
+    (update! slave-id
                             {:slave/alive? false
                              :slave/status :zombie
                              :slave/status-changed-at now-ms})
@@ -84,21 +88,37 @@
   "Probe registered terminal-backed lings once.
 
    Returns {:checked N :zombified M :alive K :errors [...]}. Missing terminal
-   registrations are ignored so unloaded addons do not cause false zombies."
+   registrations are ignored so unloaded addons do not cause false zombies.
+   The two-arity form takes the ports for isolated consumers:
+   {:registered-terminals (fn [] modes) :load-slaves (fn [] rows)
+    :update! (fn [slave-id updates]) :status-of (fn [slave] status)}."
   ([] (sweep-once! (System/currentTimeMillis)))
   ([now-ms]
-   (let [registered-terminals (terminal-reg/registered-terminals)
-         slaves (->> (queries/get-all-slaves :include-stale? true)
+   (sweep-once! now-ms {:registered-terminals terminal-reg/registered-terminals
+                        :load-slaves #(queries/get-all-slaves :include-stale? true)
+                        :update! ds-lings/update-slave!
+                        :status-of terminal-status}))
+  ([now-ms {:keys [registered-terminals load-slaves update! status-of]}]
+   (let [registered-terminals (registered-terminals)
+         slaves (->> (load-slaves)
                      (filter (partial terminal-slave? registered-terminals))
                      vec)
-         results (mapv probe-terminal slaves)
+         results (mapv (partial probe-terminal status-of) slaves)
          dead (filterv :dead? results)
-         zombies (mapv (partial mark-zombie! now-ms) dead)
+         zombies (mapv (partial mark-zombie! update! now-ms) dead)
          errors (into [] (keep :error) results)]
      {:checked (count slaves)
       :zombified (count zombies)
       :alive (- (count slaves) (count dead) (count errors))
       :errors errors})))
+
+(def SweepPorts
+  "The store, terminal registry and status probe sweep-once! runs over."
+  [:map
+   [:registered-terminals [:=> [:cat] [:set :keyword]]]
+   [:load-slaves [:=> [:cat] [:sequential :map]]]
+   [:update! [:=> [:cat :string :map] :any]]
+   [:status-of [:=> [:cat :map] :map]]])
 
 ;; BUG: a probe that throws AND whose pid fallback confirms death counts in both
 ;; `dead` and `errors`, so :alive under-counts by one per such row
@@ -107,7 +127,10 @@
                    [:=> [:cat] [:map [:checked s/Count] [:zombified s/Count] [:alive :int]
                                 [:errors [:vector :string]]]]
                    [:=> [:cat :int] [:map [:checked s/Count] [:zombified s/Count] [:alive :int]
-                                     [:errors [:vector :string]]]]])
+                                     [:errors [:vector :string]]]]
+                   [:=> [:cat :int SweepPorts]
+                    [:map [:checked s/Count] [:zombified s/Count] [:alive :int]
+                     [:errors [:vector :string]]]]])
 
 (defrecord TerminalLivenessSweep []
   lifecycle/ISweepable
