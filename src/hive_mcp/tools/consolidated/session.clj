@@ -15,7 +15,13 @@
             [hive-mcp.tools.consolidated.session-config :as session-config]
             [hive-mcp.embeddings.shared-gate :as embed-gate]
             [malli.core :as m]
-            [hive-mcp.crystal.history :as history]))
+            [hive-mcp.crystal.history :as history]
+            [hive-mcp.crystal.trajectory :as trajectory]))
+
+;; Loading the session tool makes the memory domain the `trajectory` catchup
+;; block's contributor (SYNTHESIS-HISTORY slice (d)); the kernel catchup only
+;; composes registered blocks and never names it.
+(trajectory/register!)
 
 (defn- evict-agent-context!
   "Evict context-store entries for a completing agent."
