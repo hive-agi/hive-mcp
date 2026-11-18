@@ -50,3 +50,16 @@
 
 (deftest fix-text-names-the-provider-test
   (is (re-find #"openrouter" (:fix (refusal-with {:openrouter-api-key "sk-rejected"} :openrouter)))))
+
+(deftest routed-string-provider-is-checked-test
+  ;; The router's choice names the provider as a STRING ("venice"); the
+  ;; registry is keyed by keyword. Before the fix a string slipped past the
+  ;; secret check: (refusal :venice) refused, (refusal "venice") returned nil.
+  (is (= {:error :provider-secret-missing :provider :f02-custom}
+         (select-keys (refusal-with {} "f02-custom") [:error :provider]))
+      "a routed string provider whose secret is missing is refused")
+  (is (= (refusal-with {} :f02-custom) (refusal-with {} "f02-custom"))
+      "a string and its keyword get the same verdict")
+  (is (nil? (refusal-with {:f02-missing-key "k"} "f02-custom"))
+      "with its secret configured the string provider passes")
+  (is (nil? (refusal-with {} "")) "a blank provider is no provider"))
