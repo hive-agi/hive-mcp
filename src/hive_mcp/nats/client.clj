@@ -17,9 +17,10 @@
             [malli.core :as m]
             [clojure.string :as str])
   (:import [io.nats.client Nats Options$Builder Connection$Status
-            MessageHandler]
+            MessageHandler ErrorListener JetStreamSubscription]
+           [io.nats.client.impl ErrorListenerLoggerImpl]
            [java.time Duration]
-[io.nats.client ConnectionListener]))
+           [io.nats.client ConnectionListener]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -166,6 +167,67 @@
 
 (m/=> status [:=> [:cat] ClientStatus])
 
+(def heartbeat-alarm-window-ms
+  "At most one heartbeatAlarm line per consumer in this window."
+  60000)
+
+(defonce ^:private heartbeat-alarms
+  ;; consumer name -> {:last-logged ms :suppressed n}
+  (atom {}))
+
+(defn heartbeat-alarm-log!
+  "Rate-limit decision for one heartbeatAlarm of CONSUMER at NOW: answers
+   {:log? true :suppressed n} (log it, naming the N alarms dropped since the
+   last line) at most once per WINDOW-MS per consumer, else {:log? false}
+   and the alarm is counted."
+  ([consumer now] (heartbeat-alarm-log! consumer now heartbeat-alarm-window-ms))
+  ([consumer now window-ms]
+   (let [k (str consumer)
+         [before _] (swap-vals! heartbeat-alarms update k
+                                (fn [{:keys [last-logged suppressed] :or {suppressed 0} :as s}]
+                                  (if (or (nil? last-logged) (>= (- now last-logged) window-ms))
+                                    {:last-logged now :suppressed 0}
+                                    (assoc s :suppressed (inc suppressed)))))
+         {:keys [last-logged suppressed] :or {suppressed 0}} (get before k)]
+     (if (or (nil? last-logged) (>= (- now last-logged) window-ms))
+       {:log? true :suppressed suppressed}
+       {:log? false}))))
+
+(m/=> heartbeat-alarm-log! [:function
+                            [:=> [:cat :any :int] [:map [:log? :boolean]]]
+                            [:=> [:cat :any :int :int] [:map [:log? :boolean]]]])
+
+(defn error-listener
+  "The connection's jnats ErrorListener: jnats' own logger for everything,
+   except heartbeatAlarm, which is logged at most once per consumer per
+   `heartbeat-alarm-window-ms` as a timbre warning (with the count it
+   dropped). A pull consumer on a loaded host (one per ling inbox) can miss
+   its idle heartbeat on every fetch, and the default listener printed one
+   SEVERE line per ling per fetch."
+  ^ErrorListener []
+  (let [base (ErrorListenerLoggerImpl.)]
+    (reify ErrorListener
+      (errorOccurred [_ conn error] (.errorOccurred base conn error))
+      (exceptionOccurred [_ conn exp] (.exceptionOccurred base conn exp))
+      (slowConsumerDetected [_ conn consumer] (.slowConsumerDetected base conn consumer))
+      (messageDiscarded [_ conn msg] (.messageDiscarded base conn msg))
+      (unhandledStatus [_ conn sub status] (.unhandledStatus base conn sub status))
+      (pullStatusWarning [_ conn sub status] (.pullStatusWarning base conn sub status))
+      (pullStatusError [_ conn sub status] (.pullStatusError base conn sub status))
+      (socketWriteTimeout [_ conn] (.socketWriteTimeout base conn))
+      (heartbeatAlarm [_ _conn sub last-stream-seq last-consumer-seq]
+        (let [consumer (try (some-> ^JetStreamSubscription sub (.getConsumerName))
+                            (catch Throwable _ nil))
+              {:keys [log? suppressed]} (heartbeat-alarm-log! consumer
+                                                              (System/currentTimeMillis))]
+          (when log?
+            (log/warn "[NATS] heartbeatAlarm" {:consumer consumer
+                                               :last-stream-seq last-stream-seq
+                                               :last-consumer-seq last-consumer-seq
+                                               :suppressed-since-last suppressed})))))))
+
+(m/=> error-listener [:=> [:cat] [:fn #(instance? ErrorListener %)]])
+
 (defn start!
   "Connect to NATS without blocking boot, and keep trying forever.
 
@@ -195,6 +257,7 @@
                      (.reconnectWait (Duration/ofMillis reconnect-wait))
                      (.connectionName "hive-mcp")
                      (.connectionListener (connection-listener epoch))
+                     (.errorListener (error-listener))
                      (.build))]
         (Nats/connectAsynchronously opts true)
         (log/info "[NATS] Connecting (async, retry forever) to" (redact-url url)))

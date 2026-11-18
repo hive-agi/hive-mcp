@@ -222,6 +222,23 @@
                (is (= "coordinator:7" (:from msg)))))
            (is (= :nats-inbox (get-in (reg/status) [:ports :delivery :lanes :ling :active]))))))
 
+(deftest the-nats-route-carries-the-ling-sequence-in-meta
+  (world {:nats? true :lings {"hl-s" {:slave/id "hl-s" :ling/spawn-mode :hive-agent}}
+          :ling-inboxes #{"hl-s"} :consumers #{"hl-s"}}
+         (fn []
+           (let [stamp {:epoch "e1" :seq 3 :after 2}]
+             ;; Ling.dispatch! stamps the task, then hands it to the route.
+             (binding [delivery/*ling-dispatch* (fn [p] ((:deliver-fn p) {:task-id "t3" :task "go"
+                                                                          :ling-seq stamp}))]
+               (is (r/ok? (delivery/deliver! {:to "hl-s" :message "go"
+                                              :params {:agent_id "hl-s" :prompt "go"}}))))
+             (is (= {:task-id "t3" :ling-seq stamp} (get-in @sent [0 1 :meta]))
+                 "the consumer reads the stamp from the envelope meta"))
+           (reset! sent [])
+           (binding [delivery/*ling-dispatch* (fn [p] ((:deliver-fn p) {:task-id "t4" :task "go"}))]
+             (delivery/deliver! {:to "hl-s" :message "go" :params {:agent_id "hl-s" :prompt "go"}}))
+           (is (= {:task-id "t4"} (get-in @sent [0 1 :meta])) "an unstamped task carries no stamp"))))
+
 (deftest a-ling-without-a-consumer-falls-back-to-headless-ling
   (testing "inbox armed, consumer missing"
     (world {:nats? true :lings {"hl-x" {:slave/id "hl-x" :ling/spawn-mode :hive-agent}}
