@@ -635,6 +635,8 @@
       (type-registry/default-duration type)
       "long"))
 
+(m/=> effective-duration [:=> [:cat :any [:maybe [:or :string :keyword]]] :string])
+
 (defn- do-add!
   "Inner core of handle-add. Runs the memory-store/KG IO path through
    the IMemoryStore registered under `:store-key` (default `:default`).
