@@ -22,7 +22,8 @@
             [hive-mcp.swarm.datascript :as ds]
             [malli.core :as m]
             [hive-mcp.context.request :as request-ctx]
-            [hive-mcp.channel.audience :as audience]))
+            [hive-mcp.channel.audience :as audience]
+            [hive-mcp.agent.ling.inbox-seq :as inbox-seq]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -688,7 +689,12 @@
                    :claude)
           strat (lifecycle/resolve-strategy mode)]
       (let [prior-status (:slave/status (ds-queries/get-slave id))
-            resolved-opts (cond-> (assoc task-opts :task resolved-task :task-id task-id)
+            ;; Send order across the ling's two inbox routes (NATS and the
+            ;; in-process hand-off): the loop holds this message back until
+            ;; the last one accepted before it was handed off.
+            ling-seq (inbox-seq/stamp! id)
+            resolved-opts (cond-> (assoc task-opts :task resolved-task :task-id task-id
+                                         :ling-seq ling-seq)
                             ctx (assoc :dispatch-context ctx))]
         (ds-lings/update-slave! id {:slave/status :working})
         ;; Everything after the :working write runs inside the try, so no
@@ -717,7 +723,8 @@
             (when-let [refusal (dispatch-refusal answer)]
               (throw (ex-info "Backend refused the dispatch"
                               {:ling-id id :task-id task-id
-                               :dispatch/refused? true :refusal refusal}))))
+                               :dispatch/refused? true :refusal refusal})))
+            (inbox-seq/accepted! id ling-seq))
           (log/info "Task dispatched to ling" {:ling-id id :task-id task-id
                                                :mode mode :files files
                                                :context-type (when ctx
@@ -782,6 +789,7 @@
             (when (:killed? result)
               (ds-lings/remove-slave! id)
               (disarm-ling-inbox! id)
+              (inbox-seq/forget! id)
               ;; Publish agent-kill event via NATS backbone (non-fatal).
               (r/rescue nil
                 (when-let [publish! (requiring-resolve 'hive-mcp.nats.bridge/publish-event!)]

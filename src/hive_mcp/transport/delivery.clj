@@ -195,9 +195,12 @@
    redelivery or a retried publish is the same message to the ling's
    consumer (it dedups by id) and to the stream (duplicate window)."
   [conn inbox-id from]
-  (fn [{:keys [task-id task]}]
+  (fn [{:keys [task-id task ling-seq]}]
     (let [receipt (inbox/send! conn (cond-> {:id (str task-id) :to inbox-id :body task
-                                             :meta {:task-id (str task-id)}}
+                                             :meta (cond-> {:task-id (str task-id)}
+                                                     ;; send order across the ling's
+                                                     ;; routes (agent.ling.inbox-seq)
+                                                     ling-seq (assoc :ling-seq ling-seq))}
                                       from (assoc :from from)))]
       {:dispatched true :task-id task-id :via :nats-inbox
        :seq (:seq receipt) :duplicate? (:duplicate? receipt)})))
