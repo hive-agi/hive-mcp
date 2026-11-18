@@ -76,3 +76,22 @@
           clamped (client/clamp-depth payload)]
       (is (= {:a 1} (:shallow clamped)))
       (is (some? (:deep clamped))))))
+
+(deftest heartbeat-alarms-are-rate-limited-per-consumer
+  (let [c (str "inbox-hb-" (System/nanoTime))
+        d (str c "-other")]
+    (testing "the first alarm of a consumer is logged"
+      (is (= {:log? true :suppressed 0} (client/heartbeat-alarm-log! c 1000 60000))))
+    (testing "alarms inside the window are counted, not logged"
+      (is (= {:log? false} (client/heartbeat-alarm-log! c 2000 60000)))
+      (is (= {:log? false} (client/heartbeat-alarm-log! c 3000 60000))))
+    (testing "each consumer has its own window"
+      (is (:log? (client/heartbeat-alarm-log! d 3000 60000))))
+    (testing "after the window one line names what was dropped"
+      (is (= {:log? true :suppressed 2} (client/heartbeat-alarm-log! c 61000 60000)))
+      (is (= {:log? false} (client/heartbeat-alarm-log! c 61001 60000))))
+    (testing "the listener installed on the connection is the rate-limited one"
+      (let [listener (client/error-listener)]
+        (is (instance? io.nats.client.ErrorListener listener))
+        ;; A nil subscription (no consumer name) must not throw.
+        (is (nil? (.heartbeatAlarm listener nil nil 0 0)))))))

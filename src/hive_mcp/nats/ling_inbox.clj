@@ -111,4 +111,63 @@
      :consumer-attached? attached
      :reachable?         (and (some? conn) armed? attached)}))
 
+;; =============================================================================
+;; Send sequence
+;; =============================================================================
+;;
+;; A headless ling is reached over two routes: this NATS inbox and the
+;; in-process :headless-ling hand-off. While NATS blips the :delivery chain
+;; falls back from one to the other, so a message sent second could reach the
+;; ling's loop first. Every dispatch is therefore stamped, at send time
+;; (Ling.dispatch!), with {:epoch e :seq n :after m}: E names this host
+;; process, N numbers the message among the ling's dispatches, and M is the
+;; highest seq of the ling whose send its route had already ACCEPTED, nil when
+;; none had. The ling's loop (hive-agent.loop.inbox-order) holds N back until
+;; M was handed off to it, whichever route M took. A send that fails is never
+;; accepted, so nothing waits for it. The stamp rides in the task opts and in
+;; the NATS envelope's :meta, under :ling-seq.
+
+(def LingSeq
+  [:map
+   [:epoch :string]
+   [:seq :int]
+   [:after [:maybe :int]]])
+
+(defonce ^{:doc "This host process's epoch: seqs are compared only within it."}
+  seq-epoch
+  (str (java.util.UUID/randomUUID)))
+
+(defonce ^:private seq-state
+  ;; ling-id -> {:next n :accepted m}
+  (atom {}))
+
+(defn seq-stamp!
+  "The next send-sequence stamp of LING-ID."
+  [ling-id]
+  (let [[_ after] (swap-vals! seq-state update ling-id
+                              (fn [{:keys [next] :as s}]
+                                (assoc s :next (inc (or next 0)))))
+        {:keys [next accepted]} (get after ling-id)]
+    {:epoch seq-epoch :seq next :after accepted}))
+
+(defn seq-accepted!
+  "Record that the send stamped STAMP was accepted by its route, so later
+   stamps of LING-ID name it (or a later one) as their predecessor."
+  [ling-id {:keys [seq] :as stamp}]
+  (when (and (int? seq) (= seq-epoch (:epoch stamp)))
+    (swap! seq-state update ling-id
+           (fn [{:keys [accepted] :as s}]
+             (assoc s :accepted (max seq (or accepted 0))))))
+  nil)
+
+(defn seq-forget!
+  "Drop LING-ID's send counters (the ling is gone)."
+  [ling-id]
+  (swap! seq-state dissoc ling-id)
+  nil)
+
+(m/=> seq-stamp! [:=> [:cat :any] LingSeq])
+(m/=> seq-accepted! [:=> [:cat :any :any] :nil])
+(m/=> seq-forget! [:=> [:cat :any] :nil])
+
 (m/=> route [:=> [:cat :any] Route])
