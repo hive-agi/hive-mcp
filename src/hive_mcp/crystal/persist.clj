@@ -188,28 +188,34 @@
 (defn- upgrade-one!
   "Rewrite the already-persisted entry `id` with the synthesised `entry`
    (id, and so every KG edge, preserved). Falls back to a fresh add when the
-   store refuses the update."
+   store refuses the update: a nil/false/`:error` answer OR a throw. A throw
+   means nothing was written, so reporting `id` as success would lose the wrap."
   [store id {:keys [pid entry] :as wrap}]
-  (try
-    (let [normalized (normalize-entry pid entry)
-          updates    (cond-> (select-keys normalized [:content :tags :type :duration :expires])
-                       (string? (:content normalized))
-                       (assoc :content-hash (mem-proto/content-hash (:content normalized))))
-          raw        (mem-proto/update-entry! store id updates)]
-      (if (or (nil? raw) (false? raw) (and (map? raw) (:error raw)))
-        (do (log/warn "wrap-upgrade: update refused for" id "- adding instead")
-            (assoc (persist-one! store wrap) :upgraded-from id))
-        (do (log/info "wrap-upgrade:" {:pid pid :id id})
+  (let [attempt (try
+                  (let [normalized (normalize-entry pid entry)
+                        updates    (cond-> (select-keys normalized [:content :tags :type :duration :expires])
+                                     (string? (:content normalized))
+                                     (assoc :content-hash (mem-proto/content-hash (:content normalized))))]
+                    {:normalized normalized
+                     :updates    updates
+                     :raw        (mem-proto/update-entry! store id updates)})
+                  (catch Throwable t
+                    (log/warn "wrap-upgrade: update of" id "threw:" (ex-message t))
+                    {:raw {:error (or (ex-message t) (str (class t)))}}))
+        {:keys [normalized updates raw]} attempt]
+    (if (or (nil? raw) (false? raw) (and (map? raw) (:error raw)))
+      (do (log/warn "wrap-upgrade: update refused for" id "- adding instead")
+          (assoc (persist-one! store wrap) :upgraded-from id))
+      (do (log/info "wrap-upgrade:" {:pid pid :id id})
+          (try
             (write-events/notify! :updated {:id id :memory-type (:type normalized)
                                             :tags (:tags normalized)
                                             :project-id (:project-id normalized)
                                             :fields (vec (keys updates))})
-            {:pid pid :project-id (:project-id normalized) :id id
-             :success? true :error nil :upgraded? true})))
-    (catch Throwable t
-      (log/warn "wrap-upgrade failed for" id ":" (ex-message t))
-      {:pid pid :project-id (pid->project-id pid) :id id
-       :success? true :error nil :upgraded? false})))
+            (catch Throwable t
+              (log/warn "wrap-upgrade: update of" id "landed, announce failed:" (ex-message t))))
+          {:pid pid :project-id (:project-id normalized) :id id
+           :success? true :error nil :upgraded? true}))))
 
 (defn upgrade-wraps!
   "Upgrade the mechanical wraps already persisted (`persisted`, the

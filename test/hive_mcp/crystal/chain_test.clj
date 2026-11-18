@@ -125,7 +125,7 @@
   (let [store (stub/create-store)
         edges (atom [])
         add!  (fn [spec] (swap! edges conj spec) "edge-1")
-        c     (chain/->StoreChain store add!)]
+        c     (chain/->StoreChain store add! nil)]
     (doseq [e [{:id (sid 1) :type "note" :project-id "a" :tags ["session-summary" "scope:project:a"] :content "s1"}
                {:id (sid 2) :type "note" :project-id "b" :tags ["session-summary" "scope:project:b"] :content "s2"}
                {:id (sid 3) :type "decision" :project-id "a" :tags ["session-summary"] :content "d"}

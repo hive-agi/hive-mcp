@@ -20,7 +20,8 @@
             [hive-mcp.protocols.memory :as mem-proto]
             [hive-spi.memory.ports :as ports]
             [hive-spi.memory.stub :as stub]
-            [hive-test.trifecta :refer [deftrifecta]]))
+            [hive-test.trifecta :refer [deftrifecta]]
+            [hive-mcp.test.stub.memory-store :as obs]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -292,7 +293,7 @@
 (deftest a-same-day-rewrap-rewrites-the-summary-in-place
   (let [store (stub/create-store)]
     (ports/add-entry! store am-wrap)
-    (let [c (chain/->StoreChain store (fn [_] "edge-id"))
+    (let [c (chain/->StoreChain store (fn [_] "edge-id") nil)
           wraps [(w "afternoon wrap" "2026-11-17")]
           planned (cons/apply-folds wraps (:folds (cons/folds-for c wraps "2026-11-17")))
           report (with-store store #(persist/persist-wraps! planned))
@@ -308,7 +309,7 @@
 (deftest a-second-rewrap-in-the-same-day-folds-again
   (let [store (stub/create-store)]
     (ports/add-entry! store am-wrap)
-    (let [c (chain/->StoreChain store (fn [_] "edge-id"))
+    (let [c (chain/->StoreChain store (fn [_] "edge-id") nil)
           fold! (fn [wraps today]
                   (with-store store
                     #(persist/persist-wraps!
@@ -324,7 +325,7 @@
 (deftest a-rewrap-on-another-day-adds-and-does-not-fold
   (let [store (stub/create-store)]
     (ports/add-entry! store am-wrap)
-    (let [c (chain/->StoreChain store (fn [_] "edge-id"))
+    (let [c (chain/->StoreChain store (fn [_] "edge-id") nil)
           wraps [(w "next day" "2026-11-18")]
           folds (:folds (cons/folds-for c wraps "2026-11-18"))
           report (with-store store #(persist/persist-wraps! (cons/apply-folds wraps folds)))]
@@ -337,7 +338,7 @@
 
 (deftest an-empty-store-degrades-to-a-fresh-add
   (let [store (stub/create-store)
-        c (chain/->StoreChain store (fn [_] "edge-id"))
+        c (chain/->StoreChain store (fn [_] "edge-id") nil)
         wraps [(w "first ever" "2026-11-17")]
         folds (:folds (cons/folds-for c wraps "2026-11-17"))]
     (testing "nothing folds against an empty store"
@@ -346,3 +347,83 @@
       (let [report (with-store store #(persist/persist-wraps! (cons/apply-folds wraps folds)))]
         (is (= 1 (:persisted report)))
         (is (= 1 (count (ports/query-entries store {}))))))))
+
+;; =============================================================================
+;; Fold x chain: a folded re-wrap must not re-link (reviewer defect 1)
+;; =============================================================================
+
+(defn- recording-kg
+  "A KG edge port over an atom: `add!` appends the spec and answers a fresh id
+   (as knowledge-graph.edges.write/add-edge! does, with no uniqueness on
+   from/to/relation), `find` answers the first stored edge matching all three."
+  [edges]
+  {:add!  (fn [spec] (swap! edges conj spec) (str "edge-" (count @edges)))
+   :find  (fn [from to relation]
+            (some #(when (and (= from (:from %)) (= to (:to %)) (= relation (:relation %))) %)
+                  @edges))})
+
+(def ^:private yesterday-summary
+  {:id (sid "20261116" "090000" 1) :type "note" :project-id "a"
+   :tags ["session-summary" "wrap-generated" (dtag "2026-11-16") "scope:project:a"]
+   :content "yesterday" :duration "short"})
+
+(deftest two-same-day-wraps-write-exactly-one-supersedes-edge
+  (let [store (stub/create-store)
+        edges (atom [])
+        {:keys [add! find]} (recording-kg edges)
+        c (chain/->StoreChain store add! find)
+        wrap! (fn [content]
+                (let [wraps [(w content "2026-11-17")]
+                      planned (cons/apply-folds wraps (:folds (cons/folds-for c wraps "2026-11-17")))
+                      persisted (with-store store #(persist/persist-wraps! planned))]
+                  {:persisted persisted :chained (chain/chain-wraps! c persisted)}))]
+    (ports/add-entry! store yesterday-summary)
+    (let [first-wrap (wrap! "morning wrap")
+          today-id (:id (first (:results (:persisted first-wrap))))
+          second-wrap (wrap! "afternoon wrap")]
+      (testing "the first wrap of the day is added and linked to yesterday"
+        (is (not= (:id yesterday-summary) today-id))
+        (is (= 1 (:linked (:chained first-wrap)))))
+      (testing "the second wrap folds into the same entry"
+        (is (true? (:upgraded? (first (:results (:persisted second-wrap))))))
+        (is (= today-id (:id (first (:results (:persisted second-wrap)))))))
+      (testing "and the chain reports the existing edge without writing another"
+        (is (= 0 (:linked (:chained second-wrap))))
+        (is (true? (:existing (first (:results (:chained second-wrap))))))
+        (is (= (:id yesterday-summary) (:supersedes (first (:results (:chained second-wrap)))))))
+      (testing "exactly ONE :supersedes edge, today -> yesterday"
+        (is (= [[today-id (:id yesterday-summary) :supersedes]]
+               (mapv (juxt :from :to :relation) @edges))))
+      (testing "two entries in the store: yesterday and today's single summary"
+        (is (= 2 (count (ports/query-entries store {}))))))))
+
+;; =============================================================================
+;; A throwing update must not lose the wrap (reviewer defect 2)
+;; =============================================================================
+
+(deftest a-throwing-update-falls-back-to-a-fresh-add
+  (let [inner (stub/create-store)
+        _ (ports/add-entry! inner am-wrap)
+        store (obs/->observing inner {:update-entry! "store down"})
+        c (chain/->StoreChain store (fn [_] "edge-id") nil)
+        wraps [(w "afternoon wrap" "2026-11-17")]
+        planned (cons/apply-folds wraps (:folds (cons/folds-for c wraps "2026-11-17")))
+        report (with-store store #(persist/persist-wraps! planned))
+        result (first (:results report))
+        after (ports/query-entries inner {})]
+    (testing "the fold was planned and the update was attempted through the port"
+      (is (= [(:id am-wrap)] (mapv :consolidate-into planned)))
+      (is (= 1 (count (obs/calls-of store :update-entry!)))))
+    (testing "the throw is not reported as an upgrade of the old id"
+      (is (not (true? (:upgraded? result))))
+      (is (not= (:id am-wrap) (:id result)))
+      (is (= (:id am-wrap) (:upgraded-from result))))
+    (testing "the wrap is ADDED instead, so it is not lost"
+      (is (true? (:success? result)))
+      (is (string? (:id result)))
+      (is (= 1 (:persisted report)))
+      (is (= 1 (count (obs/calls-of store :add-entry!))))
+      (is (= 2 (count after)))
+      (is (= "afternoon wrap" (:content (ports/get-entry inner (:id result))))))
+    (testing "the stored morning wrap is untouched"
+      (is (= "morning wrap" (:content (ports/get-entry inner (:id am-wrap))))))))
