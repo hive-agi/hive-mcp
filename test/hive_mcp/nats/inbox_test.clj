@@ -68,7 +68,13 @@
   (is (= "coordinator:134462"
          (inbox/decode-inbox-id (inbox/encode-inbox-id "coordinator:134462")))
       "round trip")
+  (testing "a Claude Code session token round-trips too (kanban 20261111164432-2be7b1e6)"
+    (is (= "coordinator-a2f8cfa6" (inbox/encode-inbox-id "coordinator:a2f8cfa6")))
+    (is (= "coordinator:a2f8cfa6"
+           (inbox/decode-inbox-id (inbox/encode-inbox-id "coordinator:a2f8cfa6")))))
   (is (= "coordinator-s36605" (inbox/encode-inbox-id "coordinator-s36605")))
+  (is (= "coordinator-s36605" (inbox/decode-inbox-id "coordinator-s36605"))
+      "not a session token: left as given")
   (is (= "ling-7" (inbox/decode-inbox-id "ling-7")) "a plain dash stays a dash"))
 
 (deftest encode-inbox-id-is-idempotent-on-valid-ids

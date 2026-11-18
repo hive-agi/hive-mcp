@@ -109,9 +109,85 @@
     (is (= #{:kanban/claim-refused} (set (keys fx))) "neither half is written")))
 
 (deftest holder-live-reads-coordinator-pids
-  (with-redefs [claim/same-lineage? (constantly false)]
+  (let [ports {:get-slave (constantly nil) :pid-alive? #{4242}}]
+    (is (true? (claim/holder-live? "coordinator:4242" ports)))
+    (is (false? (claim/holder-live? "coordinator:999999999" ports)))
+    (is (true? (claim/holder-live? "some-unregistered-agent" ports))
+        "an owner that cannot be checked counts as live"))
+  (testing "the live default port reads this JVM's own process"
     (let [self (str (.pid (java.lang.ProcessHandle/current)))]
-      (is (true? (claim/holder-live? (str "coordinator:" self))))
-      (is (false? (claim/holder-live? "coordinator:999999999")))
-      (is (true? (claim/holder-live? "some-unregistered-agent"))
-          "an owner that cannot be checked counts as live"))))
+      (is (true? (claim/holder-live? (str "coordinator:" self)
+                                     (assoc (claim/default-ports) :get-slave (constantly nil))))))))
+
+;; -- kanban 20261111164432-2be7b1e6: one session, many pids -------------------
+
+(def ^:private records
+  "Two Claude Code sessions. Session a2f8cfa6 moved from pid 2418990 to 512956
+   (a resume): its record now names the new pid; the old pid is gone."
+  [{:pid 512956 :session-id "a2f8cfa6-f21a-4932-a090-6b8ed142d5f0"}
+   {:pid 483996 :session-id "286eb089-aa38-4578-8697-6345d5e07276"}])
+
+(def ^:private alive #{512956 483996})
+
+(deftest token-session-ids-resolves-pids-and-session-prefixes
+  (is (= #{"a2f8cfa6-f21a-4932-a090-6b8ed142d5f0"} (claim/token-session-ids "512956" records)))
+  (is (= #{"a2f8cfa6-f21a-4932-a090-6b8ed142d5f0"} (claim/token-session-ids "a2f8cfa6" records)))
+  (is (= #{} (claim/token-session-ids "2418990" records)) "a pid no record names")
+  (is (= #{} (claim/token-session-ids nil records))))
+
+(deftest token-live-is-measured-not-assumed
+  (testing "a session token is live while a process hosting that session runs"
+    (is (true? (claim/token-live? "a2f8cfa6" records alive)))
+    (is (false? (claim/token-live? "a2f8cfa6" records #{483996})) "its process died")
+    (is (false? (claim/token-live? "deadbeef" records alive)) "no record names it"))
+  (testing "a pid token is live while that pid runs"
+    (is (true? (claim/token-live? "512956" records alive)))
+    (is (false? (claim/token-live? "2418990" records alive))))
+  (testing "no session records on this host: a session token is unknown"
+    (is (nil? (claim/token-live? "a2f8cfa6" nil alive)))))
+
+(deftest same-session-folds-a-pid-and-its-session-token
+  (is (true? (claim/same-session? "coordinator:512956" "coordinator:a2f8cfa6" records)))
+  (is (true? (claim/same-session? "coordinator:a2f8cfa6-hive" "coordinator:512956" records)))
+  (is (false? (claim/same-session? "coordinator:483996" "coordinator:a2f8cfa6" records)))
+  (is (false? (claim/same-session? "coordinator:512956" "ling-x" records)))
+  (is (false? (claim/same-session? "coordinator:2418990" "coordinator:512956" records))
+      "a dead pid no record names is not linked by guessing"))
+
+(deftest a-session-that-changed-pid-keeps-its-card
+  (testing "claimed under the session token, moved to a new pid: kept, not refused"
+    (let [entry (card "doing" {:owner "coordinator:a2f8cfa6" :since "t0"})
+          ports {:get-slave (constantly nil) :pid-alive? alive :session-records (constantly records)}
+          ctx   (claim/claim-ctx entry "coordinator:512956" tid ports)]
+      (is (true? (:same-lineage? ctx)))
+      (let [fx (events/move-fx {:kanban/entry entry :kanban/project-id "hive-mcp"
+                                :kanban/claim-ctx ctx}
+                               [:kanban/move {:task-id tid :new-status "doing"
+                                              :owner "coordinator:512956"}])]
+        (is (= {:owner "coordinator:a2f8cfa6" :since "t0"} (written-claim fx))))))
+  (testing "a claim under a pid whose session has ended is reclaimed, not refused"
+    (let [entry (card "doing" {:owner "coordinator:2418990" :since "t0"})
+          ports {:get-slave (constantly nil) :pid-alive? alive :session-records (constantly records)}
+          ctx   (claim/claim-ctx entry "coordinator:a2f8cfa6" tid ports)]
+      (is (= {:holder-live? false :same-lineage? false} ctx))
+      (is (= "coordinator:a2f8cfa6"
+             (:owner (written-claim
+                      (events/move-fx {:kanban/entry entry :kanban/project-id "hive-mcp"
+                                       :kanban/claim-ctx ctx}
+                                      [:kanban/move {:task-id tid :new-status "doing"
+                                                     :owner "coordinator:a2f8cfa6"}])))))))
+  (testing "another live session is still refused"
+    (let [entry (card "doing" {:owner "coordinator:286eb089" :since "t0"})
+          ports {:get-slave (constantly nil) :pid-alive? alive :session-records (constantly records)}]
+      (is (= {:holder-live? true :same-lineage? false}
+             (claim/claim-ctx entry "coordinator:a2f8cfa6" tid ports))))))
+
+(deftest session-records-are-read-from-a-directory
+  (let [dir (doto (java.io.File/createTempFile "claude-sessions" "") (.delete) (.mkdirs))]
+    (spit (java.io.File. dir "512956.json")
+          "{\"pid\":512956,\"sessionId\":\"a2f8cfa6-f21a-4932-a090-6b8ed142d5f0\",\"kind\":\"bg\"}")
+    (spit (java.io.File. dir "7.json") "{not json")
+    (spit (java.io.File. dir "512956.abc.key") "secret-not-read")
+    (is (= [{:pid 512956 :session-id "a2f8cfa6-f21a-4932-a090-6b8ed142d5f0"}]
+           (claim/read-session-records (str dir))))
+    (is (nil? (claim/read-session-records (str dir "/missing"))))))
