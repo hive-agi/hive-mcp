@@ -11,6 +11,7 @@
   :conflicts
   [{:file "src/held.clj",
     :qn nil,
+    :held-qn nil,
     :mode :file,
     :held-by "ling-a",
     :reason :file-claim}],
