@@ -47,12 +47,19 @@
 
 (defn create-ling-opts
   "The create-ling! opts for TASK under OPTS. :prompt of the task is the
-   ling's task text."
+   ling's task text. The task's :role, :tier and :work-class form the
+   :spawn/request the :spawn/opts-overlay contributors read (spawn-ctx
+   :request), the same request map `agent spawn` hands them, so a DAG spawn
+   is routed exactly like a direct one. No such key, no :spawn/request."
   [task opts]
   (let [{:keys [cwd presets project-id prefer-lightweight? run-id max-budget-usd
                 parent spawned-by]
          :or   {prefer-lightweight? true}} opts
-        role (:role task)]
+        role    (:role task)
+        request (cond-> {}
+                  (not (blank-role? role)) (assoc :role role)
+                  (some? (:tier task))       (assoc :tier (:tier task))
+                  (some? (:work-class task)) (assoc :work-class (:work-class task)))]
     (cond-> {:cwd           cwd
              :presets       (or presets ["ling"])
              :project-id    project-id
@@ -63,7 +70,7 @@
       run-id                                  (assoc :run-id run-id)
       (and max-budget-usd (pos? max-budget-usd)) (assoc :max-budget-usd max-budget-usd)
       prefer-lightweight?                     (assoc :spawn-mode :headless)
-      (not (blank-role? role))                (assoc :spawn/request {:role role}))))
+      (seq request)                           (assoc :spawn/request request))))
 
 ;; =============================================================================
 ;; Open default: :local-headless
