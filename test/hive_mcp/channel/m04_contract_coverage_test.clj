@@ -15,7 +15,6 @@
            "src/hive_mcp/channel/async_result.clj"
            "src/hive_mcp/channel/async_result_journal.clj"
            "src/hive_mcp/channel/audience.clj"
-           "src/hive_mcp/channel/axiom_projection.clj"
            "src/hive_mcp/channel/blocks.clj"
            "src/hive_mcp/channel/broadcast_ledger.clj"
            "src/hive_mcp/channel/broadcast_policy.clj"

@@ -10,7 +10,8 @@
             [clojure.test.check.clojure-test :refer [defspec]]
             [clojure.test.check.generators :as gen]
             [clojure.test.check.properties :as prop]
-            [hive-mcp.channel.drain-projection :as proj]))
+            [hive-mcp.channel.drain-projection :as proj]
+            [hive-spi.projection.ports :as floor]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -125,3 +126,23 @@
           out (filterv #(= :axiom (:T %))
                        (proj/project es {:policy :index :axiom-policy :full}))]
       (= axioms out))))
+
+(deftest the-floor-projection-is-consulted-through-the-hive-spi-port
+  (let [prior (floor/get-projection)
+        ax {:id "a9" :T "axiom" :C "# AXIOM\n\nRule.\n\n## Why\n\nA long story.\n"}
+        marking (reify floor/FloorProjection
+                  (project-floor [_ e] (assoc e :C "# AXIOM\n\nRule." :projected-by :test)))]
+    (try
+      (testing "no projection installed: core degrades to identity, the floor entry is sent whole"
+        (floor/clear-projection!)
+        (is (= ax (proj/project-entry ax {:policy :index :axiom-policy :compact}))))
+      (testing "an installed projection is the one core uses under :compact"
+        (floor/set-projection! marking)
+        (is (= :test (:projected-by (proj/project-entry ax {:policy :index :axiom-policy :compact})))))
+      (testing ":full bypasses the projection even when one is installed"
+        (is (= ax (proj/project-entry ax {:policy :index :axiom-policy :full}))))
+      (testing "a pool entry never reaches the floor projection"
+        (let [note {:id "n1" :T "note" :C "short"}]
+          (is (nil? (:projected-by (proj/project-entry note {:policy :index :axiom-policy :compact}))))))
+      (finally
+        (if prior (floor/set-projection! prior) (floor/clear-projection!))))))
