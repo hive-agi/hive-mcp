@@ -22,8 +22,7 @@
             [hive-mcp.swarm.datascript :as ds]
             [malli.core :as m]
             [hive-mcp.context.request :as request-ctx]
-            [hive-mcp.channel.audience :as audience]
-            [hive-mcp.agent.ling.inbox-seq :as inbox-seq]))
+            [hive-mcp.channel.audience :as audience]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -500,6 +499,14 @@
     (when-let [disarm! (soft/resolve-soft 'hive-mcp.nats.ling-inbox/disarm!)]
       (disarm! id))))
 
+(defn- ling-seq-call
+  "Call send-sequence fn SYM of hive-mcp.nats.ling-inbox with ARGS, resolved
+   at call time like the inbox arm: fail-soft, nil when absent."
+  [sym & args]
+  (r/rescue nil
+    (when-let [f (soft/resolve-soft (symbol "hive-mcp.nats.ling-inbox" (name sym)))]
+      (apply f args))))
+
 (defn- dispatch-when-ready!
   [{:keys [mode cwd presets project-id effective-model]} slave-id enriched-task headless?]
   (when (and enriched-task (not headless?))
@@ -692,7 +699,7 @@
             ;; Send order across the ling's two inbox routes (NATS and the
             ;; in-process hand-off): the loop holds this message back until
             ;; the last one accepted before it was handed off.
-            ling-seq (inbox-seq/stamp! id)
+            ling-seq (ling-seq-call 'seq-stamp! id)
             resolved-opts (cond-> (assoc task-opts :task resolved-task :task-id task-id
                                          :ling-seq ling-seq)
                             ctx (assoc :dispatch-context ctx))]
@@ -724,7 +731,7 @@
               (throw (ex-info "Backend refused the dispatch"
                               {:ling-id id :task-id task-id
                                :dispatch/refused? true :refusal refusal})))
-            (inbox-seq/accepted! id ling-seq))
+            (when ling-seq (ling-seq-call 'seq-accepted! id ling-seq)))
           (log/info "Task dispatched to ling" {:ling-id id :task-id task-id
                                                :mode mode :files files
                                                :context-type (when ctx
@@ -789,7 +796,7 @@
             (when (:killed? result)
               (ds-lings/remove-slave! id)
               (disarm-ling-inbox! id)
-              (inbox-seq/forget! id)
+              (ling-seq-call 'seq-forget! id)
               ;; Publish agent-kill event via NATS backbone (non-fatal).
               (r/rescue nil
                 (when-let [publish! (requiring-resolve 'hive-mcp.nats.bridge/publish-event!)]

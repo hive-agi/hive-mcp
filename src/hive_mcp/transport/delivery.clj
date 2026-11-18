@@ -199,7 +199,7 @@
     (let [receipt (inbox/send! conn (cond-> {:id (str task-id) :to inbox-id :body task
                                              :meta (cond-> {:task-id (str task-id)}
                                                      ;; send order across the ling's
-                                                     ;; routes (agent.ling.inbox-seq)
+                                                     ;; routes (nats.ling-inbox/seq-stamp!)
                                                      ling-seq (assoc :ling-seq ling-seq))}
                                       from (assoc :from from)))]
       {:dispatched true :task-id task-id :via :nats-inbox
