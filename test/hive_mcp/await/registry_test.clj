@@ -321,7 +321,41 @@
       (is (= {} (registry/read-awaiters path)))
       (finally (registry/shutdown! reg)))))
 
+(deftest boot-restores-and-is-idempotent-in-one-jvm
+  (let [path (temp-path)
+        prop "hive.await.registry"
+        old  (System/getProperty prop)]
+    (System/setProperty prop path)
+    (try
+      (let [reg1 (registry-on path)]
+        (registry/create! reg1 {:id "b1" :owner {:kind :test-stub}
+                                :subscription {:type :manual}})
+        (registry/arm! reg1 "b1" "run-b1")
+        (registry/shutdown! reg1))
+      (testing "boot! restores the parked awaiter from the file"
+        (let [r (registry/boot!)]
+          (is (= ["b1"] (:armed r)))
+          (is (= :armed (:status (registry/lookup-awaiter "b1"))))))
+      (testing "a second boot! in the same JVM releases its own lock and restores again"
+        (let [r (registry/boot!)]
+          (is (= ["b1"] (:armed r)) "not refused on the lock the first boot! holds")))
+      (testing "the restored awaiter wakes once"
+        (manual/fire! {} "b1")
+        (is (wait-until 2000 #(= 1 (count @resumes)))))
+      (finally
+        (registry/shutdown-process!)
+        (if old (System/setProperty prop old) (System/clearProperty prop))))))
+
 (deftest lookup-awaiter-takes-the-id-alone
   (testing "arity 1, no registry argument: the seam hive-agent calls before it parks"
-    (is (fn? registry/lookup-awaiter))
-    (is (nil? (registry/lookup-awaiter (str "no-such-awaiter-" (random-uuid)))))))
+    (let [prop "hive.await.registry"
+          old  (System/getProperty prop)]
+      ;; never the operator's registry: a live hive-mcp holds its lock
+      (System/setProperty prop (temp-path))
+      (try
+        (registry/shutdown-process!)
+        (is (fn? registry/lookup-awaiter))
+        (is (nil? (registry/lookup-awaiter (str "no-such-awaiter-" (random-uuid)))))
+        (finally
+          (registry/shutdown-process!)
+          (if old (System/setProperty prop old) (System/clearProperty prop)))))))

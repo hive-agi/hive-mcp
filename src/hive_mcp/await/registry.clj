@@ -714,16 +714,23 @@
 
    This is the boot hook B4 asked for: without it a restart left every
    parked ling asleep until somebody happened to call `swarm await list`.
-   Idempotent, and non-fatal: a registry that cannot be initialised is logged
-   and left unset, so a broken registry file cannot stop the server from
-   starting. Answers the InitReport, or nil on failure."
+   Idempotent: a process registry already up in this JVM (an earlier boot!,
+   or the lazy default-registry) is shut down first, releasing its file lock,
+   and the file is read again, so a second boot restores the same awaiters
+   instead of refusing on its own lock. Non-fatal: a registry that cannot be
+   initialised is logged and left unset, so a broken registry file cannot
+   stop the server from starting. Answers the InitReport, or nil on failure."
   []
   (try
-    (let [reg (make-registry (default-path))
-          report (init! reg)]
-      (reset! process-registry reg)
-      (log/info "await registry initialised at boot" (dissoc report :corrupt-aside))
-      report)
+    (locking process-registry
+      (when-let [old @process-registry]
+        (shutdown! old)
+        (reset! process-registry nil))
+      (let [reg    (make-registry (default-path))
+            report (init! reg)]
+        (reset! process-registry reg)
+        (log/info "await registry initialised at boot" (dissoc report :corrupt-aside))
+        report))
     (catch Throwable e
       (log/error e "await registry: boot init failed; awaiters stay unloaded")
       nil)))
