@@ -1,6 +1,7 @@
 {:base-keys
  [:hive/a2a-gateway
   :hive/addon-hot
+  :hive/await-registry
   :hive/channel-bridge
   :hive/config
   :hive/coordinator
