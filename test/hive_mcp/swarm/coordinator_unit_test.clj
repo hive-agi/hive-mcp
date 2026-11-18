@@ -1,4 +1,4 @@
-(ns hive-mcp.swarm.coordinator-test
+(ns hive-mcp.swarm.coordinator-unit-test
   "Facets for hive-mcp.swarm.coordinator on the unit classpath.
 
      trifecta  extract-files-from-prompt, pure, driven from its contract with

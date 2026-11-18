@@ -1,4 +1,4 @@
-(ns hive-mcp.agora.dialogue-test
+(ns hive-mcp.agora.dialogue-unit-test
   "Trifecta on the one part of `hive-mcp.agora.dialogue` that does not reach
    the agora store: `format-signal`, the `[SIGNAL: x]` prefix every turn
    shorthand (propose / counter / approve / no-change) writes. The rest of

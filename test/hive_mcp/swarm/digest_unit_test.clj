@@ -1,4 +1,4 @@
-(ns hive-mcp.swarm.digest-test
+(ns hive-mcp.swarm.digest-unit-test
   "Facets for hive-mcp.swarm.digest, a compat shim over hive-agent.swarm.digest.
 
    Without hive-agent on the unit classpath, the golden pins where every

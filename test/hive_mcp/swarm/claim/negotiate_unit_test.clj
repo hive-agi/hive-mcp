@@ -1,4 +1,4 @@
-(ns hive-mcp.swarm.claim.negotiate-test
+(ns hive-mcp.swarm.claim.negotiate-unit-test
   "Facets for hive-mcp.swarm.claim.negotiate on the unit classpath.
 
    The negotiation reasons over claim spans and store rows, both compat shims

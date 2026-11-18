@@ -1,4 +1,4 @@
-(ns hive-mcp.swarm.sync-test
+(ns hive-mcp.swarm.sync-unit-test
   "Facets for hive-mcp.swarm.sync on the unit classpath.
 
      trifecta  classify-row from its contract, over rows and evidence drawn

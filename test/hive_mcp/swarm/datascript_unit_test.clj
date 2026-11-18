@@ -1,4 +1,4 @@
-(ns hive-mcp.swarm.datascript-test
+(ns hive-mcp.swarm.datascript-unit-test
   "Facets for hive-mcp.swarm.datascript, the backward-compatibility facade
    over the swarm DataScript store.
 
