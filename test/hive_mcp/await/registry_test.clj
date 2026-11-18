@@ -57,6 +57,16 @@
       (let [v (pred)]
         (if (or v (> (System/currentTimeMillis) end)) v (do (Thread/sleep 10) (recur)))))))
 
+(defn- resumed?
+  "True once awaiter `id`'s resume has fully settled. resume! calls the
+   resumer, then marks :woken, persists, and records the result LAST, so the
+   recorded result is the only signal that every earlier step is done.
+   Waiting on the stub's call or on :woken and then asserting a later step
+   races the resume thread (CI run 44355160296 attempt 1); a shutdown! in that
+   window also interrupts the persist, leaving :waking on disk."
+  [reg id]
+  (some? (registry/resume-result reg id)))
+
 (defn- registry-on [path & {:as opts}]
   (let [reg (registry/make-registry path (or opts {}))]
     (registry/init! reg)
@@ -106,7 +116,8 @@
       (testing "a matching fire wakes and resumes exactly once"
         (manual/fire! {:ci :green} "a1")
         (manual/fire! {:ci :green} "a1")
-        (is (wait-until 2000 #(= :woken (:status (registry/lookup reg "a1")))))
+        (is (wait-until 2000 #(resumed? reg "a1")))
+        (is (= :woken (:status (registry/lookup reg "a1"))))
         (is (= 1 (count @resumes)))
         (is (= {:ok? true :value {:resumed :ok} :attempt 1}
                (dissoc (registry/resume-result reg "a1") :give-up?))))
@@ -135,7 +146,8 @@
       (registry/create! reg {:id "dl-armed" :owner {:kind :test-stub} :timeout-ms 50
                              :subscription {:type :manual}})
       (registry/arm! reg "dl-armed" "run-d1")
-      (is (wait-until 3000 #(= 1 (count @resumes))))
+      (is (wait-until 3000 #(resumed? reg "dl-armed")))
+      (is (= 1 (count @resumes)))
       (is (= :timeout (get-in (first @resumes) [:payload :reason])))
       (is (= :woken (:status (registry/lookup reg "dl-armed"))))
       (finally (registry/shutdown! reg)))))
@@ -174,7 +186,9 @@
         (manual/fire! {:sha "abc"})
         (manual/fire! {:sha "abc"})
         (manual/fire! {:sha "def"})
-        (is (wait-until 2000 #(= 1 (count @resumes))) "exactly one wake after re-init")
+        (is (wait-until 2000 #(resumed? reg2 "r1"))
+            "the wake settles (woken AND persisted) before this registry dies")
+        (is (= 1 (count @resumes)) "exactly one wake after re-init")
         (is (= "r1" (get-in (first @resumes) [:awaiter :id])))
         (registry/shutdown! reg2)))
     (testing "the wake is persisted: a third init restores nothing to wake"
@@ -262,7 +276,8 @@
     (let [reg2 (registry-on path)]
       (try
         (testing "init puts an in-flight wake back in flight instead of losing it"
-          (is (wait-until 4000 #(= 1 (count @resumes))))
+          (is (wait-until 4000 #(resumed? reg2 "w1")))
+          (is (= 1 (count @resumes)))
           (is (= :woken (:status (registry/lookup reg2 "w1")))))
         (finally (registry/shutdown! reg2))))))
 
