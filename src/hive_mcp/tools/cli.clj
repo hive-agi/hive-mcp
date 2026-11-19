@@ -11,7 +11,8 @@
             [hive-mcp.addons.boot-health :as boot-health]
             [hive-mcp.tools.op-outcome :as op-outcome]
             [hive-mcp.dispatch.verbs :as verbs]
-            [malli.core :as m]))
+            [malli.core :as m]
+            [hive-mcp.dispatch.lazy :as lazy]))
 
 ;; =============================================================================
 ;; Command Normalization
@@ -319,28 +320,23 @@
            (catch Throwable _ nil)))))
 
 (defn- unknown-command-error
-  "Loud error for a command this tree cannot resolve. Leads with the root
-   tool the first word names when it is not this tool's command at all
-   (`root-route-line`), then the roots that own the token (`Did you mean:
-   carto multi?`), then the nearest known commands by edit distance, then the
-   valid roots. A root that neither enumerates nor declares the token is never
-   offered.
-
-   When the first word IS a valid handler key whose subtree is a load-error
-   placeholder from a broken subdomain (carries ::load-error), the error names
-   the load error instead of saying 'Unknown command'."
+  "Loud error for a command this tree cannot resolve. When the first word
+   names a subdomain whose namespace failed to load (it carries
+   hive-mcp.dispatch.lazy/load-error), says that, with the cause, instead of
+   `Unknown command`: listing the subdomain as valid while calling its verb
+   unknown contradicts itself. Otherwise leads with the root tool the first
+   word names when it is not this tool's command at all (`root-route-line`),
+   then the roots that own the token (`Did you mean: carto multi?`), then the
+   nearest known commands by edit distance, then the valid roots. A root that
+   neither enumerates nor declares the token is never offered."
   [command handlers]
   (let [raw       (normalize-command command)
         cmd       (when (and raw (not (str/blank? raw))) (str/trim raw))
-        first-kw  (some->> cmd (re-find #"^\S+") keyword)
-        sub-entry (when first-kw (get handlers first-kw))
-        ;; ::load-error in the placeholder is :hive-mcp.tools.composite/load-error
-        broken?   (and (map? sub-entry)
-                       (contains? sub-entry :hive-mcp.tools.composite/load-error))]
-    (if broken?
-      (let [err-msg (:hive-mcp.tools.composite/load-error sub-entry "namespace failed to load")]
-        (mcp-error (str "Subdomain '" (name first-kw) "' failed to load: " err-msg
-                        ". Fix the cause, then reload the namespace.")))
+        head      (first (parse-command cmd))
+        load-err  (when head (lazy/load-error (get handlers head)))]
+    (if load-err
+      (mcp-error (str "Subdomain '" (name head) "' failed to load: " load-err
+                      ". Fix the cause; a later call retries the load (no reload needed)."))
       (let [route     (root-route-line cmd handlers)
             roots     (when cmd (:roots (qualification-hints cmd handlers)))
             qualified (map #(str (name %) " " cmd) roots)
