@@ -158,6 +158,7 @@
 
       :else leaf)))
 
+
 (defn lazy-resolve-handlers
   "Lazily resolve a consolidated tool's `handlers` map by fully-qualified
    symbol, triggering ns load on first access (DIP).

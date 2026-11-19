@@ -223,6 +223,7 @@
                                 {:command "seal-status"}))))))
     (finally (ext/retract-commands! "merged-test-root" :merged-test-addon))))
 
+
 (defn- flaky-require
   "A subdomain resolver seam whose require throws on its first call (a
    dependency of the subdomain missing, as hive-spi.projection.ports was on
@@ -410,3 +411,19 @@
     (testing "a command under a healthy subdomain keeps the ordinary error"
       (is (str/includes? (:text (unknown "nope" {:info (fn [_] nil) :workflow placeholder}))
                          "Unknown command: nope")))))
+
+;; =============================================================================
+;; lazy-resolve-handlers -- a subdomain that loads returns its real tree.
+;; #708 contributed a brief smoke test that the public API works.
+;; =============================================================================
+
+(def subdomain-handlers
+  {:ping (fn [_] {:type "text" :text "pong"})})
+
+(deftest a-subdomain-that-loads-returns-its-real-tree
+  (let [tree (composite/lazy-resolve-handlers 'hive-mcp.tools.composite-test/subdomain-handlers)]
+    (is (= "pong" (:text ((composite/build-merged-handler "load-ok-test-root" {:sub tree})
+                          {:command "sub ping"}))))))
+
+(deftest a-loaded-namespace-without-the-var-is-an-empty-tree
+  (is (= {} (composite/lazy-resolve-handlers 'hive-mcp.tools.composite-test/no-such-var))))
