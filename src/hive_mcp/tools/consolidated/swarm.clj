@@ -53,31 +53,28 @@
 
 (def tool-def
   ;; Every subdomain's advertised params fold into the root through the one
-  ;; shared resolver (composite/lazy-resolve-schema-props) — the same seam the
-  ;; memory root uses — so a param a subdomain declares survives the MCP
-  ;; boundary instead of being dropped and silently defaulted.
-  (let [all-props (apply merge-with merge
-                         (map composite/lazy-resolve-schema-props
-                              '[hive-mcp.tools.consolidated.agent/tools
-                                hive-mcp.tools.consolidated.hivemind/tools
-                                hive-mcp.tools.consolidated.agora/tools
-                                hive-mcp.tools.consolidated.olympus/tools
-                                hive-mcp.tools.consolidated.preset/tools
-                                hive-mcp.tools.consolidated.inbox/tools
-                                hive-mcp.tools.consolidated.await/tools]))]
-    {:name "swarm"
-     :consolidated true
-     ;; Verb roots folded under this domain: verbs an addon contributes under
-     ;; them (hive-mcp.dispatch.verbs) join this tool's advertised schema.
-     :verb-roots ["agent"]
-     :description "Unified agent operations: spawn (create ling), status (query agents), kill (terminate), kill-batch (terminate multiple agents in one call), batch-spawn (spawn multiple agents at once via operations array), dispatch (send task), interrupt (interrupt current query of agent-sdk ling), claims (file ownership), list (deprecated alias for status), collect (get task result), broadcast (only caller's children by default; explicit scope=project or all expands recipients and returns recipient-ids), cleanup (remove orphan agents after Emacs restart). Nested: dag (start/stop/status DAGWave scheduler); inbox (arm/send/read/status, session inbox on HIVE_INBOX); await (create/list/cancel/fire: park on an event, resume on the wake). Addons may contribute further subdomains. Use command='help' to list all."
-     :inputSchema {:type "object"
-                   :properties (merge
-                                {"command" {:type "string"
-                                            :description "Swarm operation. Prefix with subdomain: 'agent spawn', 'hivemind shout', 'agora dialogue', 'olympus focus', 'preset list'. Use command='help' to list all."}}
-                                ;; Include all params from sub-tools
-                                (dissoc all-props "command"))
-                   :required ["command"]}
-     :handler #'handle-swarm}))
+  ;; shared fold (composite/fold-subdomain-props), the same seam the project
+  ;; root uses, so a param a subdomain declares survives the MCP boundary
+  ;; instead of being dropped and silently defaulted, and a subdomain whose
+  ;; load failed is re-read when the registry advertises this root.
+  (composite/fold-subdomain-props
+   {:name "swarm"
+    :consolidated true
+    ;; Verb roots folded under this domain: verbs an addon contributes under
+    ;; them (hive-mcp.dispatch.verbs) join this tool's advertised schema.
+    :verb-roots ["agent"]
+    :description "Unified agent operations: spawn (create ling), status (query agents), kill (terminate), kill-batch (terminate multiple agents in one call), batch-spawn (spawn multiple agents at once via operations array), dispatch (send task), interrupt (interrupt current query of agent-sdk ling), claims (file ownership), list (deprecated alias for status), collect (get task result), broadcast (only caller's children by default; explicit scope=project or all expands recipients and returns recipient-ids), cleanup (remove orphan agents after Emacs restart). Nested: dag (start/stop/status DAGWave scheduler); inbox (arm/send/read/status, session inbox on HIVE_INBOX); await (create/list/cancel/fire: park on an event, resume on the wake). Addons may contribute further subdomains. Use command='help' to list all."
+    :inputSchema {:type "object"
+                  :properties {"command" {:type "string"
+                                          :description "Swarm operation. Prefix with subdomain: 'agent spawn', 'hivemind shout', 'agora dialogue', 'olympus focus', 'preset list'. Use command='help' to list all."}}
+                  :required ["command"]}
+    :handler #'handle-swarm}
+   '[hive-mcp.tools.consolidated.agent/tools
+     hive-mcp.tools.consolidated.hivemind/tools
+     hive-mcp.tools.consolidated.agora/tools
+     hive-mcp.tools.consolidated.olympus/tools
+     hive-mcp.tools.consolidated.preset/tools
+     hive-mcp.tools.consolidated.inbox/tools
+     hive-mcp.tools.consolidated.await/tools]))
 
 (def tools [tool-def])
