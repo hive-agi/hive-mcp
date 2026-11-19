@@ -7,7 +7,12 @@
             [hive-mcp.tools.composite.load-error :as load-error]
             [hive-mcp.tools.consolidated.swarm :as swarm]
             [hive-mcp.extensions.registry :as ext]
-            [clojure.string :as str]))
+            [clojure.string :as str]
+            [taoensso.timbre :as timbre]))
+
+;; A missing subdomain namespace is logged with its "Could not locate ... on
+;; classpath" message, which bin/test-count-floor.sh reads as a LOAD ABORT.
+(clojure.test/use-fixtures :once (fn [f] (timbre/with-merged-config {:min-level :fatal} (f))))
 
 (def tool-def-map
   {:inputSchema {:properties {"from-map" {:type "string"}}}})

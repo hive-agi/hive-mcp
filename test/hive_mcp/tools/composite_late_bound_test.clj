@@ -6,10 +6,15 @@
    hot core-reload of the kanban namespaces stayed invisible through `project`."
   (:require [clojure.string]
             [clojure.test :refer [deftest is testing]]
-            [hive-mcp.tools.composite :as composite]))
+            [hive-mcp.tools.composite :as composite]
+            [taoensso.timbre :as timbre]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
+
+;; A missing subdomain namespace is logged with its "Could not locate ... on
+;; classpath" message, which bin/test-count-floor.sh reads as a LOAD ABORT.
+(clojure.test/use-fixtures :once (fn [f] (timbre/with-merged-config {:min-level :fatal} (f))))
 
 (def ^:private sub 'hive-mcp.tools.composite-late-bound-test.sub)
 
