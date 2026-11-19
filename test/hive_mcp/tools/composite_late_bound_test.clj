@@ -173,5 +173,8 @@
     (is (= 'answers (:name (meta (:list (composite/lazy-resolve-handlers sym))))))
     (finally (remove-ns sub))))
 
-(deftest an-unresolvable-symbol-is-an-empty-tree
-  (is (= {} (composite/lazy-resolve-handlers 'no.such.namespace/handlers))))
+(deftest an-unresolvable-symbol-is-a-load-error-placeholder
+  ;; Was `{}` until 2026-11-18: an empty tree hid the load error behind
+  ;; "Unknown command". See hive-mcp.tools.composite.load-error.
+  (is (= #{:_handler :hive-mcp.tools.composite/load-error}
+         (set (keys (composite/lazy-resolve-handlers 'no.such.namespace/handlers))))))

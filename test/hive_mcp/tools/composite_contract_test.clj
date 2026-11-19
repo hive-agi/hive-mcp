@@ -59,7 +59,7 @@
    :stripped  (:command ((composite/subdomain-handler "carto" identity) {:command "carto search"}))
    :kept      (:command ((composite/subdomain-handler "carto" identity) {:command "kg traverse"}))
    :no-addon  (composite/build-merged-tool {:name "m24-no-such-tool" :description "d"})
-   :lazy-miss (composite/lazy-resolve-handlers 'm24.no-such/handlers)})
+   :lazy-miss (set (keys (composite/lazy-resolve-handlers 'm24.no-such/handlers)))})
 
 (deftest unknown-tools-answer-empty-shapes
   (is (= {} (composite/lazy-resolve-schema-props 'm24.no-such/tool-def)))

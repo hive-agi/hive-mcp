@@ -13,6 +13,7 @@
    tree, every later call dispatches through it with no further retries."
   (:require [clojure.string :as str]
             [hive-mcp.tools.cli :as cli]
+            [malli.core :as m]
             [taoensso.timbre :as log]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
@@ -70,3 +71,6 @@
                         (get-in @state [sym :error-msg] msg)
                         ". Fix the cause, then reload the namespace.")}))
      :hive-mcp.tools.composite/load-error msg}))
+
+(m/=> placeholder [:=> [:cat :symbol ifn? some?]
+                    [:map [:_handler ifn?] [:hive-mcp.tools.composite/load-error [:maybe :string]]]])
