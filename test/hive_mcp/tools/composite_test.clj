@@ -4,9 +4,15 @@
   (:require [clojure.test :refer [deftest is testing]]
             [clojure.set :as set]
             [hive-mcp.tools.composite :as composite]
+            [hive-mcp.tools.composite.load-error :as load-error]
             [hive-mcp.tools.consolidated.swarm :as swarm]
             [hive-mcp.extensions.registry :as ext]
-            [clojure.string :as str]))
+            [clojure.string :as str]
+            [taoensso.timbre :as timbre]))
+
+;; A missing subdomain namespace is logged with its "Could not locate ... on
+;; classpath" message, which bin/test-count-floor.sh reads as a LOAD ABORT.
+(clojure.test/use-fixtures :once (fn [f] (timbre/with-merged-config {:min-level :fatal} (f))))
 
 (def tool-def-map
   {:inputSchema {:properties {"from-map" {:type "string"}}}})
@@ -212,3 +218,56 @@
         (is (= "legacy" (:text ((composite/build-merged-handler "merged-test-root" {:a (fn [_] nil)})
                                 {:command "seal-status"}))))))
     (finally (ext/retract-commands! "merged-test-root" :merged-test-addon))))
+;; =============================================================================
+;; lazy-resolve-handlers -- a subdomain that fails to load is loud and heals.
+;;
+;; 2026-11-18: hive-mcp.tools.consolidated.workflow failed to load (a missing
+;; hive-spi namespace); lazy-resolve-handlers answered {} and
+;; `project workflow catchup` said "Unknown command: workflow" while listing
+;; workflow as valid.
+;; =============================================================================
+
+(def subdomain-handlers
+  {:ping (fn [_] {:type "text" :text "pong"})})
+
+(deftest a-subdomain-that-fails-to-load-answers-its-load-error
+  (let [tree (composite/lazy-resolve-handlers 'no.such.ns/handlers)
+        cli  (composite/build-merged-handler "load-error-test-root"
+                                             {:ok     (fn [_] {:type "text" :text "ok"})
+                                              :broken tree})
+        resp (cli {:command "broken catchup"})]
+    (testing "the key stays routable and carries the load error"
+      (is (contains? tree :_handler))
+      (is (string? (:hive-mcp.tools.composite/load-error tree))))
+    (testing "a command under it names the namespace and the failure, not Unknown command"
+      (is (:isError resp))
+      (is (str/includes? (:text resp) "no.such.ns/handlers failed to load"))
+      (is (not (str/includes? (:text resp) "Unknown command"))))))
+
+(deftest a-subdomain-that-loads-returns-its-real-tree
+  (let [tree (composite/lazy-resolve-handlers 'hive-mcp.tools.composite-test/subdomain-handlers)]
+    (is (not (contains? tree :hive-mcp.tools.composite/load-error)))
+    (is (= "pong" (:text ((composite/build-merged-handler "load-ok-test-root" {:sub tree})
+                          {:command "sub ping"}))))))
+
+(deftest a-loaded-namespace-without-the-var-is-an-empty-tree
+  (is (= {} (composite/lazy-resolve-handlers 'hive-mcp.tools.composite-test/no-such-var))))
+
+(deftest the-placeholder-heals-once-the-load-succeeds
+  (let [fixed?  (atom false)
+        resolve #(if @fixed? subdomain-handlers (throw (ex-info "boom: missing ns" {})))
+        tree    (load-error/placeholder 'heal.test/handlers resolve (ex-info "boom: missing ns" {}))
+        call    #((:_handler tree) {:command (str "heal " %)})
+        before  @load-error/retry-cooldown-ms]
+    (try
+      (reset! load-error/retry-cooldown-ms 0)
+      (testing "still broken: the retry fails and the error is answered"
+        (is (str/includes? (:text (call "ping")) "boom: missing ns")))
+      (reset! fixed? true)
+      (testing "fixed: the next call loads and dispatches the real verb"
+        (is (= "pong" (:text (call "ping")))))
+      (reset! load-error/retry-cooldown-ms 60000)
+      (testing "healed: later calls inside the cooldown still dispatch"
+        (is (= "pong" (:text (call "ping")))))
+      (finally (reset! load-error/retry-cooldown-ms before)))))
+

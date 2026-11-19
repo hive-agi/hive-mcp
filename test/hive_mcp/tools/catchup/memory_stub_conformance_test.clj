@@ -19,7 +19,6 @@
    caught."
   (:require [clojure.test.check.generators :as gen]
             [hive-test.trifecta :refer [deftrifecta]]
-            [hive-mcp.memory.store.chroma :as chroma-store]
             [hive-mcp.test.stub.memory-query :as mq]
             [hive-mcp.test.stub.memory-store :as stub]
             [hive-mcp.tools.catchup.hcr-fixture :as fx]
@@ -32,12 +31,25 @@
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
 
+(defn- reference-project
+  "The :output-fields projection the port promises: backend column names
+   (snake_case or kebab, strings or keywords) onto kebab entry keys, :id
+   always kept. A literal copy of the semantics hive-chroma.store/project-fields
+   implements (it lived in hive-mcp until the hive-chroma extraction), kept
+   here so the reference does not depend on the stub it judges."
+  [rows output-fields]
+  (let [field-key (fn [f] (keyword (clojure.string/replace
+                                    (if (instance? clojure.lang.Named f) (name f) (str f))
+                                    "_" "-")))
+        ks        (conj (set (map field-key output-fields)) :id)]
+    (mapv #(select-keys % ks) rows)))
+
 (defn- reference
   "Rows the port contract answers for OPTS over ENTRIES."
   [entries {:keys [created-after output-fields] :as opts}]
   (let [in-range (filter #(crud-query/entry-after? % :created created-after) entries)
         rows     (entry/query in-range (dissoc opts :created-after :output-fields))]
-    (if (seq output-fields) (chroma-store/project-fields rows output-fields) rows)))
+    (if (seq output-fields) (reference-project rows output-fields) rows)))
 
 (defn- ids-of [opts rows]
   (let [ids (map :id rows)]

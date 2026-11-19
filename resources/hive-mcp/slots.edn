@@ -41,8 +41,8 @@
   ;; other backend arrives by an addon calling set-store! during Phase 4.5.
   :checked-against nil
   :options
-  {:chroma {:by "clojure-chroma-client" :provider :core
-            :note "wired directly by wire-memory-store! as the fallback"}
+  {:chroma {:by "hive-chroma"           :provider :addon
+            :note "registers itself; wire-memory-store! resolves hive-chroma.store by symbol as the no-addon fallback"}
    :qdrant {:by "hive-qdrant"           :provider :addon}
    :milvus {:by "hive-milvus"           :provider :addon
             :note "the one backend wire-memory-store! names explicitly"}}}

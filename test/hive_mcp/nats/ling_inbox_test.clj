@@ -58,6 +58,31 @@
       (binding [li/*connection* (constantly :conn)]
         (is (nil? (li/arm! "ling-1")) "a broker failure never fails the spawn")))))
 
+(deftest send-sequence-names-the-last-accepted-send
+  (doseq [l ["seq-l1" "seq-l2"]] (li/seq-forget! l))
+  (try
+    (testing "seqs count up per ling, in one epoch"
+      (let [a (li/seq-stamp! "seq-l1")
+            c (li/seq-stamp! "seq-l2")]
+        (is (= 1 (:seq a) (:seq c)) "each ling has its own sequence")
+        (is (= li/seq-epoch (:epoch a)))
+        (is (nil? (:after a)) "the first message waits for nothing")
+        (li/seq-accepted! "seq-l1" a)
+        (let [b (li/seq-stamp! "seq-l1")]
+          (is (= [2 1] [(:seq b) (:after b)]))
+          (testing "a send that failed is never accepted, so nothing waits for it"
+            (is (= 1 (:after (li/seq-stamp! "seq-l1")))))
+          (li/seq-accepted! "seq-l1" b)
+          (is (= 2 (:after (li/seq-stamp! "seq-l1")))))))
+    (testing "acceptance never moves backwards or across epochs"
+      (li/seq-accepted! "seq-l1" {:epoch li/seq-epoch :seq 1})
+      (li/seq-accepted! "seq-l1" {:epoch "another-host" :seq 99})
+      (is (= 2 (:after (li/seq-stamp! "seq-l1")))))
+    (testing "forget restarts the ling"
+      (li/seq-forget! "seq-l1")
+      (is (= {:seq 1 :after nil} (select-keys (li/seq-stamp! "seq-l1") [:seq :after]))))
+    (finally (doseq [l ["seq-l1" "seq-l2"]] (li/seq-forget! l)))))
+
 (deftest a-call-served-past-inapplicable-adapters-elects-nothing
   (is (nil? (chain/past-inapplicable-active nil :b [{:adapter :a :reason :inapplicable}])))
   (is (= :a (chain/past-inapplicable-active :a :b [{:adapter :a :reason :inapplicable}])))
