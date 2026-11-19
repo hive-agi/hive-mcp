@@ -350,6 +350,39 @@
         (is (= "caught up" (:text (call)))))
       (finally (deliver release true) (remove-ns sub)))))
 
+(deftest a-retry-in-flight-keeps-its-claim-past-the-cooldown-test
+  ;; Review of #711: the claim was only the attempt time, so a load still in
+  ;; flight expired with the cooldown and a second caller launched its own
+  ;; concurrent load. The claim marks itself in flight until the attempt ends.
+  (let [sub     'hive-mcp.tools.composite-test.claimed-sub
+        sym     (symbol (str sub) "handlers")
+        calls   (atom 0)
+        entered (promise)
+        release (promise)
+        now     (atom 0)
+        req     (fn [s _reload?]
+                  (case (int (swap! calls inc))
+                    1 (throw (RuntimeException. "first load failed"))
+                    (do (deliver entered true) @release (resolve s))))]
+    (create-ns sub)
+    (intern sub 'handlers {:catchup (fn [_] {:type "text" :text "caught up"})})
+    (try
+      (let [tree (composite/lazy-resolve-handlers sym {:require-fn req :now-fn #(deref now) :cooldown-ms 100})
+            root (composite/build-merged-handler
+                  "claimed-sub-root" {:info (fn [_] {:type "text" :text "root"}) :workflow tree})
+            call #(root {:command "workflow catchup"})]
+        (reset! now 100)
+        (let [loader (future (call))]
+          (is (true? (deref entered 5000 false)) "the first caller is inside its load")
+          (reset! now 200)
+          (let [other (deref (future (call)) 5000 ::blocked)]
+            (is (not= ::blocked other) "a caller past the cooldown is not blocked by the load in flight")
+            (is (str/includes? (:text other) "first load failed")))
+          (deliver release true)
+          (is (= "caught up" (:text (deref loader 5000 nil))))
+          (is (= 2 @calls) "the second caller did not start a second load")))
+      (finally (deliver release true) (remove-ns sub)))))
+
 (deftest a-failed-subdomain-schema-recovers-its-params-test
   ;; Review of #709: lazy-resolve-schema-props swallowed a throw into {} and
   ;; project's subdomain-props delay cached it, so tools/list kept lacking the
