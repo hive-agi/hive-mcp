@@ -367,6 +367,23 @@
       (fn [params]
         (own (assoc params :command (str (str/join " " (map name path)) " help")))))))
 
+(defn- subtree-listing-help
+  "The generic `<subdomain> help` answer: the commands the enumerable subtree
+   at PATH routes, spelled with their full path, as a help response; nil when
+   PATH is not a subtree or routes nothing enumerable. The fallback for a
+   subdomain that registers no `help` leaf of its own, so `help` on any
+   subdomain of any consolidated tool answers its verbs rather than Unknown
+   command."
+  [handlers path]
+  (let [node  (when (seq path) (subtree-at handlers path))
+        paths (when (map? node) (collect-command-paths node []))
+        sub   (str/join " " (map name path))]
+    (when (seq paths)
+      {:type "text"
+       :text (str "'" sub "' commands:\n"
+                  (str/join "\n" (map #(str "  - " sub " " (str/join " " (map name %)))
+                                      (sort-by #(str/join " " (map name %)) paths))))})))
+
 (defn- with-subtree-listing
   "ERR with the commands the subtree at PATH routes appended, when PATH names
    an enumerable subtree; ERR unchanged otherwise."
@@ -412,8 +429,10 @@
 
    A bare subdomain (`ss`) or `<subdomain> help` its subtree does not route
    itself answers the subtree's own `help` leaf when it registers one
-   (`subdomain-help-handler`); without one the error lists what the subtree
-   routes (`with-subtree-listing`).
+   (`subdomain-help-handler`), else the commands the subtree routes
+   (`subtree-listing-help`). `<subdomain> help` reaches that listing even when
+   the subtree has a `:_handler` default router, as long as the subtree
+   enumerates verbs: the router would only answer Unknown command for `help`.
 
    Optional coerce-schema: map of {field-key [type-spec]} for MCP boundary coercion.
    When provided, string params are coerced to declared types before dispatch.
@@ -455,12 +474,16 @@
            ;; Normal dispatch via n-depth resolve-handler
            :else
            (let [{:keys [handler tree path-used remaining]} (resolve-handler handlers path)
-                 sub-help (when (and (not handler) (seq path-used)
-                                     (or tree (= [:help] remaining)))
-                            (subdomain-help-handler handlers path-used))]
+                 help?    (and (seq path-used) (= [:help] remaining))
+                 sub-help (when (and (seq path-used) (or (and (not handler) tree) help?))
+                            (subdomain-help-handler handlers path-used))
+                 listing  (when (and (not sub-help) (seq path-used)
+                                     (or (and (not handler) tree) help?))
+                            (subtree-listing-help handlers path-used))]
              (cond
-               handler  (run handler params)
                sub-help (run sub-help params)
+               listing  (with-degraded-notice listing)
+               handler  (run handler params)
                :else
                (let [qualified (auto-qualified-command (str/trim cmd-str) handlers)
                      owner     (when qualified
