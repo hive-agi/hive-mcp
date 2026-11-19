@@ -8,7 +8,15 @@
             [hive-mcp.extensions.registry :as ext]
             [clojure.string :as str]
             [hive-mcp.dispatch.lazy :as lazy]
-            [hive-mcp.tools.cli :as cli]))
+            [hive-mcp.tools.cli :as cli]
+            [hive-mcp.dispatch.handler :as dispatch]
+            [taoensso.timbre :as log]))
+
+(clojure.test/use-fixtures :each
+  ;; Several tests load namespaces that throw on purpose; their load-error
+  ;; logs carry "CompilerException" and "Could not locate ... on classpath",
+  ;; which bin/test-count-floor.sh reads as a LOAD ABORT.
+  (fn [f] (log/with-min-level :fatal (f))))
 
 (def tool-def-map
   {:inputSchema {:properties {"from-map" {:type "string"}}}})
@@ -220,7 +228,7 @@
    dependency of the subdomain missing, as hive-spi.projection.ports was on
    2026-11-18) and resolves the symbol on every later one. Counts calls."
   [calls]
-  (fn [sym]
+  (fn [sym _reload?]
     (if (= 1 (swap! calls inc))
       (throw (ex-info "Could not locate hive_spi/projection/ports__init.class" {}
                       (java.io.FileNotFoundException. "hive_spi/projection/ports__init.class")))
@@ -259,13 +267,139 @@
           (is (str/includes? (:text (root {:command "help"})) "workflow catchup"))))
       (finally (remove-ns sub)))))
 
+(deftest a-namespace-that-throws-after-its-ns-form-really-reloads-test
+  ;; Review of #709: the ns form registers the lib in *loaded-libs* before the
+  ;; body throws, so a plain requiring-resolve on retry skipped the load, got
+  ;; nil, and latched {} as "recovered". This loads a REAL file through the
+  ;; default resolver, no injected require.
+  (let [lib   'hive-mcp.fixtures.throws-after-ns
+        sym   (symbol (str lib) "handlers")
+        fail  "hive-mcp.fixtures.throws-after-ns.fail"
+        novar "hive-mcp.fixtures.throws-after-ns.no-var"
+        now   (atom 0)
+        libs  @#'clojure.core/*loaded-libs*
+        clean! (fn []
+                 (System/clearProperty fail)
+                 (System/clearProperty novar)
+                 (when (find-ns lib) (remove-ns lib))
+                 (dosync (alter libs disj lib)))]
+    (clean!)
+    (System/setProperty fail "1")
+    (try
+      (let [tree (composite/lazy-resolve-handlers sym {:now-fn #(deref now) :cooldown-ms 1000})
+            root (composite/build-merged-handler
+                  "throws-after-ns-root" {:info (fn [_] {:type "text" :text "root"}) :workflow tree})
+            call #(root {:command "workflow catchup"})]
+        (testing "the first call reports the body form's throw"
+          (let [r (call)]
+            (is (:isError r))
+            (is (str/includes? (:text r) "fixture body form threw after its ns form"))))
+        (testing "the failed load left the lib registered but its namespace gone"
+          (is (contains? @libs lib))
+          (is (nil? (find-ns lib))))
+        (testing "a retry while the cause stands reloads, throws again and stays loud"
+          (swap! now + 2000)
+          (is (str/includes? (:text (call)) "fixture body form threw")))
+        (testing "a retry that loads but finds no var keeps the placeholder and its cause"
+          (System/clearProperty fail)
+          (System/setProperty novar "1")
+          (swap! now + 2000)
+          (let [r (call)]
+            (is (:isError r))
+            (is (str/includes? (:text r) "fixture body form threw"))
+            (is (not (str/includes? (:text r) "Unknown command")))))
+        (testing "once the cause is fixed the next retry really reloads and dispatches"
+          (System/clearProperty novar)
+          (swap! now + 2000)
+          (is (= "caught up" (:text (call))))
+          (is (= "caught up" (:text (call))))))
+      (finally (clean!)))))
+
+(deftest a-retry-in-flight-does-not-block-other-callers-test
+  ;; Review of #709: refresh held its own lock across the load, which takes
+  ;; Clojure's load lock; a namespace reading the placeholder while loading
+  ;; could deadlock. One caller claims the attempt; the others answer the
+  ;; placeholder at once.
+  (let [sub     'hive-mcp.tools.composite-test.slow-sub
+        sym     (symbol (str sub) "handlers")
+        calls   (atom 0)
+        entered (promise)
+        release (promise)
+        now     (atom 0)
+        req     (fn [s _reload?]
+                  (case (int (swap! calls inc))
+                    1 (throw (RuntimeException. "first load failed"))
+                    (do (deliver entered true) @release (resolve s))))]
+    (create-ns sub)
+    (intern sub 'handlers {:catchup (fn [_] {:type "text" :text "caught up"})})
+    (try
+      (let [tree (composite/lazy-resolve-handlers sym {:require-fn req :now-fn #(deref now) :cooldown-ms 1000})
+            root (composite/build-merged-handler
+                  "slow-sub-root" {:info (fn [_] {:type "text" :text "root"}) :workflow tree})
+            call #(root {:command "workflow catchup"})]
+        (swap! now + 2000)
+        (let [loader (future (call))]
+          (is (true? (deref entered 5000 false)) "the first caller is inside its load")
+          (let [other (deref (future (call)) 5000 ::blocked)]
+            (is (not= ::blocked other) "another caller is not blocked by the load in flight")
+            (is (str/includes? (:text other) "first load failed")))
+          (deliver release true)
+          (is (= "caught up" (:text (deref loader 5000 nil)))))
+        (is (= 2 @calls) "only one caller loaded")
+        (is (= "caught up" (:text (call)))))
+      (finally (deliver release true) (remove-ns sub)))))
+
+(deftest a-failed-subdomain-schema-recovers-its-params-test
+  ;; Review of #709: lazy-resolve-schema-props swallowed a throw into {} and
+  ;; project's subdomain-props delay cached it, so tools/list kept lacking the
+  ;; subdomain's params after its handlers recovered.
+  (let [lib  'hive-mcp.fixtures.throws-after-ns
+        sym  (symbol (str lib) "tools")
+        fail "hive-mcp.fixtures.throws-after-ns.fail"
+        now  (atom 0)
+        libs @#'clojure.core/*loaded-libs*
+        clean! (fn []
+                 (System/clearProperty fail)
+                 (when (find-ns lib) (remove-ns lib))
+                 (dosync (alter libs disj lib)))
+        base {:name "fold-root"
+              :inputSchema {:properties {"command" {:type "string" :description "root"}}}}
+        props #(get-in (dispatch/current %) [:inputSchema :properties])]
+    (clean!)
+    (System/setProperty fail "1")
+    (try
+      (let [p  (composite/lazy-resolve-schema-props sym {:now-fn #(deref now) :cooldown-ms 1000})
+            td (composite/fold-subdomain-props base [sym] {:now-fn #(deref now) :cooldown-ms 1000})]
+        (testing "a throw is not an absent subdomain: it carries its load error"
+          (is (= {} p))
+          (is (str/includes? (str (lazy/load-error p)) "fixture body form threw")))
+        (testing "while the cause stands the root advertises only its own params"
+          (is (= #{"command"} (set (keys (props td))))))
+        (System/clearProperty fail)
+        (testing "inside the cooldown nothing is re-read"
+          (is (nil? (get (props td) "max_slots"))))
+        (swap! now + 2000)
+        (testing "after recovery the props and the folded root carry the param"
+          (is (= "integer" (get-in (dispatch/current p) ["max_slots" :type])))
+          (is (= "integer" (get-in (props td) ["max_slots" :type])))
+          (is (= "root" (get-in (props td) ["command" :description])) "the root's own description wins")))
+      (testing "a healthy fold is a plain tool-def with no refresh port"
+        (let [td (composite/fold-subdomain-props base [sym])]
+          (is (= "integer" (get-in td [:inputSchema :properties "max_slots" :type])))
+          (is (nil? (::dispatch/refresh (meta td))))))
+      (finally (clean!)))))
+
 (deftest an-absent-subdomain-namespace-is-still-an-empty-tree-test
   (is (= {} (composite/lazy-resolve-handlers 'no.such.namespace/handlers)))
-  (is (nil? (lazy/load-error {}))))
+  (is (nil? (lazy/load-error {})))
+  (testing "a present namespace whose DEPENDENCY is absent is loud, not {}"
+    (let [tree (composite/lazy-resolve-handlers 'hive-mcp.fixtures.requires-missing-dep/handlers)]
+      (is (str/includes? (str (lazy/load-error tree)) "hive_mcp/fixtures/no_such_dependency"))
+      (is (nil? (find-ns 'hive-mcp.fixtures.requires-missing-dep))))))
 
 (deftest cli-names-a-failed-subdomain-instead-of-unknown-command-test
   (let [placeholder (lazy/resolve-lazily 'hive-mcp.tools.composite-test.never/handlers identity
-                                         {:require-fn (fn [_] (throw (RuntimeException. "compile error in workflow.clj")))})
+                                         {:require-fn (fn [_ _] (throw (RuntimeException. "compile error in workflow.clj")))})
         unknown     @#'cli/unknown-command-error
         err         (unknown "workflow catchup" {:info (fn [_] nil) :workflow placeholder})]
     (is (= "RuntimeException: compile error in workflow.clj" (lazy/load-error placeholder)))

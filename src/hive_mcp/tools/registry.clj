@@ -42,7 +42,8 @@
             [hive-mcp.tools.async-params :as async-params]
             [malli.core :as m]
             [hive-spi.swarm.guards :as guards]
-            [hive-mcp.addons.core :as addons]))
+            [hive-mcp.addons.core :as addons]
+            [hive-mcp.dispatch.handler :as dispatch]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -150,19 +151,24 @@
    `tool-manifest-resource`). Deterministic in both halves, which is what the
    caller's prompt cache depends on.
 
+   Each root is read through `dispatch/current`, so a root whose folded
+   subdomain params came from a failed load (composite/fold-subdomain-props)
+   is advertised as it stands NOW, with the params of a recovered subdomain.
+
    Dereferencing `manifest-loaded` is what loads those domains, and loading is
    what registers their handlers, so it must happen before the roots are read."
   []
   @manifest-loaded
-  (vec (concat c-code/tools
-               c-swarm/tools
-               c-project/tools
-               c-fs/tools
-               c-web/tools
-               c-events/tools
-               c-multi/tools
-               c-hot/tools
-               (contributed-roots))))
+  (mapv dispatch/current
+        (concat c-code/tools
+                c-swarm/tools
+                c-project/tools
+                c-fs/tools
+                c-web/tools
+                c-events/tools
+                c-multi/tools
+                c-hot/tools
+                (contributed-roots))))
 
 (defn core-tools
   "The host's OWN tool defs: channel tools + domain roots, never an
