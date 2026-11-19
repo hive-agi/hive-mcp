@@ -285,3 +285,50 @@
 
 (m/=> admit [:=> [:cat :string [:map-of :keyword :any] [:maybe [:map-of :any :any]]]
              Admission])
+
+(def AuditVerdict
+  "Verdict of `audit` for one collection: it holds `expected`'s space
+   (:stamped), it carries no stamp at all (:legacy, so its space is unknown), or
+   it records a space that differs from `expected`'s (:diverged)."
+  [:enum :stamped :legacy :diverged])
+
+(def AuditRow
+  "One collection's provenance: the verdict, the space it holds (:space-id,
+   `unknown-space-id` when unstamped), the space the caller expected when it
+   named one (:expected-id), the keys they differ on, and the remedy for
+   anything that is not :stamped."
+  [:map
+   [:collection :string]
+   [:verdict AuditVerdict]
+   [:space-id [:string {:min 1}]]
+   [:expected-id {:optional true} [:string {:min 1}]]
+   [:differing-keys {:optional true} [:vector SpaceKey]]
+   [:remedy [:maybe [:set [:enum :isolate :re-embed]]]]])
+
+(defn audit
+  "Provenance of one collection, as data: the non-throwing companion of
+   `admit`. `expected` (optional) is the space a caller is about to use; with it
+   a mismatched collection is reported :diverged rather than thrown, so a caller
+   can list every incompatible collection in one pass instead of dying on the
+   first. Every verdict other than :stamped carries the remedy: isolate in a new
+   collection, or re-embed into this one."
+  ([collection md] (audit collection nil md))
+  ([collection expected md]
+   (let [expected (some-> expected ->space)
+         held     (metadata->space md)
+         differs  (when (and expected held) (differing-keys expected held))
+         verdict  (cond
+                    (nil? held)                  :legacy
+                    (and expected (seq differs)) :diverged
+                    :else                        :stamped)]
+     (cond-> {:collection collection
+              :verdict    verdict
+              :space-id   (if held (space-id held) unknown-space-id)
+              :remedy     (when-not (= :stamped verdict) #{:isolate :re-embed})}
+       expected      (assoc :expected-id (space-id expected))
+       (seq differs) (assoc :differing-keys differs)))))
+
+(m/=> audit [:function
+             [:=> [:cat :string [:maybe [:map-of :any :any]]] AuditRow]
+             [:=> [:cat :string [:maybe [:map-of :keyword :any]] [:maybe [:map-of :any :any]]]
+              AuditRow]])
