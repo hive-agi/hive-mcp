@@ -21,7 +21,8 @@
             [hive-mcp.tools.core :as core]
             [hive-mcp.addons.metrics :as addon-metrics]
             [hive-mcp.tools.composite.moved :as moved]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [hive-mcp.dispatch.lazy :as lazy]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -181,13 +182,18 @@
    is gone, or the verb was removed, the handler read at load time answers,
    logged once and marked in the response (`stale-response`).
 
-   Returns the handlers tree on success, `{}` on miss. Caller merges
-   into its canonical-handlers tree the same way the literal reference
-   would have."
-  [sym]
-  (or (try (some->> (requiring-resolve sym) dispatch/current (late-bound sym []))
-           (catch Throwable _ nil))
-      {}))
+   Resolution goes through `hive-mcp.dispatch.lazy/resolve-lazily`, the one
+   path every lazy handler-tree resolver shares. `{}` when SYM's namespace is
+   absent from the classpath or holds no such var. When loading THREW, the
+   result is a placeholder subtree whose calls answer the failure with its
+   cause and which retries the load (at most once per cooldown) on later
+   calls, so the tree is never frozen empty: the first call after the cause
+   is fixed dispatches, with no reload of the root."
+  ([sym] (lazy-resolve-handlers sym nil))
+  ([sym opts]
+   (lazy/resolve-lazily sym
+                        (fn [v] (some->> v dispatch/current (late-bound sym [])))
+                        opts)))
 
 (defn lazy-resolve-schema-props
   "Lazily resolve a consolidated tool's advertised inputSchema :properties by

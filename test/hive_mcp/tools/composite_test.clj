@@ -6,7 +6,9 @@
             [hive-mcp.tools.composite :as composite]
             [hive-mcp.tools.consolidated.swarm :as swarm]
             [hive-mcp.extensions.registry :as ext]
-            [clojure.string :as str]))
+            [clojure.string :as str]
+            [hive-mcp.dispatch.lazy :as lazy]
+            [hive-mcp.tools.cli :as cli]))
 
 (def tool-def-map
   {:inputSchema {:properties {"from-map" {:type "string"}}}})
@@ -212,3 +214,65 @@
         (is (= "legacy" (:text ((composite/build-merged-handler "merged-test-root" {:a (fn [_] nil)})
                                 {:command "seal-status"}))))))
     (finally (ext/retract-commands! "merged-test-root" :merged-test-addon))))
+
+(defn- flaky-require
+  "A subdomain resolver seam whose require throws on its first call (a
+   dependency of the subdomain missing, as hive-spi.projection.ports was on
+   2026-11-18) and resolves the symbol on every later one. Counts calls."
+  [calls]
+  (fn [sym]
+    (if (= 1 (swap! calls inc))
+      (throw (ex-info "Could not locate hive_spi/projection/ports__init.class" {}
+                      (java.io.FileNotFoundException. "hive_spi/projection/ports__init.class")))
+      (resolve sym))))
+
+(deftest a-failed-subdomain-load-is-loud-and-retried-test
+  ;; Seen live 2026-11-18: the load of :workflow threw, lazy-resolve-handlers
+  ;; froze {} into project's tree, and `workflow catchup` answered
+  ;; "Unknown command ... Valid: ..., workflow" until `hot core-reload`.
+  (let [sub   'hive-mcp.tools.composite-test.flaky-sub
+        sym   (symbol (str sub) "handlers")
+        calls (atom 0)
+        now   (atom 0)]
+    (create-ns sub)
+    (intern sub 'handlers {:catchup (fn [_] {:type "text" :text "caught up"})})
+    (try
+      (let [tree (composite/lazy-resolve-handlers
+                  sym {:require-fn (flaky-require calls) :now-fn #(deref now) :cooldown-ms 1000})
+            root (composite/build-merged-handler
+                  "load-error-test-root" {:info (fn [_] {:type "text" :text "root"}) :workflow tree})]
+        (testing "the first call reports the load error with its cause"
+          (let [r (root {:command "workflow catchup"})]
+            (is (:isError r))
+            (is (str/includes? (:text r) (str "Subdomain " sym " failed to load")))
+            (is (str/includes? (:text r) "hive_spi/projection/ports__init.class"))
+            (is (not (str/includes? (:text r) "Unknown command")))))
+        (testing "inside the cooldown the error stands and nothing is re-required"
+          (swap! now + 10)
+          (is (:isError (root {:command "workflow catchup"})))
+          (is (= 1 @calls)))
+        (testing "a later call dispatches, with no reload of the root"
+          (swap! now + 2000)
+          (is (= "caught up" (:text (root {:command "workflow catchup"}))))
+          (is (= "caught up" (:text (root {:command "workflow catchup"}))))
+          (is (= 2 @calls) "a recovered tree is not re-required")
+          (is (str/includes? (:text (root {:command "help"})) "workflow catchup"))))
+      (finally (remove-ns sub)))))
+
+(deftest an-absent-subdomain-namespace-is-still-an-empty-tree-test
+  (is (= {} (composite/lazy-resolve-handlers 'no.such.namespace/handlers)))
+  (is (nil? (lazy/load-error {}))))
+
+(deftest cli-names-a-failed-subdomain-instead-of-unknown-command-test
+  (let [placeholder (lazy/resolve-lazily 'hive-mcp.tools.composite-test.never/handlers identity
+                                         {:require-fn (fn [_] (throw (RuntimeException. "compile error in workflow.clj")))})
+        unknown     @#'cli/unknown-command-error
+        err         (unknown "workflow catchup" {:info (fn [_] nil) :workflow placeholder})]
+    (is (= "RuntimeException: compile error in workflow.clj" (lazy/load-error placeholder)))
+    (is (:isError err))
+    (is (str/starts-with? (:text err)
+                          "Subdomain 'workflow' failed to load: RuntimeException: compile error in workflow.clj"))
+    (is (not (str/includes? (:text err) "Unknown command")))
+    (testing "a command under a healthy subdomain keeps the ordinary error"
+      (is (str/includes? (:text (unknown "nope" {:info (fn [_] nil) :workflow placeholder}))
+                         "Unknown command: nope")))))
