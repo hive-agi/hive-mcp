@@ -367,22 +367,47 @@
       (fn [params]
         (own (assoc params :command (str (str/join " " (map name path)) " help")))))))
 
+(defn- deprecated-leaf?
+  "Is V a deprecated alias: a var whose metadata says :deprecated, or whose
+   docstring starts with DEPRECATED? Such a leaf keeps routing but is left out
+   of a help listing."
+  [v]
+  (let [m (when (var? v) (meta v))]
+    (boolean (or (:deprecated m)
+                 (re-find #"^(?i)\s*deprecated" (str (:doc m)))))))
+
 (defn- subtree-listing-help
   "The generic `<subdomain> help` answer: the commands the enumerable subtree
    at PATH routes, spelled with their full path, as a help response; nil when
    PATH is not a subtree or routes nothing enumerable. The fallback for a
    subdomain that registers no `help` leaf of its own, so `help` on any
    subdomain of any consolidated tool answers its verbs rather than Unknown
-   command."
+   command.
+
+   Deprecated aliases (`deprecated-leaf?`) are not listed. When the subtree
+   has a `:_handler`, a last line says what bare `<subdomain>` runs: the
+   sibling verb that handler is, when it is one."
   [handlers path]
-  (let [node  (when (seq path) (subtree-at handlers path))
-        paths (when (map? node) (collect-command-paths node []))
-        sub   (str/join " " (map name path))]
+  (let [node  (when (seq path) (dispatch/current (subtree-at handlers path)))
+        paths (when (map? node)
+                (remove #(deprecated-leaf? (get-in node %)) (collect-command-paths node [])))
+        sub   (str/join " " (map name path))
+        dflt  (when (map? node) (:_handler node))
+        dverb (when dflt
+                (some (fn [[k v]]
+                        (when (and (not= k :_handler)
+                                   (identical? (dispatch/current v) (dispatch/current dflt)))
+                          k))
+                      (sort-by (comp str key) node)))]
     (when (seq paths)
       {:type "text"
        :text (str "'" sub "' commands:\n"
                   (str/join "\n" (map #(str "  - " sub " " (str/join " " (map name %)))
-                                      (sort-by #(str/join " " (map name %)) paths))))})))
+                                      (sort-by #(str/join " " (map name %)) paths)))
+                  (when dflt
+                    (str "\nBare '" sub "' runs "
+                         (if dverb (str "'" sub " " (name dverb) "'") "its default handler")
+                         ".")))})))
 
 (defn- with-subtree-listing
   "ERR with the commands the subtree at PATH routes appended, when PATH names
