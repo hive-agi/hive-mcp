@@ -324,20 +324,33 @@
    (`root-route-line`), then the roots that own the token (`Did you mean:
    carto multi?`), then the nearest known commands by edit distance, then the
    valid roots. A root that neither enumerates nor declares the token is never
-   offered."
+   offered.
+
+   When the first word IS a valid handler key whose subtree is a load-error
+   placeholder from a broken subdomain (carries ::load-error), the error names
+   the load error instead of saying 'Unknown command'."
   [command handlers]
   (let [raw       (normalize-command command)
         cmd       (when (and raw (not (str/blank? raw))) (str/trim raw))
-        route     (root-route-line cmd handlers)
-        roots     (when cmd (:roots (qualification-hints cmd handlers)))
-        qualified (map #(str (name %) " " cmd) roots)
-        near      (when cmd (nearest-commands cmd handlers))
-        suggest   (distinct (concat qualified near))]
-    (mcp-error (str (when route (str route " "))
-                    "Unknown command: " command "."
-                    (when (seq suggest)
-                      (str " Did you mean: " (str/join ", " suggest) "?"))
-                    " Valid: " (str/join ", " (sort (map name (keys handlers))))))))
+        first-kw  (some->> cmd (re-find #"^\S+") keyword)
+        sub-entry (when first-kw (get handlers first-kw))
+        ;; ::load-error in the placeholder is :hive-mcp.tools.composite/load-error
+        broken?   (and (map? sub-entry)
+                       (contains? sub-entry :hive-mcp.tools.composite/load-error))]
+    (if broken?
+      (let [err-msg (:hive-mcp.tools.composite/load-error sub-entry "namespace failed to load")]
+        (mcp-error (str "Subdomain '" (name first-kw) "' failed to load: " err-msg
+                        ". Fix the cause, then reload the namespace.")))
+      (let [route     (root-route-line cmd handlers)
+            roots     (when cmd (:roots (qualification-hints cmd handlers)))
+            qualified (map #(str (name %) " " cmd) roots)
+            near      (when cmd (nearest-commands cmd handlers))
+            suggest   (distinct (concat qualified near))]
+        (mcp-error (str (when route (str route " "))
+                        "Unknown command: " command "."
+                        (when (seq suggest)
+                          (str " Did you mean: " (str/join ", " suggest) "?"))
+                        " Valid: " (str/join ", " (sort (map name (keys handlers))))))))))
 
 (defn- subtree-at
   "The node PATH names in HANDLERS, every level resolved through
