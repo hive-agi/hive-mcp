@@ -17,6 +17,7 @@
             [hive-mcp.extensions.dispatch-wrap :as dispatch-wrap]
             [hive-mcp.tools.composite.default-async :as default-async]
             [hive-mcp.tools.composite.departed :as departed]
+            [hive-mcp.tools.composite.load-error :as load-error]
             [malli.core :as m]
             [hive-mcp.tools.core :as core]
             [hive-mcp.addons.metrics :as addon-metrics]
@@ -157,6 +158,7 @@
 
       :else leaf)))
 
+
 (defn lazy-resolve-handlers
   "Lazily resolve a consolidated tool's `handlers` map by fully-qualified
    symbol, triggering ns load on first access (DIP).
@@ -181,13 +183,18 @@
    is gone, or the verb was removed, the handler read at load time answers,
    logged once and marked in the response (`stale-response`).
 
-   Returns the handlers tree on success, `{}` on miss. Caller merges
-   into its canonical-handlers tree the same way the literal reference
-   would have."
+   Returns the handlers tree on success, `{}` when SYM's namespace loads but
+   names no var. When the namespace FAILS TO LOAD, the tree is
+   `load-error/placeholder`: every command under the subdomain answers the load
+   error instead of `Unknown command`, and the load is retried, so a fixed
+   classpath heals without a JVM restart. Caller merges into its
+   canonical-handlers tree the same way the literal reference would have."
   [sym]
-  (or (try (some->> (requiring-resolve sym) dispatch/current (late-bound sym []))
-           (catch Throwable _ nil))
-      {}))
+  (let [resolve-tree #(or (some->> (requiring-resolve sym) dispatch/current (late-bound sym [])) {})]
+    (try
+      (resolve-tree)
+      (catch Throwable e
+        (load-error/placeholder sym resolve-tree e)))))
 
 (defn lazy-resolve-schema-props
   "Lazily resolve a consolidated tool's advertised inputSchema :properties by

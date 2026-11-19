@@ -5,4 +5,4 @@
  :stripped "search",
  :kept "kg traverse",
  :no-addon {:name "m24-no-such-tool", :description "d"},
- :lazy-miss {}}
+ :lazy-miss #{:_handler :hive-mcp.tools.composite/load-error}}
