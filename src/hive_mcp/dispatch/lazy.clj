@@ -114,8 +114,9 @@
    placeholder and its cause; only a resolved tree counts as recovered.
 
    No lock is held across a load (the load takes Clojure's own): one caller
-   claims an attempt by compare-and-set on the attempt time, and every other
-   caller answers the current placeholder meanwhile.
+   claims an attempt by compare-and-set, marking it in flight. While a claimed
+   attempt is in flight every other caller answers the current placeholder,
+   whatever the cooldown; only an idle failure waits out the cooldown.
 
    OPTS, all optional, are the seams a test injects:
      :require-fn   (sym reload?) -> var or nil (default `load-resolve`)
@@ -143,24 +144,27 @@
                        (swap! state assoc :current ph)
                        ph))
              refresh (fn refresh []
-                       (let [{:keys [at current recovered] :as s} @state
+                       (let [{:keys [at current recovered loading?] :as s} @state
                              now (long (now-fn))]
                          (cond
                            recovered recovered
+                           loading? current
                            (< (- now (long at)) (long cooldown-ms)) current
-                           (not (compare-and-set! state s (assoc s :at now))) (:current @state)
+                           (not (compare-and-set! state s (assoc s :at now :loading? true))) (:current @state)
                            :else
-                           (let [{v :value t :error} (attempt true)]
-                             (cond
-                               t (fail! refresh t)
-                               (nil? v)
-                               (do (log/warn "subdomain reloaded but holds no such var; keeping its load error"
-                                             {:symbol sym :cause (::load-error (meta current))})
-                                   current)
-                               :else
-                               (do (log/info "subdomain loaded after an earlier failure" {:symbol sym})
-                                   (swap! state assoc :recovered v)
-                                   v))))))]
+                           (try
+                             (let [{v :value t :error} (attempt true)]
+                               (cond
+                                 t (fail! refresh t)
+                                 (nil? v)
+                                 (do (log/warn "subdomain reloaded but holds no such var; keeping its load error"
+                                               {:symbol sym :cause (::load-error (meta current))})
+                                     current)
+                                 :else
+                                 (do (log/info "subdomain loaded after an earlier failure" {:symbol sym})
+                                     (swap! state assoc :recovered v)
+                                     v)))
+                             (finally (swap! state dissoc :loading?))))))]
          (reset! state {:at (now-fn)})
          (fail! refresh error))))))
 

@@ -6,10 +6,16 @@
    hot core-reload of the kanban namespaces stayed invisible through `project`."
   (:require [clojure.string]
             [clojure.test :refer [deftest is testing]]
-            [hive-mcp.tools.composite :as composite]))
+            [hive-mcp.tools.composite :as composite]
+            [hive-mcp.dispatch.lazy :as lazy]
+            [taoensso.timbre :as timbre]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
+
+;; A missing subdomain namespace is logged with its "Could not locate ... on
+;; classpath" message, which bin/test-count-floor.sh reads as a LOAD ABORT.
+(clojure.test/use-fixtures :once (fn [f] (timbre/with-merged-config {:min-level :fatal} (f))))
 
 (def ^:private sub 'hive-mcp.tools.composite-late-bound-test.sub)
 
@@ -173,5 +179,30 @@
     (is (= 'answers (:name (meta (:list (composite/lazy-resolve-handlers sym))))))
     (finally (remove-ns sub))))
 
-(deftest an-unresolvable-symbol-is-an-empty-tree
-  (is (= {} (composite/lazy-resolve-handlers 'no.such.namespace/handlers))))
+(deftest an-absent-namespace-is-an-empty-tree-and-a-throw-is-a-placeholder
+  ;; Two distinct outcomes, and they must not be conflated. A symbol whose OWN
+  ;; namespace is not on the classpath yields `{}`: nothing appears there
+  ;; without new code, so `{}` is the truth. A namespace that IS on the
+  ;; classpath but THROWS while loading yields a placeholder whose calls answer
+  ;; the cause and which retries the load (hive-mcp.dispatch.lazy). Before
+  ;; 2026-11-18 the throw was frozen into the same `{}`, so the failure hid
+  ;; behind "Unknown command".
+  (testing "absent from the classpath -> {}"
+    (is (= {} (composite/lazy-resolve-handlers 'no.such.namespace/handlers))))
+  (testing "a namespace that throws -> a placeholder carrying its cause"
+    (let [lib   'hive-mcp.fixtures.throws-after-ns
+          prop  "hive-mcp.fixtures.throws-after-ns.fail"
+          libs  @#'clojure.core/*loaded-libs*
+          clean! (fn []
+                   (System/clearProperty prop)
+                   (when (find-ns lib) (remove-ns lib))
+                   (dosync (alter libs disj lib)))]
+      (clean!)
+      (System/setProperty prop "1")
+      (try
+        (let [tree (composite/lazy-resolve-handlers (symbol (str lib) "handlers"))]
+          (is (not= {} tree) "a throw is not an absent namespace")
+          (is (string? (lazy/load-error tree)))
+          (is (clojure.string/includes? (str (lazy/load-error tree))
+                                         "fixture body form threw")))
+        (finally (clean!))))))
