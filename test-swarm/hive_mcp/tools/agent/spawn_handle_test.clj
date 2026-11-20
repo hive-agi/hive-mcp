@@ -12,6 +12,7 @@
             [hive-mcp.config.source :as config-source]
             [hive-mcp.extensions.registry :as ext]
             [hive-mcp.isolation-methods]
+            [hive-mcp.swarm.datascript.queries :as queries]
             [hive-mcp.swarm.logic :as logic]
             [hive-mcp.test.stub.headless-backend :as headless-stub]
             [hive-mcp.test.stub.terminal-addon :as term-stub]
@@ -192,3 +193,27 @@
     (is (:isError response))
     (is (= "Failed to spawn ling: backend exploded" (:text response)))
     (is (= 1 (count (term-stub/calls-of stub :spawn!))))))
+
+(deftest the-request-cwd-reaches-the-backend-and-the-registry
+  (let [response (spawn/handle-spawn (assoc base-request :task "x"))
+        [terminal-ctx] (last (term-stub/calls-of
+                              (terminal-registry/get-terminal-addon :claude) :spawn!))]
+    (is (not (:isError response)) (:text response))
+    (is (= "/tmp/project" (:cwd terminal-ctx)))
+    (is (= "/tmp/project" (:slave/cwd (queries/get-slave "qh3-ling"))))))
+
+(deftest the-request-cwd-reaches-a-headless-backend
+  (let [backend (headless-stub/->backend :hive-agent)]
+    (headless-stub/with-backend :hive-agent backend
+      (let [response (spawn/handle-spawn
+                      (assoc base-request :spawn_mode "headless" :task "x"))
+            [backend-ctx] (first (headless-stub/calls-of backend :spawn!))]
+        (is (not (:isError response)) (:text response))
+        (is (= "/tmp/project" (:cwd backend-ctx)))))))
+
+(deftest an-untrusted-cwd-is-refused-before-the-backend
+  (let [response (spawn/handle-spawn (assoc base-request :cwd "/tmp/untrusted"))]
+    (is (:isError response))
+    (is (str/includes? (str (:text response)) "has not trusted"))
+    (is (empty? (term-stub/calls-of
+                 (terminal-registry/get-terminal-addon :claude) :spawn!)))))

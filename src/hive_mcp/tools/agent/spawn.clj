@@ -422,7 +422,7 @@
        :child-grant child-grant :child-depth child-depth :worker-tier worker-tier
        :token-budget token-budget :loop-params loop-params :brief brief
        :seed-model seed-model :seed-provider seed-provider :agent-id agent-id
-       :presets presets :project-id effective-project-id})))
+       :presets presets :cwd cwd :project-id effective-project-id})))
 
 (defn- normalize-preset-names
   [presets]
