@@ -8,6 +8,8 @@
             [hive-mcp.agent.ling.terminal-registry :as terminal-registry]
             [hive-mcp.system.heap-admission :as heap-admission]
             [hive-mcp.agent.ling.start-preflight :as preflight]
+            [hive-mcp.config.core :as config]
+            [hive-mcp.config.source :as config-source]
             [hive-mcp.extensions.registry :as ext]
             [hive-mcp.isolation-methods]
             [hive-mcp.swarm.logic :as logic]
@@ -120,17 +122,37 @@
                  (terminal-registry/get-terminal-addon :claude) :spawn!)))))
 
 (deftest resume-without-brief-runs-on-a-chat-point-backend
-  (let [backend (headless-stub/->backend :headless)]
-    (headless-stub/with-backend :headless backend
+  (let [backend (headless-stub/->backend :hive-agent)]
+    (headless-stub/with-backend :hive-agent backend
       (hive-mcp.agent.ling.headless-registry/register-headless!
-       :headless backend {:capabilities #{:chat-points}})
+       :hive-agent backend {:capabilities #{:chat-points}})
       (let [response (spawn/handle-spawn
                       (assoc base-request :spawn_mode "headless"
                              :resume {:run_id "run-qh3"}))
-            actual (body response)]
+            actual (body response)
+            [backend-ctx] (first (headless-stub/calls-of backend :spawn!))]
         (is (not (:isError response)) (:text response))
         (is (true? (:task-attached actual)))
-        (is (not (contains? actual :warning)))))))
+        (is (not (contains? actual :warning)))
+        (is (= "hive-agent" (:spawn-mode actual)))
+        (is (= :hive-agent (:spawn-mode backend-ctx)))))))
+
+(deftest default-headless-chain-uses-the-resolved-backend-mode
+  (let [backend (headless-stub/->backend :hive-agent)]
+    (headless-stub/with-backend :hive-agent backend
+      (hive-mcp.agent.ling.headless-registry/register-headless!
+       :hive-agent backend {:capabilities #{:chat-points}})
+      (binding [config/*config-source*
+                (config-source/static-source
+                 {:ling {:default-spawn-mode :headless}
+                  :headless {:default-backend :auto}
+                  :transports {:spawn {:chain [:headless]}}})]
+        (let [response (spawn/handle-spawn (dissoc base-request :spawn_mode))
+              actual (body response)
+              [backend-ctx] (first (headless-stub/calls-of backend :spawn!))]
+          (is (not (:isError response)) (:text response))
+          (is (= "hive-agent" (:spawn-mode actual)))
+          (is (= :hive-agent (:spawn-mode backend-ctx))))))))
 
 (deftest heap-pressure-refusal-is-the-complete-response
   (let [probes (atom 0)]

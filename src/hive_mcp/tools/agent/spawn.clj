@@ -460,25 +460,31 @@
                       {:spawn-mode requested})))
     effective-spawn-mode))
 
-(defn- ling-construction-options
-  [{:keys [params seed-model seed-provider] :as context}
-   {:keys [mode presets agents]}]
-  (let [{:keys [cwd project-id loop-params token-budget]} context
-        {:keys [max_budget_usd kg_compress verbose sliding_window_size sandbox]} params]
-    (cond-> {:cwd cwd
-             :presets presets
-             :project-id project-id
-             :spawn-mode mode
-             :model seed-model
-             :provider seed-provider}
-      agents (assoc :agents agents)
+(defn- ling-runtime-options
+  [opts {:keys [params loop-params token-budget]}]
+  (let [{:keys [max_budget_usd kg_compress verbose sliding_window_size]} params]
+    (cond-> opts
       max_budget_usd (assoc :max-budget-usd max_budget_usd)
       (some? kg_compress) (assoc :kg-compress? kg_compress)
       (some? verbose) (assoc :verbose? (normalize-verbosity verbose))
       (seq loop-params) (merge loop-params)
       token-budget (assoc :token-budget token-budget)
-      sliding_window_size (assoc :sliding-window-size sliding_window_size)
-      (some? sandbox) (assoc :sandbox (normalize-sandbox sandbox)))))
+      sliding_window_size (assoc :sliding-window-size sliding_window_size))))
+
+(defn- ling-construction-options
+  [{:keys [params seed-model seed-provider] :as context}
+   {:keys [mode presets agents]}]
+  (let [{:keys [cwd project-id]} context
+        base (cond-> {:cwd cwd
+                      :presets presets
+                      :project-id project-id
+                      :spawn-mode mode
+                      :model seed-model
+                      :provider seed-provider}
+               agents (assoc :agents agents)
+               (some? (:sandbox params))
+               (assoc :sandbox (normalize-sandbox (:sandbox params))))]
+    (ling-runtime-options base context)))
 
 (defn- prepare-ling!
   "Promote the collected request into a ling and its construction options."
@@ -489,7 +495,8 @@
         normalized-agents (normalize-agent-definitions agents)
         construction {:mode mode :presets presets-vec :agents normalized-agents}
         ling-agent (ling/->ling agent-id (ling-construction-options context construction))]
-    (assoc context :ling-agent ling-agent :mode mode :presets-vec presets-vec)))
+    (assoc context :ling-agent ling-agent :mode (:spawn-mode ling-agent)
+           :presets-vec presets-vec)))
 
 (defn- ensure-ling-preflight!
   [{:keys [mode loop-params]}]
