@@ -11,6 +11,7 @@
             [hive-mcp.extensions.registry :as ext]
             [hive-mcp.isolation-methods]
             [hive-mcp.swarm.logic :as logic]
+            [hive-mcp.test.stub.headless-backend :as headless-stub]
             [hive-mcp.test.stub.terminal-addon :as term-stub]
             [hive-mcp.tools.agent.spawn :as spawn]
             [hive-test.isolation :as iso]))
@@ -117,6 +118,19 @@
     (is (str/includes? (:text response) "resume needs a chat-point capable headless backend"))
     (is (empty? (term-stub/calls-of
                  (terminal-registry/get-terminal-addon :claude) :spawn!)))))
+
+(deftest resume-without-brief-runs-on-a-chat-point-backend
+  (let [backend (headless-stub/->backend :headless)]
+    (headless-stub/with-backend :headless backend
+      (hive-mcp.agent.ling.headless-registry/register-headless!
+       :headless backend {:capabilities #{:chat-points}})
+      (let [response (spawn/handle-spawn
+                      (assoc base-request :spawn_mode "headless"
+                             :resume {:run_id "run-qh3"}))
+            actual (body response)]
+        (is (not (:isError response)) (:text response))
+        (is (true? (:task-attached actual)))
+        (is (not (contains? actual :warning)))))))
 
 (deftest heap-pressure-refusal-is-the-complete-response
   (let [probes (atom 0)]
