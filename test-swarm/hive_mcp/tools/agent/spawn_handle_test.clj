@@ -17,6 +17,7 @@
             [hive-mcp.test.stub.headless-backend :as headless-stub]
             [hive-mcp.test.stub.terminal-addon :as term-stub]
             [hive-mcp.tools.agent.spawn :as spawn]
+            [hive-mcp.transport.registry :as transport-registry]
             [hive-test.isolation :as iso]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
@@ -33,6 +34,7 @@
 
 (defn- host-fixture [f]
   (logic/reset-db!)
+  (transport-registry/clear!)
   (binding [spawn/*editor-reachable?* (constantly true)
             preflight/*folder-trust*
             (reify preflight/IFolderTrust
@@ -40,7 +42,9 @@
               (checkout-root [_ _] nil))]
     (try
       (term-stub/with-terminal f)
-      (finally (logic/reset-db!)))))
+      (finally
+        (logic/reset-db!)
+        (transport-registry/clear!)))))
 
 (use-fixtures :each (iso/with-isolations :swarm-ds) host-fixture)
 
