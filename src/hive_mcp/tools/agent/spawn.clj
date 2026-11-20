@@ -395,6 +395,194 @@
 
 (m/=> kanban-claim-refusal [:=> [:cat [:maybe :map]] [:maybe :string]])
 
+(defn- spawn-request-context
+  "Collect the request-derived values of a spawn, in their original read order."
+  [{:keys [type name cwd presets model provider tier token_budget project_id] :as params}]
+  (let [agent-type (keyword type)
+        parent (effective-parent params)
+        {child-grant :grant grant-refusal :refused child-depth :depth}
+        (spawn-grant parent (:grant params))]
+    (when grant-refusal
+      (throw (ex-info grant-refusal {:grant/refused true})))
+    (let [worker-tier (normalize-tier tier)
+          token-budget (normalize-token-budget token_budget)
+          loop-params (loop-opts params)
+          brief (or (spawn-brief params)
+                    (when (:resume loop-params)
+                      "Continue the resumed run from where it stopped."))
+          resolved (llm-registry/resolve-provider-model
+                    {:provider provider
+                     :model (if (= :cheap worker-tier) nil model)
+                     :agent-type agent-type})
+          seed-model (:model resolved)
+          seed-provider (:provider resolved)
+          agent-id (or name (helpers/generate-agent-id agent-type))
+          effective-project-id (resolve-project-scope project_id cwd parent)]
+      {:params params :agent-type agent-type :parent parent
+       :child-grant child-grant :child-depth child-depth :worker-tier worker-tier
+       :token-budget token-budget :loop-params loop-params :brief brief
+       :seed-model seed-model :seed-provider seed-provider :agent-id agent-id
+       :presets presets :cwd cwd :project-id effective-project-id})))
+
+(defn- normalize-preset-names
+  [presets]
+  (cond
+    (nil? presets) []
+    (string? presets) [presets]
+    (sequential? presets) (vec presets)
+    :else [presets]))
+
+(defn- normalize-agent-definitions
+  [agents]
+  (when (map? agents)
+    (reduce-kv
+     (fn [m agent-name agent-spec]
+       (assoc m (clojure.core/name agent-name)
+              (if (map? agent-spec)
+                (reduce-kv (fn [m2 k v] (assoc m2 (keyword k) v)) {} agent-spec)
+                agent-spec)))
+     {} agents)))
+
+(defn- normalize-verbosity
+  [verbose]
+  (if (string? verbose) (= "true" verbose) (boolean verbose)))
+
+(defn- choose-spawn-mode!
+  "Resolve and validate the requested spawn mode, retaining chain logging."
+  [requested]
+  (let [chosen-mode (resolve-spawn-mode requested *editor-reachable?*)
+        effective-spawn-mode (:mode chosen-mode)]
+    (when (seq (:skipped chosen-mode))
+      (log/info "Spawn mode chosen through the :spawn chain"
+                (select-keys chosen-mode [:mode :resolved-by :skipped])))
+    (when-not (spawn-registry/valid-mode? effective-spawn-mode)
+      (throw (ex-info (str "spawn_mode must be one of: " (pr-str spawn-registry/mcp-modes))
+                      {:spawn-mode requested})))
+    effective-spawn-mode))
+
+(defn- ling-runtime-options
+  [opts {:keys [params loop-params token-budget]}]
+  (let [{:keys [max_budget_usd kg_compress verbose sliding_window_size]} params]
+    (cond-> opts
+      max_budget_usd (assoc :max-budget-usd max_budget_usd)
+      (some? kg_compress) (assoc :kg-compress? kg_compress)
+      (some? verbose) (assoc :verbose? (normalize-verbosity verbose))
+      (seq loop-params) (merge loop-params)
+      token-budget (assoc :token-budget token-budget)
+      sliding_window_size (assoc :sliding-window-size sliding_window_size))))
+
+(defn- ling-construction-options
+  [{:keys [params seed-model seed-provider] :as context}
+   {:keys [mode presets agents]}]
+  (let [{:keys [cwd project-id]} context
+        base (cond-> {:cwd cwd
+                      :presets presets
+                      :project-id project-id
+                      :spawn-mode mode
+                      :model seed-model
+                      :provider seed-provider}
+               agents (assoc :agents agents)
+               (some? (:sandbox params))
+               (assoc :sandbox (normalize-sandbox (:sandbox params))))]
+    (ling-runtime-options base context)))
+
+(defn- prepare-ling!
+  "Promote the collected request into a ling and its construction options."
+  [{:keys [params agent-id] :as context}]
+  (let [{:keys [presets spawn_mode agents]} params
+        presets-vec (normalize-preset-names presets)
+        mode (choose-spawn-mode! spawn_mode)
+        normalized-agents (normalize-agent-definitions agents)
+        construction {:mode mode :presets presets-vec :agents normalized-agents}
+        ling-agent (ling/->ling agent-id (ling-construction-options context construction))]
+    (assoc context :ling-agent ling-agent :mode (:spawn-mode ling-agent)
+           :presets-vec presets-vec)))
+
+(defn- ensure-ling-preflight!
+  [{:keys [mode loop-params]}]
+  (when-let [refusal (chat-point-refusal mode loop-params
+                                         (headless-registry/headless-capabilities mode))]
+    (throw (ex-info refusal {:spawn-mode mode})))
+  (when-let [refusal (editor-preflight-refusal mode *editor-reachable?*)]
+    (throw (ex-info refusal {:spawn-mode mode :fallback "headless"}))))
+
+(defn- seed-spawn-options
+  [{:keys [params parent child-depth child-grant brief mode
+           seed-model seed-provider]}]
+  (let [{:keys [kanban_task_id max_budget_usd]} params]
+    (cond-> {:task brief
+             :parent parent
+             :depth child-depth
+             :spawned-by (spawner params)
+             :kanban-task-id kanban_task_id
+             :spawn-mode mode
+             :model seed-model
+             :provider seed-provider
+             :spawn/request params}
+      max_budget_usd (assoc :max-budget-usd max_budget_usd)
+      child-grant (assoc :grant child-grant))))
+
+(defn- route-spawn!
+  "Route exactly once, then preflight the provider that will actually run."
+  [{:keys [params ling-agent] :as context}]
+  (let [routed-opts (spawn-impl/route-spawn-opts (seed-spawn-options context) ling-agent)
+        routed-provider (:provider routed-opts)]
+    (when-let [err (provider-preflight-refusal (:spawn-mode ling-agent) routed-provider)]
+      (throw (ex-info (str "Provider " (clojure.core/name routed-provider)
+                           " cannot serve this spawn: " (:fix err)) err)))
+    (when-let [refusal (kanban-claim-refusal params)]
+      (throw (ex-info refusal {:kanban/claim-refused (:kanban_task_id params)})))
+    (assoc context :routed-opts routed-opts :choice (:router/choice routed-opts)
+           :routed-model (:model routed-opts) :routed-provider routed-provider)))
+
+(defn- prepare-spawn!
+  [{:keys [agent-type] :as context}]
+  (case agent-type
+    :ling (let [prepared (prepare-ling! context)]
+            (ensure-ling-preflight! prepared)
+            (route-spawn! prepared))))
+
+(defn- spawn-at-boundary!
+  [{:keys [ling-agent routed-opts] :as context}]
+  (assoc context :slave-id (proto/spawn! ling-agent (dissoc routed-opts :spawn/request))))
+
+(defn- log-spawned-ling!
+  [{:keys [agent-id slave-id parent mode routed-provider routed-model choice
+           seed-model seed-provider worker-tier token-budget brief params presets-vec
+           project-id]}]
+  (log/info "Spawned ling" {:requested-id agent-id :slave-id slave-id :parent parent
+                            :spawn-mode mode :provider routed-provider :model routed-model
+                            :routed? (some? choice) :requested-model seed-model
+                            :requested-provider seed-provider :tier worker-tier
+                            :token-budget token-budget :task-attached (some? brief)
+                            :cwd (:cwd params) :presets presets-vec :project-id project-id}))
+
+(defn- spawn-response
+  [{:keys [slave-id parent mode routed-provider routed-model worker-tier choice
+           seed-model seed-provider token-budget brief params presets-vec project-id
+           child-grant]}]
+  (mcp-json
+   (cond-> {:success true :agent-id slave-id :type :ling :parent parent
+            :spawn-mode mode :provider routed-provider :model routed-model
+            :tier worker-tier :routed? (some? choice) :requested-model seed-model
+            :requested-provider seed-provider :token-budget token-budget
+            :task-attached (some? brief) :cwd (:cwd params) :presets presets-vec
+            :project-id project-id}
+     choice (assoc :router-choice (select-keys choice [:pool :strategy :work-class]))
+     child-grant (assoc :grant child-grant)
+     (nil? brief) (assoc :warning (str "Spawned with no task: the ling has no brief "
+                                       "and will idle until `agent dispatch` sends one.")))))
+
+(defn- handle-spawn-request!
+  [params]
+  (let [agent-type (keyword (:type params))]
+    (try
+      (-> params spawn-request-context prepare-spawn! spawn-at-boundary!
+          (doto log-spawned-ling!) spawn-response)
+      (catch Exception e
+        (log/error "Failed to spawn agent" {:type agent-type :error (ex-message e)})
+        (mcp-error (str "Failed to spawn " (clojure.core/name agent-type) ": " (ex-message e)))))))
+
 (defn handle-spawn
   "Spawn a new ling agent.
 
@@ -410,179 +598,25 @@
 
    The full request map rides on opts under :spawn/request for the
    :spawn/opts-overlay extension seam, and is stripped before planning."
-  [{:keys [type name cwd presets model provider tier token_budget project_id kanban_task_id spawn_mode agents max_budget_usd kg_compress sliding_window_size verbose sandbox] :as params}]
-  ;; Layer 3: Defense-in-depth spawn guard
-  (if-let [_ (when (guards/child-ling?) :denied)]
+  [params]
+  (if (guards/child-ling?)
     (do
       (log/warn "Spawn denied: child ling attempted agent spawn"
                 {:role (guards/get-role) :depth (guards/ling-depth)})
       (mcp-error (build-spawn-denied-message)))
-    (if-let [refusal (some-> (heap-admission/hard-pressure ; read per spawn: per batch member
-                               (or (ext/get-extension :agent/heap-probe) ; test port
-                                   heap-admission/heap-probe))
-                              heap-refusal)]
-      ;; Layer 4: heap admission — refused at the HARD post-GC watermark.
-      ;; Nothing is queued; the refusal says the brief was not kept.
+    (if-let [refusal (some-> (heap-admission/hard-pressure
+                              (or (ext/get-extension :agent/heap-probe)
+                                  heap-admission/heap-probe))
+                             heap-refusal)]
       (do
         (log/warn "Spawn refused: heap pressure" (dissoc refusal :message))
         (mcp-json refusal))
-      (let [agent-type (keyword type)]
-      (if-not (and (agent-type-registry/valid-type? agent-type)
-                   (agent-type-registry/spawnable? agent-type))
-        (mcp-error (str "type must be one of: " (pr-str (agent-type-registry/mcp-enum))))
-        (try
-          ;; Resolve provider+model via registry chain
-          (let [parent (effective-parent params)
-                {child-grant :grant grant-refusal :refused child-depth :depth} (spawn-grant parent (:grant params))
-                _ (when grant-refusal
-                    (throw (ex-info grant-refusal {:grant/refused true})))
-                worker-tier (normalize-tier tier)
-                token-budget (normalize-token-budget token_budget)
-                loop-params (loop-opts params)
-                brief (or (spawn-brief params)
-                          ;; A resume with no brief continues the recorded run
-                          ;; instead of idling until a dispatch.
-                          (when (:resume loop-params)
-                            "Continue the resumed run from where it stopped."))
-                resolved (llm-registry/resolve-provider-model
-                           {:provider provider
-                            :model (if (= :cheap worker-tier) nil model)
-                            :agent-type agent-type})
-                ;; What the host resolved is only the SEED: the :spawn/opts-overlay
-                ;; router (hive-agent's, when loaded) replaces :model/:provider
-                ;; afterwards, inside spawn!. Routing here instead — once, before
-                ;; the preflight below — is what lets this response and its log
-                ;; name the model that actually runs. spawn! honours the
-                ;; :spawn/opts-routed marker and does not route a second time, so
-                ;; the round-robin cursor advances once per spawn.
-                seed-model (:model resolved)
-                seed-provider (:provider resolved)
-                agent-id (or name (helpers/generate-agent-id agent-type))
-                effective-project-id (resolve-project-scope project_id cwd parent)]
-            (case agent-type
-              :ling
-              (let [presets-vec (cond
-                                  (nil? presets) []
-                                  (string? presets) [presets]
-                                  (sequential? presets) (vec presets)
-                                  :else [presets])
-                    chosen-mode (resolve-spawn-mode spawn_mode *editor-reachable?*)
-                    effective-spawn-mode (:mode chosen-mode)
-                    _ (when (seq (:skipped chosen-mode))
-                        (log/info "Spawn mode chosen through the :spawn chain"
-                                  (select-keys chosen-mode [:mode :resolved-by :skipped])))
-                    _ (when-not (spawn-registry/valid-mode? effective-spawn-mode)
-                        (throw (ex-info (str "spawn_mode must be one of: " (pr-str spawn-registry/mcp-modes))
-                                        {:spawn-mode spawn_mode})))
-                    normalized-agents (when (map? agents)
-                                        (reduce-kv
-                                         (fn [m agent-name agent-spec]
-                                           (assoc m (clojure.core/name agent-name)
-                                                  (if (map? agent-spec)
-                                                    (reduce-kv (fn [m2 k v]
-                                                                 (assoc m2 (keyword k) v))
-                                                               {} agent-spec)
-                                                    agent-spec)))
-                                         {} agents))
-                    ling-agent (ling/->ling agent-id (cond-> {:cwd cwd
-                                                              :presets presets-vec
-                                                              :project-id effective-project-id
-                                                              :spawn-mode effective-spawn-mode
-                                                              ;; the seed: the routed opts below
-                                                              ;; override :model/:provider
-                                                              :model seed-model
-                                                              :provider seed-provider}
-                                                       normalized-agents (assoc :agents normalized-agents)
-                                                       max_budget_usd    (assoc :max-budget-usd max_budget_usd)
-                                                       (some? kg_compress) (assoc :kg-compress? kg_compress)
-                                                       (some? verbose)   (assoc :verbose? (if (string? verbose)
-                                                                                            (= "true" verbose)
-                                                                                            (boolean verbose)))
-                                                       (seq loop-params) (merge loop-params)
-                                                       token-budget      (assoc :token-budget token-budget)
-                                                       sliding_window_size (assoc :sliding-window-size sliding_window_size)
-                                                       (some? sandbox)   (assoc :sandbox (normalize-sandbox sandbox))))
-                    _ (when-let [refusal (chat-point-refusal (:spawn-mode ling-agent) loop-params
-                                                             (headless-registry/headless-capabilities (:spawn-mode ling-agent)))]
-                        (throw (ex-info refusal {:spawn-mode (:spawn-mode ling-agent)})))
-                    _ (when-let [refusal (editor-preflight-refusal (:spawn-mode ling-agent) *editor-reachable?*)]
-                        (throw (ex-info refusal {:spawn-mode (:spawn-mode ling-agent)
-                                                 :fallback "headless"})))
-                    ;; The opts this spawn will run with, ROUTED: the overlay
-                    ;; (hive-agent's router when loaded) has replaced :model and
-                    ;; :provider where it has an opinion. Everything below reads
-                    ;; these, so the preflight, the log and the response describe
-                    ;; the member that actually runs, not the seed. Routing once
-                    ;; here and marking it is also what keeps the round-robin
-                    ;; cursor advancing exactly once per spawn.
-                    routed-opts (spawn-impl/route-spawn-opts
-                                 (cond-> {:task brief
-                                          :parent parent
-                                          :depth child-depth
-                                          :spawned-by (spawner params)
-                                          :kanban-task-id kanban_task_id
-                                          :spawn-mode (:spawn-mode ling-agent)
-                                          :model seed-model
-                                          :provider seed-provider
-                                          :spawn/request params}
-                                   max_budget_usd (assoc :max-budget-usd max_budget_usd)
-                                   child-grant    (assoc :grant child-grant))
-                                 ling-agent)
-                    ;; nil when no router is loaded: the seed stands.
-                    choice (:router/choice routed-opts)
-                    routed-model (:model routed-opts)
-                    routed-provider (:provider routed-opts)
-                    _ (when-let [err (provider-preflight-refusal (:spawn-mode ling-agent) routed-provider)]
-                        (throw (ex-info (str "Provider " (clojure.core/name routed-provider)
-                                             " cannot serve this spawn: " (:fix err))
-                                        err)))
-                    _ (when-let [refusal (kanban-claim-refusal params)]
-                        (throw (ex-info refusal {:kanban/claim-refused kanban_task_id})))
-                    slave-id (proto/spawn! ling-agent (dissoc routed-opts :spawn/request))]
-                (log/info "Spawned ling" {:requested-id agent-id
-                                          :slave-id slave-id
-                                          :parent parent
-                                          :spawn-mode (:spawn-mode ling-agent)
-                                          :provider routed-provider
-                                          :model routed-model
-                                          :routed? (some? choice)
-                                          :requested-model seed-model
-                                          :requested-provider seed-provider
-                                          :tier worker-tier
-                                          :token-budget token-budget
-                                          :task-attached (some? brief)
-                                          :cwd cwd :presets presets-vec
-                                          :project-id effective-project-id})
-                ;; :model, :provider and :tier are the ROUTED opts — the member
-                ;; that actually runs. :requested-model/:requested-provider keep
-                ;; the pre-routing seed and :router-choice the decision, so an
-                ;; operator can see both what was asked and what was used.
-                (mcp-json (cond-> {:success true
-                                   :agent-id slave-id
-                                   :type :ling
-                                   :parent parent
-                                   :spawn-mode (:spawn-mode ling-agent)
-                                   :provider routed-provider
-                                   :model routed-model
-                                   :tier worker-tier
-                                   :routed? (some? choice)
-                                   :requested-model seed-model
-                                   :requested-provider seed-provider
-                                   :token-budget token-budget
-                                   :task-attached (some? brief)
-                                   :cwd cwd
-                                   :presets presets-vec
-                                   :project-id effective-project-id}
-                            choice
-                            (assoc :router-choice (select-keys choice [:pool :strategy :work-class]))
-                            child-grant
-                            (assoc :grant child-grant)
-                            (nil? brief)
-                            (assoc :warning (str "Spawned with no task: the ling has no brief "
-                                                 "and will idle until `agent dispatch` sends one.")))))))
-          (catch Exception e
-            (log/error "Failed to spawn agent" {:type agent-type :error (ex-message e)})
-            (mcp-error (str "Failed to spawn " (clojure.core/name agent-type) ": " (ex-message e))))))))))
+      (let [agent-type (keyword (:type params))]
+        (if-not (and (agent-type-registry/valid-type? agent-type)
+                     (agent-type-registry/spawnable? agent-type))
+          (mcp-error (str "type must be one of: "
+                          (pr-str (agent-type-registry/mcp-enum))))
+          (handle-spawn-request! params))))))
 
 ;;; =============================================================================
 ;;; Contracts
