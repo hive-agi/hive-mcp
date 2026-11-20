@@ -79,8 +79,6 @@
     {:error? false
      :blocks (mapv parse-block resp)}))
 
-(defn- block-names [resp] (mapv :_block (:blocks (parse-response resp))))
-
 (defn- block-by-name [resp name]
   (some #(when (= name (:_block %)) %) (:blocks (parse-response resp))))
 

@@ -444,12 +444,21 @@
 ;; Top-level orchestration: run-catchup-pipeline
 ;; -----------------------------------------------------------------------------
 
+(defn- caller-identity
+  "Resolve the session and project-scoped identities for a catchup caller."
+  [caller-id project-id]
+  (let [raw-caller-id (or caller-id "coordinator")
+        caller        (ctx-id/parse-caller-id raw-caller-id)
+        scope         (ctx-id/parse-project-scope project-id)]
+    {:raw-caller-id      raw-caller-id
+     :piggyback-agent-id (ctx-id/make-piggyback-agent-id caller scope)}))
+
 (defn- build-response
   "Build the final MCP response from the collected queries, raw buckets and
    metadata transforms. Values and merge semantics match the historical
    response literal exactly."
   [{:keys [bundle git-info addon-status contributed metadata context-refs
-           directory project-id project-name scopes]}]
+           project-id project-name scopes]}]
   (fmt/build-catchup-response
    {:scopes                    scopes
     :axiom-candidates-meta     (:axiom-candidates-meta metadata)
@@ -481,7 +490,6 @@
         {:keys [bundle git-info addon-status contributed]} (await-catchup-queries futures)
         buckets     (promote-bundle bundle)
         metadata    (entries->metadata buckets)
-
         {:keys [directory project-id project-name scopes caller-id private?]} catchup-ctx
         _ (run-enrichment! {:bundle bundle
                             :directory directory
@@ -489,15 +497,10 @@
                             :caller-id caller-id
                             :buckets buckets
                             :metadata metadata})
-
-        raw-caller-id (or caller-id "coordinator")
-        caller        (ctx-id/parse-caller-id raw-caller-id)
-        scope         (ctx-id/parse-project-scope project-id)
-        piggyback-agent-id (ctx-id/make-piggyback-agent-id caller scope)
+        {:keys [raw-caller-id piggyback-agent-id]} (caller-identity caller-id project-id)
         _ (run-cursor-hygiene! {:piggyback-agent-id piggyback-agent-id
                                 :project-id project-id
                                 :raw-caller-id raw-caller-id})
-
         piggyback-entries (compute-piggyback-entries
                            {:project-id           project-id
                             :raw-caller-id        raw-caller-id
@@ -507,14 +510,12 @@
                             :decisions            (:decisions buckets)
                             :sessions             (:sessions buckets)})
 
-        catchup-ttl 3600000
-        scope-tag   (or project-id "global")
         context-refs (persist-context-refs!
-                      {:scope-tag   scope-tag
+                      {:scope-tag   (or project-id "global")
                        :private?    private?
                        :bundle      bundle
                        :buckets     buckets
-                       :catchup-ttl catchup-ttl})
+                       :catchup-ttl 3600000})
 
         _ (enqueue-piggyback! {:raw-caller-id     raw-caller-id
                                :piggyback-entries piggyback-entries
@@ -526,7 +527,6 @@
                      :contributed contributed
                      :metadata metadata
                      :context-refs context-refs
-                     :directory directory
                      :project-id project-id
                      :project-name project-name
                      :scopes scopes})))
