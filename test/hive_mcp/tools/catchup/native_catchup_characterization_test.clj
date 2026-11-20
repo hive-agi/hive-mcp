@@ -21,13 +21,32 @@
   (:require [clojure.data.json :as json]
             [clojure.java.io :as io]
             [clojure.test :refer [deftest is testing use-fixtures]]
+            [hive-mcp.channel.memory-piggyback :as mp]
+            [hive-mcp.extensions.registry :as ext]
             [hive-mcp.test.stub.memory-store :as mem-stub]
             [hive-mcp.tools.catchup :as catchup]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
 
-(use-fixtures :each mem-stub/with-stub-store)
+(def ^:private extension-keys
+  [:cu/a :catchup/lens :catchup/persona-lens])
+
+(defn- restore-extensions
+  "Run T with the characterization extension seats removed, then restore the
+   exact prior values (including absence) so no test registration leaks."
+  [t]
+  (let [prior (mapv (fn [k] [k (ext/get-extension k ::absent)]) extension-keys)]
+    (try
+      (run! ext/deregister! extension-keys)
+      (t)
+      (finally
+        (doseq [[k value] prior]
+          (if (= ::absent value)
+            (ext/deregister! k)
+            (ext/register! k value)))))))
+
+(use-fixtures :each mem-stub/with-stub-store restore-extensions)
 
 ;; -----------------------------------------------------------------------------
 ;; Helpers
@@ -142,21 +161,66 @@
             parsed (parse-response resp)]
         (testing "no error"
           (is (false? (:error? parsed))))
-        (testing "axioms block reflects the seed"
-          (let [b (block-by-name resp "axiom-review")
-                ;; axiom-review is always emitted; if axiom-review is absent the
-                ;; axioms themselves ride in the piggyback / counts. Pin counts.
-                hdr (block-by-name resp "header")]
+        (testing "axioms count reflects the seed"
+          (let [hdr (block-by-name resp "header")]
             (is (map? hdr))
-            ;; counts must report at least the axiom we just seeded
-            (let [counts (:counts hdr)]
-              (when counts
-                (is (<= 1 (or (:axioms counts) 0)))))))
+            (is (<= 1 (get-in hdr [:counts :axioms])))))
         (testing "the response still has header first + meta last-ish"
           (let [names (mapv :_block (:blocks parsed))]
             (is (= "header" (first names)))
             (is (some #{"meta"} names)))))
       (finally (rm-tree! dir)))))
+
+(deftest extensions-and-scope-filtered-piggyback
+  (let [pid        (str "qh2-extensions-" (random-uuid))
+        other-pid  (str "qh2-other-" (random-uuid))
+        dir        (tmp-project! pid)
+        caller-id  (str "qh2-characterization-" (random-uuid))
+        enrichment (atom [])
+        lens-calls (atom [])
+        persona    {:favorite-axiom "in-scope"}
+        store      (mem-stub/->stub)]
+    (mem-stub/install! store)
+    (ext/register!
+     :cu/a (fn [payload] (swap! enrichment conj payload)))
+    (ext/register!
+     :catchup/persona-lens
+     (fn [candidate project]
+       (when (and (= candidate caller-id) (= project pid)) persona)))
+    (ext/register!
+     :catchup/lens
+     (fn [axioms context]
+       (swap! lens-calls conj {:axioms axioms :context context})
+       axioms))
+    (mp/clear-buffer! caller-id)
+    (try
+      (let [[in-scope-id out-of-scope-id]
+            (mem-stub/seed!
+             store
+             [{:content "In-scope axiom for the current project."
+               :type "axiom"
+               :tags ["qh2-char" (str "scope:project:" pid)]}
+              {:content "Out-of-scope axiom for an unrelated project."
+               :type "axiom"
+               :tags ["qh2-char" (str "scope:project:" other-pid)]}])]
+        (catchup/handle-native-catchup {:directory dir :_caller_id caller-id})
+        (testing "enrichment receives exactly the historical payload keys"
+          (is (= 1 (count @enrichment)))
+          (is (= #{:directory :project-id :caller-id
+                   :decisions :decisions-raw :conventions :conventions-raw
+                   :sessions :sessions-raw :axioms :principles
+                   :priority-principles :priority-conventions}
+                 (set (keys (first @enrichment))))))
+        (testing "lens receives the resolved persona lens in its context"
+          (is (= 1 (count @lens-calls)))
+          (is (= persona (get-in (first @lens-calls) [:context :persona-lens]))))
+        (testing "only the in-scope axiom is drained"
+          (is (= [in-scope-id]
+                 (mapv :id (:batch (mp/drain! caller-id)))))
+          (is (not= in-scope-id out-of-scope-id))))
+      (finally
+        (mp/clear-buffer! caller-id)
+        (rm-tree! dir)))))
 
 ;; -----------------------------------------------------------------------------
 ;; Branch 4 — :directory wins over _caller_cwd

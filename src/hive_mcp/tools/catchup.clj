@@ -444,6 +444,33 @@
 ;; Top-level orchestration: run-catchup-pipeline
 ;; -----------------------------------------------------------------------------
 
+(defn- build-response
+  "Build the final MCP response from the collected queries, raw buckets and
+   metadata transforms. Values and merge semantics match the historical
+   response literal exactly."
+  [{:keys [bundle git-info addon-status contributed metadata context-refs
+           directory project-id project-name scopes]}]
+  (fmt/build-catchup-response
+   {:scopes                    scopes
+    :axiom-candidates-meta     (:axiom-candidates-meta metadata)
+    :project-name              project-name
+    :principles-meta           (:principles-meta metadata)
+    :priority-principles-meta  (:priority-principles-meta metadata)
+    :recent-wraps              (:recent-wraps metadata)
+    :context-refs              context-refs
+    :axioms-meta               (:axioms-meta metadata)
+    :memory-status             (memory-status-with-writes bundle)
+    :priority-meta             (:priority-meta metadata)
+    :carto-status              (:carto-status addon-status)
+    :expiring-meta             (:expiring-meta metadata)
+    :git-info                  git-info
+    :sessions-meta             (:sessions-meta metadata)
+    :snippets-meta             (:snippets-meta metadata)
+    :decisions-meta            (:decisions-base metadata)
+    :conventions-meta          (:conventions-base metadata)
+    :project-id                project-id
+    :contributed-blocks        contributed}))
+
 (defn- run-catchup-pipeline
   "Sequence the catchup pipeline after the store guard. Returns the final
    fmt/build-catchup-response value. Throws propagate to the caller's
@@ -452,16 +479,10 @@
   (let [catchup-ctx (collect-catchup-context args)
         futures     (launch-catchup-queries catchup-ctx)
         {:keys [bundle git-info addon-status contributed]} (await-catchup-queries futures)
-        carto-status (:carto-status addon-status)
         buckets     (promote-bundle bundle)
         metadata    (entries->metadata buckets)
 
         {:keys [directory project-id project-name scopes caller-id private?]} catchup-ctx
-        raw-caller-id (or caller-id "coordinator")
-        caller        (ctx-id/parse-caller-id raw-caller-id)
-        scope         (ctx-id/parse-project-scope project-id)
-        piggyback-agent-id (ctx-id/make-piggyback-agent-id caller scope)
-
         _ (run-enrichment! {:bundle bundle
                             :directory directory
                             :project-id project-id
@@ -469,6 +490,10 @@
                             :buckets buckets
                             :metadata metadata})
 
+        raw-caller-id (or caller-id "coordinator")
+        caller        (ctx-id/parse-caller-id raw-caller-id)
+        scope         (ctx-id/parse-project-scope project-id)
+        piggyback-agent-id (ctx-id/make-piggyback-agent-id caller scope)
         _ (run-cursor-hygiene! {:piggyback-agent-id piggyback-agent-id
                                 :project-id project-id
                                 :raw-caller-id raw-caller-id})
@@ -495,26 +520,16 @@
                                :piggyback-entries piggyback-entries
                                :context-refs      context-refs})]
 
-    (fmt/build-catchup-response
-     {:scopes                    scopes
-      :axiom-candidates-meta     (:axiom-candidates-meta metadata)
-      :project-name              project-name
-      :principles-meta           (:principles-meta metadata)
-      :priority-principles-meta  (:priority-principles-meta metadata)
-      :recent-wraps              (:recent-wraps metadata)
-      :context-refs              context-refs
-      :axioms-meta               (:axioms-meta metadata)
-      :memory-status             (memory-status-with-writes bundle)
-      :priority-meta             (:priority-meta metadata)
-      :carto-status              carto-status
-      :expiring-meta             (:expiring-meta metadata)
-      :git-info                  git-info
-      :sessions-meta             (:sessions-meta metadata)
-      :snippets-meta             (:snippets-meta metadata)
-      :decisions-meta            (:decisions-base metadata)
-      :conventions-meta          (:conventions-base metadata)
-      :project-id                project-id
-      :contributed-blocks        contributed})))
+    (build-response {:bundle bundle
+                     :git-info git-info
+                     :addon-status addon-status
+                     :contributed contributed
+                     :metadata metadata
+                     :context-refs context-refs
+                     :directory directory
+                     :project-id project-id
+                     :project-name project-name
+                     :scopes scopes})))
 
 ;; =============================================================================
 ;; Main Catchup Handler
