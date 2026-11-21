@@ -25,7 +25,8 @@
             [hive-mcp.extensions.registry :as ext]
             [hive-dsl.result :refer [rescue]]
             [taoensso.timbre :as log]
-            [malli.core :as m]))
+            [malli.core :as m]
+            [hive-mcp.resilience.swallow :as swallow]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -75,7 +76,7 @@
               (hive-root-children))
         seen (atom #{})]
     (vec (for [^java.io.File f raw
-               :let [canonical (try (.getCanonicalPath f) (catch Exception _ nil))]
+               :let [canonical (swallow/attempt-ex (.getCanonicalPath f))]
                :when (and canonical
                           (.isDirectory f)
                           (not (contains? @seen canonical)))

@@ -34,7 +34,8 @@
             [hive-mcp.nats.inbox :as inbox]
             [hive-mcp.nats.ling-inbox :as ling-inbox]
             [hive-mcp.transport.registry :as reg]
-            [malli.core :as m]))
+            [malli.core :as m]
+            [hive-mcp.resilience.swallow :as swallow]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -52,7 +53,7 @@
    registry is absent or unreadable, so the id reads as unknown."
   [id]
   (when-let [get-slave (soft/resolve-soft 'hive-mcp.swarm.datascript.queries/get-slave)]
-    (try (get-slave id) (catch Exception _ nil))))
+    (swallow/attempt-ex (get-slave id))))
 
 (def ^:dynamic *find-ling*
   "1-arg port: the swarm registry row of an agent id, or nil."

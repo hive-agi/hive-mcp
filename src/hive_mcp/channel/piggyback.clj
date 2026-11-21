@@ -18,7 +18,8 @@
             [hive-mcp.channel.row-transforms :as row-transforms]
             [hive-mcp.channel.piggyback.sources :as sources]
             [hive-mcp.channel.lineage :as lineage]
-            [malli.core :as m]))
+            [malli.core :as m]
+            [hive-mcp.resilience.swallow :as swallow]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -257,10 +258,8 @@
   "Read a config path, nil on any failure. Lazy requiring-resolve keeps the
    channel layer free of a load-time dep on config bootstrap."
   [path]
-  (try
-    (when-let [f (requiring-resolve 'hive-mcp.config.core/get-in-config)]
-      (f path))
-    (catch Exception _ nil)))
+  (swallow/attempt-ex (when-let [f (requiring-resolve 'hive-mcp.config.core/get-in-config)]
+      (f path))))
 
 (defn spawner-routing?
   "Is HIVEMIND delivery addressed to the SPAWNER (default) rather than

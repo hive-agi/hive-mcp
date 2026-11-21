@@ -5,7 +5,8 @@
    Addons can override/extend via contribute-commands! targeting \"fs\".
 
    Commands: read, write, glob, grep"
-  (:require [hive-mcp.tools.composite :as composite]))
+  (:require [hive-mcp.tools.composite :as composite]
+            [hive-mcp.resilience.swallow :as swallow]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -16,7 +17,7 @@
 ;; =============================================================================
 
 (defn- resolve-handler [sym]
-  (try (requiring-resolve sym) (catch Exception _ nil)))
+  (swallow/attempt-ex (requiring-resolve sym)))
 
 (defn- handle-read [params]
   (if-let [h (resolve-handler 'basic-tools-mcp.tools/handle-read-file)]

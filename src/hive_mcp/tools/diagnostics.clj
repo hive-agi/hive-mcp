@@ -32,8 +32,7 @@
   "The protocol map named by `protocol-name` (\"ns/Proto\"), or nil when the
    var is not loaded or does not hold a protocol."
   [protocol-name]
-  (let [p (try (some-> protocol-name symbol find-var deref)
-               (catch Exception _ nil))]
+  (let [p (swallow/attempt-ex (some-> protocol-name symbol find-var deref))]
     (when (and (map? p) (contains? p :on-interface)) p)))
 
 (defn- loaded-class

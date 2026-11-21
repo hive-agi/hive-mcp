@@ -33,8 +33,7 @@
   [sym-str]
   (let [sym (cond
               (symbol? sym-str)  sym-str
-              (string? sym-str)  (try (symbol sym-str)
-                                   (catch Exception _ nil))
+              (string? sym-str)  (swallow/attempt-ex (symbol sym-str))
               :else nil)]
     (when (or (nil? sym) (nil? (namespace sym)))
       (throw (ex-info "Symbol must be fully-qualified ns/name" {:symbol sym-str})))

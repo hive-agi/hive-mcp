@@ -60,6 +60,15 @@
   (is (<= (count (swallow/clip (apply str (repeat 500 "x")))) 83))
   (is (= "short" (swallow/clip "short"))))
 
+(deftest attempt-ex-swallows-exceptions-but-not-errors
+  (with-capture
+    (fn [sink]
+      (is (= 3 (swallow/attempt-ex (+ 1 2))))
+      (is (nil? (swallow/attempt-ex (throw (ex-info "bad" {})))))
+      (is (str/includes? (second (first @sink)) "bad"))
+      (is (thrown? AssertionError
+                   (swallow/attempt-ex (throw (AssertionError. "fatal"))))))))
+
 (deftest attempt-star-takes-a-thunk
   (is (= :v (swallow/attempt* "label" (fn [] :v))))
   (is (nil? (swallow/attempt* "label" (fn [] (throw (RuntimeException. "x")))))))

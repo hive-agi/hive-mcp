@@ -77,8 +77,7 @@
   (let [legacy (:slave/presets slave)
         encoded (:slave/preset-order slave)
         decoded (when (string? encoded)
-                  (try (clojure.edn/read-string encoded)
-                       (catch Exception _ nil)))]
+                  (swallow/attempt-ex (clojure.edn/read-string encoded)))]
     (if (and (vector? decoded)
              (every? string? decoded)
              (= (set decoded) (set legacy)))

@@ -43,7 +43,8 @@
             [malli.core :as m]
             [hive-spi.swarm.guards :as guards]
             [hive-mcp.addons.core :as addons]
-            [hive-mcp.dispatch.handler :as dispatch]))
+            [hive-mcp.dispatch.handler :as dispatch]
+            [hive-mcp.resilience.swallow :as swallow]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -83,14 +84,12 @@
    Read from config.edn [:tool-roots :visible]. Returns a set, or nil
    when unconfigured — nil means NO gating (current/legacy behavior)."
   []
-  (try
-    (let [cfg   ((requiring-resolve 'hive-mcp.config.core/get-global-config))
+  (swallow/attempt-ex (let [cfg   ((requiring-resolve 'hive-mcp.config.core/get-global-config))
           names (get-in cfg [:tool-roots :visible])]
       (cond
         (set? names)        names
         (sequential? names) (set names)
-        :else               nil))
-    (catch Exception _ nil)))
+        :else               nil))))
 
 (defn apply-visibility-gate
   "Mark every tool whose :name is NOT in the visible allowlist as

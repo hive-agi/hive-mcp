@@ -61,7 +61,8 @@
             [hive-mcp.protocols.vessel :as vessel]
             [hive-mcp.extensions.soft :as soft]
             [hive-mcp.swarm.sync :as sync]
-            [malli.core :as m]))
+            [malli.core :as m]
+            [hive-mcp.resilience.swallow :as swallow]))
 
 (defn make-adapter
   "Build the hive-mcp implementation of all events SPI protocols."
@@ -114,11 +115,9 @@
 
     spi/ISwarmTelemetry
     (set-lings-active! [_this n]
-      (try
-        (soft/host-or 'hive-mcp.telemetry.prometheus/set-lings-active!
+      (swallow/attempt-ex (soft/host-or 'hive-mcp.telemetry.prometheus/set-lings-active!
                       #(spi/set-lings-active! spi/noop n)
-                      n)
-        (catch Exception _ nil)))
+                      n)))
 
     spi/IDagWaveScheduler
     (start-dag! [_this plan-id opts]
@@ -158,9 +157,7 @@
 
     spi/IVesselContextSource
     (resolve-agent-context [_this agent-id]
-      (try
-        (vessel/resolve-agent-context agent-id)
-        (catch Exception _ nil)))))
+      (swallow/attempt-ex (vessel/resolve-agent-context agent-id)))))
 
 (def Adapter
   "Something that fills the events port: all seven protocols at once."

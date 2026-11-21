@@ -13,7 +13,8 @@
    session lifecycle)."
   (:require [hive-mcp.tools.composite :as composite]
             [hive-mcp.tools.core :refer [mcp-error]]
-            [hive-mcp.extensions.registry :as ext]))
+            [hive-mcp.extensions.registry :as ext]
+            [hive-mcp.resilience.swallow :as swallow]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -24,7 +25,7 @@
 ;; =============================================================================
 
 (defn- resolve-handler [sym]
-  (try (requiring-resolve sym) (catch Exception _ nil)))
+  (swallow/attempt-ex (requiring-resolve sym)))
 
 (defn- make-delegating-handler
   "Strip subdomain prefix and delegate to inner handler.

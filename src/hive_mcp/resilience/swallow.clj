@@ -45,3 +45,23 @@
    The first body form, printed, is the log label."
   [& body]
   `(attempt* ~(clip (pr-str (first body))) (fn [] ~@body)))
+
+(defn attempt-ex*
+  "Like `attempt*`, but catches Exception only: an Error (OOM, linkage,
+   assertion) propagates, as it did through `(catch Exception _ nil)`."
+  [label thunk]
+  (try
+    (thunk)
+    (catch Exception e
+      (when (instance? InterruptedException e)
+        (.interrupt (Thread/currentThread)))
+      (log-ports/debug "swallowed (best-effort):" label "->"
+                       (.getSimpleName (class e)) (ex-message e))
+      nil)))
+
+(m/=> attempt-ex* [:=> [:cat :string ifn?] :any])
+
+(defmacro attempt-ex
+  "`attempt` for Exception only; an Error propagates."
+  [& body]
+  `(attempt-ex* ~(clip (pr-str (first body))) (fn [] ~@body)))

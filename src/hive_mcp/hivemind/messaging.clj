@@ -175,10 +175,8 @@
   "Pull :shout-message-cap from loaded config, fall back to default.
    Lazy requiring-resolve avoids circular dep at hivemind bootstrap."
   []
-  (or (try
-        (when-let [f (requiring-resolve 'hive-mcp.config.core/get-in-config)]
-          (f [:hivemind :shout-message-cap]))
-        (catch Exception _ nil))
+  (or (swallow/attempt-ex (when-let [f (requiring-resolve 'hive-mcp.config.core/get-in-config)]
+          (f [:hivemind :shout-message-cap])))
       default-shout-message-cap))
 
 (defn cap-message
@@ -584,9 +582,7 @@
 (defn- asker-parent-id
   "Spawner of `agent-id` per the slave registry, or nil when unknown."
   [agent-id]
-  (try
-    (:slave/parent (queries/get-slave-by-name-or-id agent-id))
-    (catch Exception _ nil)))
+  (swallow/attempt-ex (:slave/parent (queries/get-slave-by-name-or-id agent-id))))
 
 ;; =============================================================================
 ;; Ask: moved to hive-agent.swarm.hivemind.ask. These delegate there and hand
