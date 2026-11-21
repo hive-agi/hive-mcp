@@ -11,7 +11,7 @@
             [hive-test.trifecta :refer [deftrifecta]]
             [hive-mcp.test.stub.memory-store :as ms]
             [hive-mcp.tools.memory.migration.import :as import]
-            [hive-spi.memory.registry :as registry]))
+            [hive-mcp.test-support.registry-isolation :as registry-isolation]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -89,6 +89,23 @@
               (is (= 0 (:imported r2)))
               (is (= 3 (get-in r2 [:skipped :total]))))))))))
 
+(defn- with-store
+  "Run F with STORE installed as :default. Refuses a running addon server
+   before the install and puts the exact prior slot map back in one atomic
+   swap; the global reset-registry! is never called."
+  [store f]
+  (registry-isolation/with-restored-store-registry
+    (fn []
+      (ms/install! store)
+      (f))))
+
+(deftest with-store-cannot-clobber-a-live-registry
+  ;; Test isolation (card 20260629165759-7b9fd43c): import-write-outcome called
+  ;; the global reset-registry! in finally and never refused an addon server.
+  (is (= registry-isolation/isolated-fixture-report
+         (registry-isolation/fixture-isolation-report
+          (fn [f] (with-store (ms/->stub) f))))))
+
 (defn- import-write-outcome
   "Exercise import-entry! and the JSON count through an injected memory write port."
   [{:keys [refuse?]}]
@@ -97,15 +114,13 @@
                                              (if refuse?
                                                {:success? false :error "store refused"}
                                                (:id entry)))})
-        prior (registry/registered-stores)]
-    (try
-      (ms/install! store)
-      (let [body (json/read-str (:text (import/handle-import-json {:project-id "hive" :legacy-dir root}))
-                                :key-fn keyword)]
-        (select-keys body [:imported :failed]))
-      (finally
-        (registry/reset-registry!)
-        (doseq [[k s] prior] (registry/register-store! k s))))))
+        out   (atom nil)]
+    (with-store store
+      (fn []
+        (let [body (json/read-str (:text (import/handle-import-json {:project-id "hive" :legacy-dir root}))
+                                  :key-fn keyword)]
+          (reset! out (select-keys body [:imported :failed])))))
+    @out))
 
 (deftrifecta import-counts-refused-write
   hive-mcp.tools.memory.migration.import-test/import-write-outcome
