@@ -282,46 +282,59 @@
                                         (keep (fn [[_ {:keys [out]}]] (not-empty (str/trim out)))
                                               fetched)))))))
 
+(defn- cli-stage-verify
+  "Plain-git :magit/stage-verify: `add` the PATHS, then report whether the
+   index holds any of them as a JSON status (missing / empty / ok)."
+  [{:keys [directory paths]}]
+  (if-let [missing (first (remove #(exists-follow? (.getPath (java.io.File. ^String directory ^String %)))
+                                  paths))]
+    (result/ok (json/write-str {:status "missing" :path missing}))
+    (let [added (git! directory (into ["add" "--"] paths))]
+      (if-not (zero? (:exit added))
+        (git-ok added :magit/stage-failed)
+        (let [staged (git! directory (into ["diff" "--cached" "--name-only" "--"] paths))]
+          (result/ok (json/write-str {:status (if (str/blank? (:out staged)) "empty" "ok")})))))))
+
+(defn- cli-feature-branches
+  "Plain-git :magit/feature-branches: local feature|fix|feat branches as JSON."
+  [{:keys [directory]}]
+  (let [{:keys [current local]} (cli-branches directory)]
+    (result/ok (json/write-str
+                {:current current
+                 :feature_branches (filterv #(re-find #"^(feature|fix|feat)/" %) local)}))))
+
+(def ^:private cli-op-table
+  "Closed dispatch table: op -> (fn [m timeout-ms]) running the plain-git twin."
+  {:magit/stage
+   (fn [{:keys [directory files]} _]
+     (git-ok (git! directory (if (= :all files) ["add" "-A"] (into ["add" "-A" "--"] files)))
+             :magit/stage-failed))
+   :magit/stage-verify (fn [m _] (cli-stage-verify m))
+   :magit/commit
+   (fn [{:keys [directory all message]} _]
+     (git-ok (git! directory (cond-> ["commit"] all (conj "-a") true (conj "-F" "-")) message)
+             :magit/commit-failed))
+   :magit/status (fn [{:keys [directory]} _] (cli-status directory))
+   :magit/branches (fn [{:keys [directory]} _] (result/ok (json/write-str (cli-branches directory))))
+   :magit/log (fn [{:keys [directory] :as m} _]
+                (result/ok (json/write-str (recent-commits directory (or (:count m) 10)))))
+   :magit/diff (fn [{:keys [directory target]} _] (cli-diff directory target))
+   :magit/feature-branches (fn [m _] (cli-feature-branches m))
+   :magit/push (fn [m timeout-ms] (cli-push m timeout-ms))
+   :magit/pull (fn [{:keys [directory]} timeout-ms]
+                 (git-ok (git! directory ["pull" "--no-edit"] nil (or timeout-ms remote-timeout-ms))
+                         :magit/pull-failed))
+   :magit/fetch (fn [m timeout-ms] (cli-fetch m timeout-ms))})
+
 (defn- cli-op
   "Plain-git twin of every closed :magit/* op: the backend for the remote ops,
    and the failover for the others when the editor vessel cannot run them (no
    Emacs, as for a coordinator in tmux, or an Emacs whose bridge did not load).
    nil for an op it does not know."
   ([op] (cli-op op nil))
-  ([{:keys [op directory files paths message all target] :as m} timeout-ms]
-   (case op
-     :magit/stage
-     (git-ok (git! directory (if (= :all files) ["add" "-A"] (into ["add" "-A" "--"] files)))
-             :magit/stage-failed)
-
-     :magit/stage-verify
-     (if-let [missing (first (remove #(exists-follow? (.getPath (java.io.File. ^String directory ^String %)))
-                                     paths))]
-       (result/ok (json/write-str {:status "missing" :path missing}))
-       (let [added (git! directory (into ["add" "--"] paths))]
-         (if-not (zero? (:exit added))
-           (git-ok added :magit/stage-failed)
-           (let [staged (git! directory (into ["diff" "--cached" "--name-only" "--"] paths))]
-             (result/ok (json/write-str {:status (if (str/blank? (:out staged)) "empty" "ok")}))))))
-
-     :magit/commit
-     (git-ok (git! directory (cond-> ["commit"] all (conj "-a") true (conj "-F" "-")) message)
-             :magit/commit-failed)
-
-     :magit/status (cli-status directory)
-     :magit/branches (result/ok (json/write-str (cli-branches directory)))
-     :magit/log (result/ok (json/write-str (recent-commits directory (or (:count m) 10))))
-     :magit/diff (cli-diff directory target)
-     :magit/feature-branches
-     (let [{:keys [current local]} (cli-branches directory)]
-       (result/ok (json/write-str
-                   {:current current
-                    :feature_branches (filterv #(re-find #"^(feature|fix|feat)/" %) local)})))
-     :magit/push (cli-push m timeout-ms)
-     :magit/pull (git-ok (git! directory ["pull" "--no-edit"] nil (or timeout-ms remote-timeout-ms))
-                         :magit/pull-failed)
-     :magit/fetch (cli-fetch m timeout-ms)
-     nil)))
+  ([{:keys [op] :as m} timeout-ms]
+   (when-let [run (get cli-op-table op)]
+     (run m timeout-ms))))
 
 (def ^:private cli-backed-ops
   "Every op `cli-op` can run."
@@ -940,6 +953,70 @@
                  (empty? (tracked-under root %)))
            paths))
 
+(defn- split-cli-paths
+  "Pure: partition PATHS into `{:cli [...] :editor [...]}`. CLI paths are the
+   ones staged on the git CLI with --literal-pathspecs (deletions, symlinks
+   and anything git or Magit would read as a pattern); the rest go through the
+   editor's stage-verify."
+  [paths root]
+  (let [cli (vec (distinct (concat (cli-staged paths root)
+                                   (filter #(re-find pathspec-magic %) paths))))]
+    {:cli cli
+     :editor (vec (remove (set cli) paths))}))
+
+(defn- stage-split-paths
+  "Boundary: stage the CLI half, then the editor half, of a split path set.
+   Result of the stage; a deletion staged on the CLI counts as 'at least one
+   named path staged' when the editor half finds nothing more to stage."
+  [{:keys [cli editor]} paths root timeout-ms]
+  (let [r (if (seq cli) (stage-literal-cli cli root) (result/ok cli))]
+    (if (and (seq editor) (find r :ok))
+      (let [v (stage-verify editor root timeout-ms)]
+        (if (and (seq cli) (= :magit/nothing-staged (:error v)))
+          (result/ok paths)
+          v))
+      r)))
+
+(defn- path-not-found-error
+  "Pure: the :magit/path-not-found error Result for UNKNOWN under ROOT."
+  [root unknown]
+  (result/err :magit/path-not-found
+              {:message (str ":magit/path-not-found - no such path under " root ": " unknown
+                             " (not on disk, not in the index, not in HEAD). Next: check the spelling;"
+                             " paths are read literally, never as patterns.")}))
+
+(defn- nothing-staged-error
+  "Pure: the :magit/nothing-staged error Result for PATHS."
+  [paths]
+  (result/err :magit/nothing-staged
+              {:message (str ":magit/nothing-staged - staging left the index empty for "
+                             (str/join " " paths)
+                             "; refusing to commit what was already staged")}))
+
+(defn- verify-staged-scope
+  "Boundary: judge a successful stage against the index snapshot SNAP.
+   (ok where) when only the named PATHS changed and something is staged;
+   otherwise the index is put back as it was and an error Result returns."
+  [where r root snap paths]
+  (let [outside (when (find r :ok) (touched-outside root snap paths))
+        staged-any (when (and (find r :ok) (empty? outside))
+                     (seq (git-lines root (into ["diff" "--cached" "--name-only" "--"] paths))))]
+    (cond
+      (not (find r :ok)) (do (restore-index! root snap) r)
+      (seq outside) (do (restore-index! root snap) (scope-violation outside))
+      (not staged-any) (do (restore-index! root snap) (nothing-staged-error paths))
+      :else (result/ok where))))
+
+(defn- stage-resolved-paths
+  "Boundary: stage already-resolved PATHS under ROOT with an index snapshot
+   taken first, so a refused stage leaves nothing behind."
+  [where paths root timeout-ms]
+  (if-let [unknown (first (unknown-paths paths root))]
+    (path-not-found-error root unknown)
+    (let [snap (snapshot-index root)
+          r (stage-split-paths (split-cli-paths paths root) paths root timeout-ms)]
+      (verify-staged-scope where r root snap paths))))
+
 (defn- stage-explicit
   "Stage the caller's PATHS for a commit, each read literally and resolved
    against the repository root (see `resolve-paths`).
@@ -959,41 +1036,10 @@
     (if-not (find res :ok)
       res
       (let [{:keys [root paths resolved?] :as where} (:ok res)]
-        (if-not resolved?
+        (if resolved?
+          (stage-resolved-paths where paths root timeout-ms)
           (let [r (stage-verify paths dir timeout-ms)]
-            (if (find r :ok) (result/ok where) r))
-          (if-let [unknown (first (unknown-paths paths root))]
-            (result/err :magit/path-not-found
-                        {:message (str ":magit/path-not-found - no such path under " root ": " unknown
-                                       " (not on disk, not in the index, not in HEAD). Next: check the spelling;"
-                                       " paths are read literally, never as patterns.")})
-            (let [snap (snapshot-index root)
-                  cli (vec (distinct (concat (cli-staged paths root)
-                                             (filter #(re-find pathspec-magic %) paths))))
-                  rest-paths (vec (remove (set cli) paths))
-                  r (cond-> (if (seq cli) (stage-literal-cli cli root) (result/ok cli))
-                      (seq rest-paths)
-                      (as-> r (if (find r :ok)
-                                (let [v (stage-verify rest-paths root timeout-ms)]
-                                  ;; "at least one named path staged": a deletion
-                                  ;; staged above counts, the final check decides.
-                                  (if (and (seq cli) (= :magit/nothing-staged (:error v)))
-                                    (result/ok paths)
-                                    v))
-                                r)))
-                  outside (when (find r :ok) (touched-outside root snap paths))
-                  staged-any (when (and (find r :ok) (empty? outside))
-                               (seq (git-lines root (into ["diff" "--cached" "--name-only" "--"] paths))))]
-              (cond
-                (not (find r :ok)) (do (restore-index! root snap) r)
-                (seq outside) (do (restore-index! root snap) (scope-violation outside))
-                (not staged-any)
-                (do (restore-index! root snap)
-                    (result/err :magit/nothing-staged
-                                {:message (str ":magit/nothing-staged - staging left the index empty for "
-                                               (str/join " " paths)
-                                               "; refusing to commit what was already staged")}))
-                :else (result/ok where)))))))))
+            (if (find r :ok) (result/ok where) r)))))))
 
 (defn- ignored-paths
   "The root-relative PATHS that are untracked and gitignored."
