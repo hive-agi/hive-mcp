@@ -108,12 +108,7 @@
        [:=> [:cat MapRef :any] :any]
        [:=> [:cat MapRef :any :any] :any]])
 
-(defn reg-has?
-  "True when `registry` (an IRegistry) holds an entry under `k`."
-  [registry k]
-  (contains? (reg-snapshot registry) k))
 
-(m/=> reg-has? [:=> [:cat RegistryValue :any] :boolean])
 
 ;;; ============================================================================
 ;;; IRegistry — a keyed multi-impl registry
@@ -189,6 +184,13 @@
   "Any slot `watch-slot!` can watch: a SingleSlot or a MultiSlot, both of
    which keep their impls in a :state atom."
   [:or SlotValue RegistryValue])
+
+(defn reg-has?
+  "True when `registry` (an IRegistry) holds an entry under `k`."
+  [registry k]
+  (contains? (reg-snapshot registry) k))
+
+(m/=> reg-has? [:=> [:cat RegistryValue :any] :boolean])
 
 (m/=> multi-slot [:=> [:cat MultiSlotConfig] RegistryValue])
 
