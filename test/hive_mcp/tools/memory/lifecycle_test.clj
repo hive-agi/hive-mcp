@@ -7,7 +7,12 @@
             [hive-mcp.tools.memory.lifecycle :as lifecycle]
             [hive-mcp.crystal.core :as crystal]
             [hive-mcp.test.stub.memory-store :as stub]
-            [hive-spi.memory.registry :as registry]
+            [hive-mcp.test-support.registry-isolation :as registry-isolation]
+            [hive-mcp.knowledge-graph.connection :as kg-conn]
+            [hive-mcp.knowledge-graph.connection.detect :as kg-detect]
+            [hive-mcp.knowledge-graph.connection.store :as kg-store]
+            [hive-mcp.knowledge-graph.store.harness :as kg-harness]
+            [hive-mcp.memory.temporal :as temporal]
             [hive-mcp.knowledge-graph.edges :as kg-edges]
             [hive-mcp.context.request :as ctx]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
@@ -47,8 +52,27 @@
   {:id id :type "note" :duration "ephemeral" :expires "2020-01-01T00:00:00Z"
    :tags ["scope:project:hive-mcp"]})
 
+(defn- with-temp-kg
+  "Run F against a throwaway KG store bound thread-locally (*test-store*), so
+   apply-decay!'s temporal dual-write (record-mutation!) never resolves the
+   configured KG backend: on a host whose config selects Datahike that is the
+   production database. A Datahike store in a private java.io.tmpdir directory
+   (deleted afterwards) when the driver is on the classpath, else an in-memory
+   DataScript one. Writes run synchronously on the calling thread, so the
+   coalescing writer pool (which cannot see the binding) is never involved."
+  [f]
+  (let [datahike (kg-harness/datahike-factory)
+        factory  (if (kg-harness/available? datahike) datahike (kg-harness/datascript-factory))]
+    (kg-harness/with-disposable-store factory
+                                      (kg-harness/thread-local-isolation :sync-writes? true)
+                                      f)))
+
 (defmacro with-decay-store
   "Install a stub memory store for the body, then restore the registry.
+   Refuses a running addon server before any write (no memory store and no KG
+   store is touched), runs the body against a temp-only KG store (see
+   with-temp-kg) and puts the prior registry slot map back in one atomic swap,
+   never through the global reset-registry!.
 
    Options:
      :entries — live entries the store returns from query-entries
@@ -56,17 +80,40 @@
      :faults  — {port-op message} injected into an observing decorator
      :bind    — symbol bound to the installed store inside the body"
   [{:keys [entries expired faults bind] :or {bind (gensym "store")}} & body]
-  `(let [prior# (registry/registered-stores)
-         ~bind  (cond-> (stub/->stub (concat ~entries ~expired))
-                  true (stub/->observing (or ~faults {})))]
-     (try
-       (stub/install! ~bind)
-       (with-redefs [kg-edges/remove-edges-for-node! (fn [_#] 0)
-                     ctx/current-directory (constantly "/home/test/hive-mcp")]
-         ~@body)
-       (finally
-         (registry/reset-registry!)
-         (doseq [[k# s#] prior#] (registry/register-store! k# s#))))))
+  `(registry-isolation/with-restored-store-registry
+    (fn []
+      (with-temp-kg
+        (fn []
+          (let [~bind (cond-> (stub/->stub (concat ~entries ~expired))
+                        true (stub/->observing (or ~faults {})))]
+            (stub/install! ~bind)
+            (with-redefs [kg-edges/remove-edges-for-node! (fn [_#] 0)
+                          ctx/current-directory (constantly "/home/test/hive-mcp")]
+              ~@body)))))))
+
+(deftest with-decay-store-cannot-clobber-a-live-registry-or-kg-test
+  ;; Test isolation (card 20260629165759-7b9fd43c): with-decay-store called the
+  ;; global reset-registry! in finally, never refused a running addon server,
+  ;; and let apply-decay!'s temporal dual-write open the configured KG backend
+  ;; (the production Datahike database on a default config).
+  (is (= registry-isolation/isolated-fixture-report
+         (registry-isolation/fixture-isolation-report
+          (fn [f] (with-decay-store {:entries []} (f))))))
+  (testing "the temporal dual-write lands in a temp KG store, never the configured backend"
+    (let [detected (atom 0)]
+      (with-redefs [kg-detect/detect-backend (fn [] (swap! detected inc) :datahike)]
+        (with-decay-store {:entries [(make-test-entry :id "stale-kg"
+                                                      :access-count 0
+                                                      :last-accessed (month-ago-str 30))]}
+          (is (some? kg-store/*test-store*) "a thread-local temp KG store is bound")
+          (is (identical? kg-store/*test-store* (kg-store/ensure-store!))
+              "every KG read and write resolves the temp store")
+          (is (= 1 (:decayed (lifecycle/run-decay-cycle! {:directory "/home/test/hive-mcp"}))))
+          (when (kg-conn/temporal-store?)
+            ;; Only the temp Datahike store is temporal; DataScript records nothing.
+            (is (pos? (temporal/mutation-count "stale-kg"))
+                "the decay mutation was recorded in the temp store"))))
+      (is (zero? @detected) "the configured KG backend was never resolved"))))
 
 ;; =============================================================================
 ;; run-decay-cycle! Tests
