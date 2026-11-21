@@ -1,0 +1,8 @@
+{:full
+ "## Project Context (Auto-Injected)\n\n**Project**: x\n\n### Git Status\n\n- **Branch**: none\n- **Last commit**: none\n",
+ :explicit-full= true,
+ :ref-cold-falls-back-to-full true,
+ :ref-table
+ "## Project Context (Ref Mode — Auto-Injected)\n\n**Project**: x\n\n**Mode**: ref (context-store references, not full text)\n**Action**: Fetch these refs via `session context-get` to hydrate your context.\n\n### Context References\n\n| Category | Context ID |\n|----------|------------|\n| axioms | `ctx-ID` |\n| decisions | `ctx-ID` |\n\n### How to Hydrate\n\nFetch each ref via the session tool:\n```\nsession {\"command\": \"context-get\", \"ctx_id\": \"ctx-ID\"}\nsession {\"command\": \"context-get\", \"ctx_id\": \"ctx-ID\"}\n```\n\n**TTL Warning**: These refs expire ~1 hour after catchup. If expired, run `/catchup` to refresh.\n\n### Git Status\n- **Branch**: none\n- **Last commit**: none\n",
+ :ref-recon
+ "## Reconstructed\n(:axioms :decisions)[\"decisions-1\"]\n\n### Git Status\n- **Branch**: none\n- **Last commit**: none\n"}

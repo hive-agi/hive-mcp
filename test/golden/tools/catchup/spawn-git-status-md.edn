@@ -1,0 +1,7 @@
+{:blank
+ "\n\n### Git Status\n- **Branch**: unknown\n- **Last commit**: unknown\n",
+ :clean
+ "\n\n### Git Status\n- **Branch**: main\n- **Last commit**: abc\n",
+ :dirty
+ "\n\n### Git Status\n- **Branch**: dev\n- **Uncommitted changes**: yes\n- **Last commit**: unknown\n",
+ :none nil}
