@@ -5,7 +5,8 @@
    requiring-resolve — hive-mcp keeps no compile dependency on hive-workflows."
   (:require [clojure.edn :as edn]
             [hive-mcp.tools.core :as tc :refer [mcp-error mcp-json]]
-            [malli.core :as m]))
+            [malli.core :as m]
+            [hive-mcp.resilience.swallow :as swallow]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -17,8 +18,7 @@
   "Resolve a hive-workflows.mcp fn and apply it, or return the absent sentinel
    when hive-workflows is off the runtime classpath."
   [fn-name & args]
-  (if-let [f (try (requiring-resolve (symbol "hive-workflows.mcp" (name fn-name)))
-                  (catch Throwable _ nil))]
+  (if-let [f (swallow/attempt (requiring-resolve (symbol "hive-workflows.mcp" (name fn-name))))]
     (apply f args)
     sentinel-absent))
 

@@ -32,7 +32,8 @@
             [hive-mcp.knowledge-graph.connection :as kg-conn]
             [hive-mcp.context.request :as ctx]
             [taoensso.timbre :as log] [hive-dsl.result :refer [rescue]]
-            [hive-mcp.extensions.record-hooks :as record-hooks]))
+            [hive-mcp.extensions.record-hooks :as record-hooks]
+            [hive-mcp.resilience.swallow :as swallow]))
 
 ;; =============================================================================
 ;; Mutation ID Generation
@@ -292,10 +293,8 @@
    the same default watermarks {:soft 0.80 :hard 0.92}."
   []
   (or
-   (try
-     (when-let [check (requiring-resolve 'hive-cache.mem-guard/check)]
-       (:level (check nil nil)))
-     (catch Throwable _ nil))
+   (swallow/attempt (when-let [check (requiring-resolve 'hive-cache.mem-guard/check)]
+       (:level (check nil nil))))
    (try
      (let [rt   (Runtime/getRuntime)
            used (- (.totalMemory rt) (.freeMemory rt))

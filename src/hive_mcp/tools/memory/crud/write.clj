@@ -30,7 +30,8 @@
             [hive-mcp.tools.memory.crud.edge-outcome :as edge-outcome]
             [hive-mcp.extensions.registry :as ext]
             [malli.core :as m]
-            [hive-mcp.memory.write-latency :as write-latency]))
+            [hive-mcp.memory.write-latency :as write-latency]
+            [hive-mcp.resilience.swallow :as swallow]))
 
 (def ^:const ^:private memory-write-timeout-ms
   "Timeout budget for a single memory write (Chroma add + KG tx + fetch).
@@ -329,7 +330,7 @@
   "Resolve a `hive-spi.role.card` var, or nil when the role SPI leaf is not
    on the classpath. Keeps this ns loadable without a hard compile-time dep."
   [sym]
-  (try (requiring-resolve sym) (catch Throwable _ nil)))
+  (swallow/attempt (requiring-resolve sym)))
 
 (defonce ^:private role-card-validator (atom nil))
 

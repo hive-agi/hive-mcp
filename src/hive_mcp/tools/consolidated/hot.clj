@@ -32,7 +32,8 @@
             [malli.core :as m]
             [malli.error :as me]
             [clojure.string :as str]
-            [hive-mcp.tools.consolidated.hot-eject-fallback :as eject-fallback]))
+            [hive-mcp.tools.consolidated.hot-eject-fallback :as eject-fallback]
+            [hive-mcp.resilience.swallow :as swallow]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -46,7 +47,7 @@
   "Resolve a var, or nil. Re-resolved per call so a pin bump takes effect without
    restarting this namespace."
   [sym]
-  (try (requiring-resolve sym) (catch Throwable _ nil)))
+  (swallow/attempt (requiring-resolve sym)))
 
 (defn- bridge-available? []
   (some? (soft 'hive-addon.hot/reload-addon!)))
@@ -95,8 +96,7 @@
    image — the baseline a first reload should measure change against, not the
    moment somebody first ran `hot`."
   []
-  (try (.getStartTime (java.lang.management.ManagementFactory/getRuntimeMXBean))
-       (catch Throwable _ nil)))
+  (swallow/attempt (.getStartTime (java.lang.management.ManagementFactory/getRuntimeMXBean))))
 
 (defn ensure-hot-init!
   "Initialize hive-hot with THIS system's addon source dirs, or extend it.

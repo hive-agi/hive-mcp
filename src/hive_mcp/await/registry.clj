@@ -29,7 +29,8 @@
             [hive-mcp.await.domain :as domain]
             [hive-mcp.await.ports :as ports]
             [malli.core :as m]
-            [taoensso.timbre :as log])
+            [taoensso.timbre :as log]
+            [hive-mcp.resilience.swallow :as swallow])
   (:import (java.io File RandomAccessFile)
            (java.nio.channels FileChannel FileLock OverlappingFileLockException)
            (java.nio.file Files StandardCopyOption CopyOption)
@@ -258,8 +259,8 @@
   "Release the lock `held` (an acquire-lock! answer). Never throws."
   [held]
   (when-let [{:keys [^FileChannel channel ^FileLock lock]} held]
-    (try (when (.isValid lock) (.release lock)) (catch Throwable _ nil))
-    (try (when (.isOpen channel) (.close channel)) (catch Throwable _ nil)))
+    (swallow/attempt (when (.isValid lock) (.release lock)))
+    (swallow/attempt (when (.isOpen channel) (.close channel))))
   :released)
 
 (m/=> release-lock! [:=> [:cat Registry] [:= :released]])
@@ -697,8 +698,8 @@
   [reg]
   (doseq [id (keys (:closers @(:state reg)))] (release! reg id))
   (doseq [id (keys (:timers @(:state reg)))] (release! reg id))
-  (try (.shutdownNow ^ScheduledExecutorService (:executor reg)) (catch Throwable _ nil))
-  (try (.shutdownNow ^ExecutorService (:resume-executor reg)) (catch Throwable _ nil))
+  (swallow/attempt (.shutdownNow ^ScheduledExecutorService (:executor reg)))
+  (swallow/attempt (.shutdownNow ^ExecutorService (:resume-executor reg)))
   (release-lock! (:lock @(:state reg)))
   (swap! (:state reg) assoc :lock nil)
   :shutdown)

@@ -31,7 +31,8 @@
             [taoensso.timbre :as log]
             [hive-mcp.config.headless-defaults :as headless-defaults]
             [malli.core :as m]
-            [hive-mcp.agent.ling.strategy :as strategy]))
+            [hive-mcp.agent.ling.strategy :as strategy]
+            [hive-mcp.resilience.swallow :as swallow]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -235,8 +236,7 @@
    META-INF discovery and `register-headless!`; the operator picks
    among them in config.edn."
   [provider-kw]
-  (let [configured (try (headless-defaults/default-backend)
-                        (catch Throwable _ nil))]
+  (let [configured (swallow/attempt (headless-defaults/default-backend))]
     (cond
       ;; :auto sentinel — registry-driven preference.
       (or (nil? configured) (headless-defaults/auto? configured))
@@ -275,8 +275,7 @@
   "`backend-gap` of the configured default backend against this process's
    registry. An unreadable config reads as :auto."
   []
-  (backend-gap (try (headless-defaults/default-backend)
-                    (catch Throwable _unreadable-config-reads-as-auto nil))
+  (backend-gap (swallow/attempt (headless-defaults/default-backend))
                (registered-headless)))
 
 (m/=> missing-configured-backend

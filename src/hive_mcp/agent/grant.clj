@@ -19,7 +19,8 @@
             [clojure.data.json :as json]
             [malli.core :as m]
             [taoensso.timbre :as log]
-            [hive-mcp.extensions.soft :as ext-soft]))
+            [hive-mcp.extensions.soft :as ext-soft]
+            [hive-mcp.resilience.swallow :as swallow]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -56,7 +57,7 @@
    check below takes the port as a parameter."
   [id]
   (when-let [f (soft 'hive-mcp.swarm.datascript.queries/get-slave)]
-    (try (f id) (catch Throwable _ nil))))
+    (swallow/attempt (f id))))
 
 ;; =============================================================================
 ;; Lineage (pure over get-slave)

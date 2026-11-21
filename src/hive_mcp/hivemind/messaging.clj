@@ -25,7 +25,8 @@
             [hive-mcp.channel.audience :as audience]
             [hive-mcp.channel.broadcast-ledger :as bledger]
             [hive-mcp.swarm.delegate :as delegate]
-            [malli.core :as m])
+            [malli.core :as m]
+            [hive-mcp.resilience.swallow :as swallow])
   (:import [java.lang Exception]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -604,8 +605,7 @@
                                     [:hivemind :ask-popup?])))
                       (catch Exception _ true))]
     (when enabled?
-      (try (requiring-resolve 'hive-notify.registry/ask-first!)
-           (catch Throwable _ nil)))))
+      (swallow/attempt (requiring-resolve 'hive-notify.registry/ask-first!)))))
 
 (defn- ask-ports
   "The host effects an ask needs. Each is read through its var at call time,

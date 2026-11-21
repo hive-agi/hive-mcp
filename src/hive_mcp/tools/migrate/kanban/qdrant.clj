@@ -22,7 +22,8 @@
             [hive-mcp.tools.migrate.kanban.ports :as ports]
             [hive-mcp.tools.migrate.kanban.pure :as pure]
             [hive-mcp.tools.migrate.optional :as opt]
-            [malli.core :as m])
+            [malli.core :as m]
+            [hive-mcp.resilience.swallow :as swallow])
   (:import [java.util UUID]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
@@ -51,8 +52,8 @@
     (map? c)        c
     (not (string? c)) c
     :else
-    (or (try (json/read-str c :key-fn keyword) (catch Throwable _ nil))
-        (try (edn/read-string c)               (catch Throwable _ nil))
+    (or (swallow/attempt (json/read-str c :key-fn keyword))
+        (swallow/attempt (edn/read-string c))
         c)))
 
 (defn- decoded-point->entry

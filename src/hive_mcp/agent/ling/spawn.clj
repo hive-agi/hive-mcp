@@ -22,7 +22,8 @@
             [hive-mcp.swarm.datascript :as ds]
             [malli.core :as m]
             [hive-mcp.context.request :as request-ctx]
-            [hive-mcp.channel.audience :as audience]))
+            [hive-mcp.channel.audience :as audience]
+            [hive-mcp.resilience.swallow :as swallow]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -360,8 +361,7 @@
   "hive-agent's registry row filter chain, resolved softly so core needs no
    swarm addon: nil when hive-agent (or its shout-filters ns) is absent."
   []
-  (try (requiring-resolve 'hive-agent.events.shout-filters/row!)
-       (catch Throwable _ nil)))
+  (swallow/attempt (requiring-resolve 'hive-agent.events.shout-filters/row!)))
 
 (defn- register-slave-row!
   "Persist a slave row through the spawn store, first making sure its parent

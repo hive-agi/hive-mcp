@@ -22,7 +22,8 @@
             [clojure.string :as str]
             [taoensso.timbre :as log]
             [hive-mcp.memory.write-events :as write-events]
-            [malli.core :as m]))
+            [malli.core :as m]
+            [hive-mcp.resilience.swallow :as swallow]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -217,8 +218,7 @@
     (or (when-let [e (mem-proto/get-entry default id)]
           [default e])
         (some (fn [s]
-                (when-let [e (try (mem-proto/get-entry s id)
-                                  (catch Throwable _ nil))]
+                (when-let [e (swallow/attempt (mem-proto/get-entry s id))]
                   [s e]))
               others))))
 
@@ -241,7 +241,7 @@
   "Fresh read of `id`, marked `:readback :verified`, when it already shows
    `updates`; nil otherwise or when the read itself fails."
   [store id updates]
-  (let [e (try (mem-proto/get-entry store id) (catch Throwable _ nil))]
+  (let [e (swallow/attempt (mem-proto/get-entry store id))]
     (when (write-visible? e updates)
       (assoc e :readback :verified))))
 

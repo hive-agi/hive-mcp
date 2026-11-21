@@ -27,7 +27,8 @@
             [clojure.string :as str]
             [taoensso.timbre :as log]
             [hive-mcp.tools.core :as tcore]
-            [malli.core :as m]))
+            [malli.core :as m]
+            [hive-mcp.resilience.swallow :as swallow]))
 
 ;; =============================================================================
 ;; Query Execution
@@ -461,8 +462,7 @@
       (tcore/mcp-error (str "Unknown transcript command: " command)))))
 
 (defn- soft-resolve [sym]
-  (try (requiring-resolve sym)
-       (catch Throwable _hive-agent-absent nil)))
+  (swallow/attempt (requiring-resolve sym)))
 
 (defn hive-agent-runs
   "The `:runs` port over hive-agent's configured chat-point store

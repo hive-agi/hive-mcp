@@ -12,7 +12,8 @@
             [hive-mcp.tools.core :as tcore]
             [hive-mcp.tools.result-bridge :as rb]
             [taoensso.timbre :as log]
-            [malli.core :as m]))
+            [malli.core :as m]
+            [hive-mcp.resilience.swallow :as swallow]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -86,7 +87,7 @@
    missing, rather than throwing an unresolved-symbol error at load."
   [sym]
   (fn [params]
-    (if-let [h (try (requiring-resolve sym) (catch Throwable _ nil))]
+    (if-let [h (swallow/attempt (requiring-resolve sym))]
       (h params)
       (tcore/mcp-error (str "project verb unavailable: " sym
                             " needs the Emacs domain (hive-emacs)")))))
@@ -122,7 +123,7 @@
      (let [full (str (:command params))
            pfx  (str subdomain " ")
            sub  (if (str/starts-with? full pfx) (subs full (count pfx)) full)]
-       (if-let [h (try (requiring-resolve sym) (catch Throwable _ nil))]
+       (if-let [h (swallow/attempt (requiring-resolve sym))]
          (h (assoc params :command sub))
          (tcore/mcp-error (str subdomain " not available (handler unresolved)")))))})
 

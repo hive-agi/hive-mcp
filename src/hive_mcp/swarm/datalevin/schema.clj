@@ -3,7 +3,8 @@
 
    Compat shim: moved to hive-agent.swarm.datalevin.schema in hive-agent. Every public var delegates there
    through requiring-resolve; hive-mcp does not compile-depend on hive-agent."
-  (:require [hive-mcp.swarm.delegate :as delegate]))
+  (:require [hive-mcp.swarm.delegate :as delegate]
+            [hive-mcp.resilience.swallow :as swallow]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -18,8 +19,7 @@
    made while that cycle is still loading) leaves the ports on their
    noops until a later call installs them."
   [sym]
-  (try ((requiring-resolve 'hive-mcp.swarm.adapters.boot/ensure!))
-       (catch Throwable _ nil))
+  (swallow/attempt ((requiring-resolve 'hive-mcp.swarm.adapters.boot/ensure!)))
   (impl sym))
 
 (def agent-types @(impl 'agent-types))
