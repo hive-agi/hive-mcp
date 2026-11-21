@@ -398,6 +398,131 @@
 
 (m/=> load-extensions-via-mount! [:=> [:cat] [:maybe :map]])
 
+(defn select-init-namespaces
+  "Pure: the init namespaces that self-register this boot, deduplicated.
+   When the composer ran (`mounted?`) manifest-covered namespaces are already
+   mounted, so only the hardcoded leftovers remain; otherwise the manifests'
+   init-ns come first, then the hardcoded list."
+  [ordered mounted? hardcoded]
+  (let [manifest-ns (into [] (map (comp symbol :addon/init-ns)) ordered)]
+    (if mounted?
+      (vec (remove (set manifest-ns) hardcoded))
+      (vec (distinct (concat manifest-ns hardcoded))))))
+
+(m/=> select-init-namespaces
+      [:=> [:cat [:maybe [:sequential :map]] :boolean [:sequential :symbol]]
+       [:vector :symbol]])
+
+(defn summarize-init-results
+  "Pure: fold the {init-ns -> result-or-nil} map of the self-registration step
+   into {:successful-ns #{..} :init-total n}."
+  [init-results]
+  {:successful-ns (into #{} (keep (fn [[ns-sym result]] (when result ns-sym)))
+                        init-results)
+   :init-total    (reduce + 0 (keep :total (vals init-results)))})
+
+(m/=> summarize-init-results
+      [:=> [:cat [:map-of :symbol :any]]
+       [:map [:successful-ns [:set :symbol]] [:init-total :int]]])
+
+(defn- self-register!
+  "Step 3: try self-registration for each init-ns (timed under boot-timing).
+   Returns {:successful-ns :init-total}."
+  [all-init-ns]
+  (let [t0           (System/nanoTime)
+        init-results (into {} (map (fn [ns-sym] [ns-sym (try-call-initializer ns-sym)]))
+                           all-init-ns)]
+    (when (boot-timing?)
+      (log/info (format "[boot-timing] addon self-registration total %9.1f ms (%d ns)"
+                        (/ (- (System/nanoTime) t0) 1e6)
+                        (count all-init-ns))))
+    (summarize-init-results init-results)))
+
+(defn- init-fallback-manifests!
+  "Step 4: for manifests whose init-ns failed, try init-from-manifest!
+   (skipped by the caller when the composer already mounted the manifests).
+   Returns the number initialized."
+  [ordered successful-ns]
+  (let [n (atom 0)]
+    (doseq [manifest-entry ordered
+            :let [ns-sym (symbol (:addon/init-ns manifest-entry))]
+            :when (not (contains? successful-ns ns-sym))
+            :when (not (addon-core/addon-registered? (:addon/id manifest-entry)))]
+      (when-let [result (manifest/init-from-manifest!
+                         manifest-entry
+                         addon-core/register-addon!
+                         addon-core/init-addon!)]
+        (when (:success? result)
+          (swap! n inc))))
+    @n))
+
+(defn- record-boot-health!
+  "Boot health: judge the roster against what was expected and say so LOUDLY
+   when it falls short (hive memory 20260901002309-05854dd7)."
+  [ordered mount-result successful-ns]
+  (rescue nil
+          (boot-health/record-roster!
+           (merge (roster-facts ordered mount-result successful-ns)
+                  (roster-expectations))
+           (roster-baseline-path))))
+
+(defn- log-load-summary!
+  [total-registered init-total ordered mounted? mount-result manifest-init-count]
+  (if (pos? total-registered)
+    (log/info "Extensions loaded:" total-registered "total capabilities"
+              "(init!:" init-total
+              ", classpath-manifests:" (count ordered)
+              ", mount-compose:" (if mounted? (count (get-in mount-result [:report :order])) 0)
+              ", manifest-fallback:" manifest-init-count ")")
+    (log/debug "No extensions found on classpath — all capabilities will use defaults")))
+
+(defn- install-core-overrides!
+  "Step 5: hive-mcp-owned handlers that must win over addons via
+   contribute-commands! / tool-registry merge semantics, so this runs AFTER
+   addon self-registration.
+     - `analysis bridge-status`   kanban 20260423132050-0b5d09a6
+     - `clojure discover` fallback kanban 20260423132055-27af713a"
+  []
+  (rescue nil
+          (require 'hive-mcp.tools.analysis-bridge)
+          (when-let [install! (resolve 'hive-mcp.tools.analysis-bridge/install!)]
+            (install!)))
+  (rescue nil
+          (require 'hive-mcp.tools.clojure-discover)
+          (when-let [install! (resolve 'hive-mcp.tools.clojure-discover/install!)]
+            (install!))))
+
+(defn- build-composite-tools!
+  "Step 6: build composite tools from addon command contributions, then
+   subscribe the reactive surface for everything contributed after this."
+  []
+  (let [composite-tools (composite/build-all-composite-tools
+                         reactive/composite-descriptions)]
+    (doseq [t composite-tools]
+      (ext/register-tool! t)
+      ;; Also register in agent registry for the in-process agentic loop
+      (rescue nil
+              (when-let [reg-fn (requiring-resolve 'hive-mcp.agent.registry/register!)]
+                (reg-fn [t]))))
+    (when (seq composite-tools)
+      (log/info "Built composite tools:" (mapv :name composite-tools))))
+  (rescue nil (reactive/install!)))
+
+(defn load-result
+  "Pure: the map `load-extensions!` returns. `total` is the capability count
+   taken before the core-override and composite steps, as it always was."
+  [registered-keys total init-total manifest-count compose-count manifest-init-count]
+  {:registered (vec registered-keys)
+   :total total
+   :sources {:initializers init-total
+             :classpath-manifests manifest-count
+             :mount-compose compose-count
+             :manifest-fallback manifest-init-count}})
+
+(m/=> load-result
+      [:=> [:cat [:maybe [:or [:sequential :any] [:set :any]]] :int :int :int :int :int]
+       [:map [:registered [:vector :any]] [:total :int] [:sources :map]]])
+
 (defn load-extensions!
   "Resolve and register all available extensions.
    Called once at startup. Thread-safe, idempotent.
@@ -422,124 +547,34 @@
 
    Returns map of {:registered [keys...] :total count :sources {...}}."
   []
-  (let [;; Step 0: host protocols first. See host-protocol-namespaces — an
-        ;; addon that reifies one cannot COMPILE until it is in the image, and
-        ;; the composer reports the result as an ordinary mount failure.
-        missing-protocols (preload-host-protocols!)
-        _ (when (seq missing-protocols)
-            (log/error "Host protocol namespaces failed to load — every addon that reifies them will be skipped"
-                       {:ns missing-protocols}))
-
-        ;; Step 1: Scan classpath for addon manifests
-        {:keys [ordered init-ns-set]}
-        (discover-addon-manifests)
-
+  ;; Step 0: host protocols first. See host-protocol-namespaces — an addon that
+  ;; reifies one cannot COMPILE until it is in the image, and the composer
+  ;; reports the result as an ordinary mount failure.
+  (when-let [missing (seq (preload-host-protocols!))]
+    (log/error "Host protocol namespaces failed to load — every addon that reifies them will be skipped"
+               {:ns (vec missing)}))
+  (let [{:keys [ordered init-ns-set]} (discover-addon-manifests)
         ;; Step 1.5 (MQ-ADOPT): gated mount-compose delegate — nil when disabled
         ;; or unavailable, in which case the legacy path below is authoritative.
-        mount-result (or (load-extensions-via-lifecycle!) (load-extensions-via-mount!))
-        mounted?     (some? mount-result)
-        manifest-ns  (into #{} (map (comp symbol :addon/init-ns)) ordered)
-
-        ;; Step 2: Merge with hardcoded list, dedup by init-ns. When the
-        ;; composer ran, manifest-covered nses are already mounted — only the
-        ;; hardcoded leftovers self-register.
-        all-init-ns (if mounted?
-                      (vec (remove manifest-ns extension-namespaces))
-                      (into (vec (distinct
-                                  (concat
-                                   (map (comp symbol :addon/init-ns) ordered)
-                                   extension-namespaces)))
-                            []))
-        _ (when (seq init-ns-set)
-            (log/debug "Init namespaces (merged)" {:count (count all-init-ns)
-                                                   :ns all-init-ns}))
-
-        ;; Step 3: Try self-registration for each init-ns
-        step3-t0     (System/nanoTime)
-        init-results (into {}
-                           (map (fn [ns-sym]
-                                  [ns-sym (try-call-initializer ns-sym)]))
-                           all-init-ns)
-        _            (when (boot-timing?)
-                       (log/info (format "[boot-timing] addon self-registration total %9.1f ms (%d ns)"
-                                         (/ (- (System/nanoTime) step3-t0) 1e6)
-                                         (count all-init-ns))))
-        successful-ns (into #{} (keep (fn [[ns-sym result]]
-                                        (when result ns-sym)))
-                            init-results)
-        init-total (reduce + 0 (keep :total (vals init-results)))
-
-        ;; Step 4: For manifests whose init-ns failed, try init-from-manifest!
-        ;; (skipped when the composer already mounted the manifests)
-        manifest-init-count
-        (atom 0)
-        _ (when-not mounted?
-            (doseq [m ordered
-                    :let [ns-sym (symbol (:addon/init-ns m))]
-                    :when (not (contains? successful-ns ns-sym))
-                    :when (not (addon-core/addon-registered? (:addon/id m)))]
-              (when-let [result (manifest/init-from-manifest!
-                                 m
-                                 addon-core/register-addon!
-                                 addon-core/init-addon!)]
-                (when (:success? result)
-                  (swap! manifest-init-count inc)))))
-
-        total-registered (count (ext/registered-keys))]
-
+        mount-result  (or (load-extensions-via-lifecycle!) (load-extensions-via-mount!))
+        mounted?      (some? mount-result)
+        all-init-ns   (select-init-namespaces ordered mounted? extension-namespaces)
+        _             (when (seq init-ns-set)
+                        (log/debug "Init namespaces (merged)" {:count (count all-init-ns)
+                                                               :ns all-init-ns}))
+        {:keys [successful-ns init-total]} (self-register! all-init-ns)
+        manifest-init-count (if mounted? 0 (init-fallback-manifests! ordered successful-ns))
+        registered-keys     (ext/registered-keys)]
     ;; Roster: which addons were discovered, their META-INF metadata + status
     (log-addon-roster! ordered successful-ns)
-
-    ;; Boot health: judge the roster against what was expected and say so
-    ;; LOUDLY when it falls short (hive memory 20260901002309-05854dd7).
-    (rescue nil
-            (boot-health/record-roster!
-             (merge (roster-facts ordered mount-result successful-ns)
-                    (roster-expectations))
-             (roster-baseline-path)))
-
-    (if (pos? total-registered)
-      (log/info "Extensions loaded:" total-registered "total capabilities"
-                "(init!:" init-total
-                ", classpath-manifests:" (count ordered)
-                ", mount-compose:" (if mounted? (count (get-in mount-result [:report :order])) 0)
-                ", manifest-fallback:" @manifest-init-count ")")
-      (log/debug "No extensions found on classpath — all capabilities will use defaults"))
-
-    ;; Step 5: Core overrides — must run AFTER addon self-registration so
-    ;; hive-mcp-owned handlers win via contribute-commands! / tool-registry
-    ;; merge semantics.
-    ;;   - `analysis bridge-status`   kanban 20260423132050-0b5d09a6
-    ;;   - `clojure discover` fallback kanban 20260423132055-27af713a
-    (rescue nil
-            (require 'hive-mcp.tools.analysis-bridge)
-            (when-let [install! (resolve 'hive-mcp.tools.analysis-bridge/install!)]
-              (install!)))
-    (rescue nil
-            (require 'hive-mcp.tools.clojure-discover)
-            (when-let [install! (resolve 'hive-mcp.tools.clojure-discover/install!)]
-              (install!)))
-
-    ;; Step 6: Build composite tools from addon command contributions, then
-    ;; subscribe the reactive surface for everything contributed after this.
-    (let [composite-tools (composite/build-all-composite-tools
-                           reactive/composite-descriptions)]
-      (doseq [t composite-tools]
-        (ext/register-tool! t)
-        ;; Also register in agent registry for the in-process agentic loop
-        (rescue nil
-                (when-let [reg-fn (requiring-resolve 'hive-mcp.agent.registry/register!)]
-                  (reg-fn [t]))))
-      (when (seq composite-tools)
-        (log/info "Built composite tools:" (mapv :name composite-tools))))
-    (rescue nil (reactive/install!))
-
-    {:registered (vec (ext/registered-keys))
-     :total total-registered
-     :sources {:initializers init-total
-               :classpath-manifests (count ordered)
-               :mount-compose (if mounted? (count (get-in mount-result [:report :order])) 0)
-               :manifest-fallback @manifest-init-count}}))
+    (record-boot-health! ordered mount-result successful-ns)
+    (log-load-summary! (count registered-keys) init-total ordered mounted?
+                       mount-result manifest-init-count)
+    (install-core-overrides!)
+    (build-composite-tools!)
+    (load-result (ext/registered-keys) (count registered-keys) init-total (count ordered)
+                 (if mounted? (count (get-in mount-result [:report :order])) 0)
+                 manifest-init-count)))
 
 (m/=> load-extensions!
       [:=> [:cat]
