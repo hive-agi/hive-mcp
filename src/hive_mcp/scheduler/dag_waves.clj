@@ -358,54 +358,73 @@
         (result/ok (assoc value :via via :resolved-by resolved-by :skipped skipped)))
       (assoc out :error (or (:error out) :dag/spawn-failed)))))
 
+(defn- plan-wave
+  "Pure: split READY-TASKS by the free slots (`max-slots` less the DISPATCHED
+   count). `{:to-dispatch [...] :available n :skipped n}`."
+  [ready-tasks max-slots dispatched]
+  (let [available (max 0 (- max-slots (count dispatched)))
+        to-dispatch (vec (take available ready-tasks))]
+    {:to-dispatch to-dispatch
+     :available available
+     :skipped (- (count ready-tasks) (count to-dispatch))}))
+
+(m/=> plan-wave [:=> [:cat [:sequential :any] :int [:maybe :map]]
+                 [:map [:to-dispatch [:vector :any]] [:available :int] [:skipped :int]]])
+
+(defn- record-dispatched!
+  "Boundary: track a dispatched task in `dag-state` (slot + wave log) and warn
+   when the preferred dispatcher was passed over. Returns the wave row."
+  [{:keys [task-id title]} ling-id {:keys [via resolved-by skipped]}]
+  (when (= :fallback resolved-by)
+    (log/warn "DAGWaves: task" task-id "dispatched via" via
+              "after the preferred dispatcher was passed over:" (pr-str skipped)))
+  (swap! dag-state update :dispatched assoc task-id ling-id)
+  (swap! dag-state update :wave-log conj
+         {:event :dispatched
+          :task-id task-id
+          :ling-id ling-id
+          :via via
+          :resolved-by resolved-by
+          :skipped skipped
+          :title title
+          :timestamp (System/currentTimeMillis)})
+  {:task-id task-id :ling-id ling-id :status :dispatched
+   :via via :resolved-by resolved-by :skipped skipped})
+
+(defn- record-failed!
+  "Boundary: mark a task whose spawn failed so it is not retried. Returns the
+   wave row."
+  [{:keys [task-id]} r]
+  (swap! dag-state update :failed conj task-id)
+  {:task-id task-id :status :failed :error (:message r)})
+
+(defn- dispatch-task!
+  "Boundary: spawn one ready task and record the outcome in `dag-state`."
+  [{:keys [task-id title role description routing] :as task} opts]
+  (let [r (spawn-ling-for-task task-id title role
+                               (cond-> (assoc opts :description description)
+                                 (seq routing) (assoc :routing routing)))]
+    (if-let [ling-id (get-in r [:ok :agent-id])]
+      (record-dispatched! task ling-id (:ok r))
+      (record-failed! task r))))
+
 (defn dispatch-wave!
   "Dispatch lings for ready tasks up to available slots. A ready task's
-   :routing (its card's tier / work class) travels with its spawn."
+   :routing (its card's tier / work class) travels with its spawn.
+
+   CPPB: `plan-wave` (pure slot split) -> `dispatch-task!` per task (boundary)."
   [ready-tasks max-slots opts]
-  (let [current-dispatched (:dispatched @dag-state)
-        available-slots (max 0 (- max-slots (count current-dispatched)))
-        tasks-to-dispatch (take available-slots ready-tasks)
-        skipped (- (count ready-tasks) (count tasks-to-dispatch))]
-
-    (when (pos? (count tasks-to-dispatch))
-      (log/info "DAGWaves dispatching" (count tasks-to-dispatch)
-                "tasks (slots:" available-slots "ready:" (count ready-tasks) ")"))
-
-    (let [dispatched-results
-          (doall
-           (for [{:keys [task-id title role description routing]} tasks-to-dispatch]
-             (let [r (spawn-ling-for-task task-id title role
-                                          (cond-> (assoc opts :description description)
-                                            (seq routing) (assoc :routing routing)))]
-               (if-let [ling-id (get-in r [:ok :agent-id])]
-                 (let [{:keys [via resolved-by skipped]} (:ok r)]
-                   (when (= :fallback resolved-by)
-                     (log/warn "DAGWaves: task" task-id "dispatched via" via
-                               "after the preferred dispatcher was passed over:" (pr-str skipped)))
-                   ;; Track dispatch in state
-                   (swap! dag-state update :dispatched assoc task-id ling-id)
-                   ;; Log wave progress
-                   (swap! dag-state update :wave-log conj
-                          {:event :dispatched
-                           :task-id task-id
-                           :ling-id ling-id
-                           :via via
-                           :resolved-by resolved-by
-                           :skipped skipped
-                           :title title
-                           :timestamp (System/currentTimeMillis)})
-                   {:task-id task-id :ling-id ling-id :status :dispatched
-                    :via via :resolved-by resolved-by :skipped skipped})
-                 (do
-                   ;; Mark as failed so we don't keep retrying
-                   (swap! dag-state update :failed conj task-id)
-                   {:task-id task-id :status :failed :error (:message r)})))))]
-
-      (when (pos? (count tasks-to-dispatch))
+  (let [{:keys [to-dispatch available skipped]}
+        (plan-wave ready-tasks max-slots (:dispatched @dag-state))
+        n (count to-dispatch)]
+    (when (pos? n)
+      (log/info "DAGWaves dispatching" n
+                "tasks (slots:" available "ready:" (count ready-tasks) ")"))
+    (let [results (mapv #(dispatch-task! % opts) to-dispatch)]
+      (when (pos? n)
         (emit-wave! :workflow/wave-dispatched))
-
-      {:dispatched-count (count (filter #(= :dispatched (:status %)) dispatched-results))
-       :dispatched-tasks dispatched-results
+      {:dispatched-count (count (filter #(= :dispatched (:status %)) results))
+       :dispatched-tasks results
        :skipped-count skipped})))
 
 ;; boundary: spawns lings and mutates dag-state; max-slots bounds the wave

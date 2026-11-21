@@ -126,50 +126,77 @@
       "hive-headless-shutdown-hook"))
     (log/info "Registered JVM shutdown hook for headless processes")))
 
+(defn- next-drain-deadline
+  "Pure: the deadline (epoch ms) after which a reader of a dead process stops.
+   An already-set DEADLINE is kept; a live process has none; a process seen dead
+   for the first time gets `now + drain-ms`."
+  [deadline dead? now drain-ms]
+  (cond
+    deadline deadline
+    dead?    (+ now drain-ms)
+    :else    nil))
+
+(m/=> next-drain-deadline
+      [:=> [:cat [:maybe :int] :boolean :int :int] [:maybe :int]])
+
+(defn- reader-action
+  "Pure: what a stream reader does next.
+   :stop  -- the drain deadline has passed
+   :sleep -- the process is dead and no data is ready, poll again later
+   :read  -- read a line (live process, or a drain read with data available)"
+  [deadline dead? ready? now]
+  (cond
+    (and deadline (> now deadline)) :stop
+    (and dead? (not ready?))        :sleep
+    :else                           :read))
+
+(m/=> reader-action
+      [:=> [:cat [:maybe :int] :boolean :boolean :int] [:enum :stop :sleep :read]])
+
+(defn- read-stream-lines!
+  "Boundary: pump lines from READER into BUFFER until EOF or the drain deadline.
+   After process death, reads remaining output for up to `drain-timeout-ms`."
+  [^BufferedReader reader buffer label ling-id ^Process process]
+  (loop [deadline nil]
+    (let [dead? (not (.isAlive process))
+          now (System/currentTimeMillis)
+          deadline' (next-drain-deadline deadline dead? now drain-timeout-ms)]
+      (when (and dead? (nil? deadline))
+        (log/debug (str "Headless " label " process died, draining")
+                   {:ling-id ling-id :drain-ms drain-timeout-ms}))
+      (case (reader-action deadline' dead? (and dead? (.ready reader)) (System/currentTimeMillis))
+        :stop  (log/info (str "Headless " label " drain timeout reached")
+                         {:ling-id ling-id})
+        :sleep (do (Thread/sleep 1000)
+                   (recur deadline'))
+        :read  (when-let [line (.readLine reader)]
+                 (ring-buffer-append! buffer line)
+                 (when (str/includes? line "error")
+                   (log/debug (str "Headless " label " [" ling-id "]: " line)))
+                 (recur deadline'))))))
+
+(defn- run-stream-reader!
+  "Thread body: pump the stream, then log how the reader ended."
+  [reader buffer label ling-id process]
+  (try
+    (read-stream-lines! reader buffer label ling-id process)
+    (log/debug (str "Headless " label " reader exited") {:ling-id ling-id})
+    (catch java.io.IOException _
+      (log/debug (str "Headless " label " stream closed") {:ling-id ling-id}))
+    (catch InterruptedException _
+      (log/debug (str "Headless " label " reader interrupted") {:ling-id ling-id}))
+    (catch Exception e
+      (log/warn (str "Headless " label " reader error")
+                {:ling-id ling-id :error (.getMessage e)}))))
+
 (defn- start-stream-reader!
   "Start a daemon thread reading lines from a stream into a ring buffer.
    Includes drain timeout: after process death, reads remaining output
    for up to `drain-timeout-ms` before exiting."
   [stream buffer label ling-id ^Process process]
   (let [reader (BufferedReader. (InputStreamReader. stream))
-        thread (Thread.
-                (fn []
-                  (try
-                    (loop [deadline nil]
-                      (let [dead? (not (.isAlive process))
-                            deadline (cond
-                                       deadline deadline
-                                       dead? (do (log/debug (str "Headless " label " process died, draining")
-                                                            {:ling-id ling-id :drain-ms drain-timeout-ms})
-                                                 (+ (System/currentTimeMillis) drain-timeout-ms))
-                                       :else nil)]
-                        (cond
-                          ;; Drain deadline exceeded — stop reading
-                          (and deadline (> (System/currentTimeMillis) deadline))
-                          (log/info (str "Headless " label " drain timeout reached")
-                                    {:ling-id ling-id})
-
-                          ;; Process dead, no data ready — poll with sleep
-                          (and dead? (not (.ready reader)))
-                          (do (Thread/sleep 1000)
-                              (recur deadline))
-
-                          ;; Normal read (or drain read with data available)
-                          :else
-                          (when-let [line (.readLine reader)]
-                            (ring-buffer-append! buffer line)
-                            (when (str/includes? line "error")
-                              (log/debug (str "Headless " label " [" ling-id "]: " line)))
-                            (recur deadline)))))
-                    (log/debug (str "Headless " label " reader exited") {:ling-id ling-id})
-                    (catch java.io.IOException _
-                      (log/debug (str "Headless " label " stream closed") {:ling-id ling-id}))
-                    (catch InterruptedException _
-                      (log/debug (str "Headless " label " reader interrupted") {:ling-id ling-id}))
-                    (catch Exception e
-                      (log/warn (str "Headless " label " reader error")
-                                {:ling-id ling-id :error (.getMessage e)}))))
-                (str "hive-headless-" label "-" ling-id))]
+        thread (Thread. ^Runnable #(run-stream-reader! reader buffer label ling-id process)
+                        (str "hive-headless-" label "-" ling-id))]
     (.setDaemon thread true)
     (.start thread)
     thread))
