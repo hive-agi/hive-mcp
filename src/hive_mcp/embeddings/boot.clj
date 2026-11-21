@@ -17,6 +17,7 @@
             [hive-mcp.config.core :as global-config]
             [hive-mcp.dns.result :as result]
             [hive-mcp.embeddings.config :as embedding-config]
+            [hive-mcp.embeddings.host-services :as host-services]
             [hive-mcp.embeddings.ollama :as ollama]
             [hive-mcp.embeddings.service :as embedding-service]
             [taoensso.timbre :as log]
@@ -51,6 +52,11 @@
   global fallback (default `ollama/->provider`, whose constructor probes
   <host>/api/tags over HTTP)."
   [& [{:keys [ollama-provider-fn] :or {ollama-provider-fn ollama/->provider}}]]
+  ;; Publish the host services backend addons consume (hive-spi
+  ;; vector.host-services) first: it needs no config, and a backend whose
+  ;; initialize! runs after this step must find them even when the rest of
+  ;; the wiring below fails.
+  (result/rescue-log "register host services" nil (host-services/register!))
   (result/rescue-log "init-embedding-provider!" false
     ;; Load global config to get :embeddings section
                  (let [cfg (global-config/get-global-config)
