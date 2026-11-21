@@ -205,98 +205,146 @@
       merged
       (assoc merged :runtime/ports (runtime-ports/runtime-ports)))))
 
+;; -----------------------------------------------------------------------------
+;; init-addon! stages (CPPB): initialize -> register surface -> record outcome
+;; -----------------------------------------------------------------------------
+
+(def ^:private owner-keyed-registrars
+  "Hook-key namespace -> the owner-keyed registry its hooks register into.
+   A hook key outside these namespaces goes to the extension registry."
+  {"multi"     'hive-mcp.multi.registry/register-by-key!
+   "saa"       'hive-mcp.saa.registry/register-by-key!
+   "plan"      'hive-mcp.plan.field-registry/register-by-key!
+   "wf"        'hive-mcp.workflows.strategy-registry/register-by-key!
+   "op-schema" 'hive-mcp.spi.op-schema-registry/register-by-key!})
+
+(defn- register-schema-extensions!
+  "Register the addon's per-tool schema extensions under its id."
+  [id addon]
+  (let [schema-exts (proto/schema-extensions addon)]
+    (when (seq schema-exts)
+      (doseq [[tool-name props] schema-exts]
+        (ext/register-schema! id tool-name props))
+      (log/debug "Addon registered schema extensions"
+                 {:addon id :tools (keys schema-exts)}))
+    nil))
+
+(m/=> register-schema-extensions! [:=> [:cat :any :any] :nil])
+
+(defn- register-metadata-extensions!
+  "Register the opaque {keyword fn} extensions an init result carries under
+   [:metadata :extensions]. Any other shape registers nothing and warns."
+  [id result]
+  (when-let [exts (:extensions (:metadata result))]
+    (if (map? exts)
+      (do (ext/register-many! exts)
+          (log/debug "Addon registered extensions" {:addon id :keys (keys exts)}))
+      (log/warn "Addon init metadata :extensions is not a {keyword fn} map; nothing registered"
+                {:addon id :type (type exts)})))
+  nil)
+
+(m/=> register-metadata-extensions! [:=> [:cat :any :map] :nil])
+
+(defn- register-hooks!
+  "Register the hooks declared by the IAddon `hooks` method (legacy addons
+   without it rescue to {}), each into the registry its key namespace names,
+   and record the keys so shutdown removes only this addon's hooks."
+  [id addon]
+  (let [hooks-map (r/rescue {} (proto/hooks addon))]
+    (when (seq hooks-map)
+      (doseq [[k v] hooks-map]
+        (if-let [registrar (get owner-keyed-registrars (namespace k))]
+          ((requiring-resolve registrar) id k v)
+          (ext/register! k v)))
+      (swap! addon-registry assoc-in [id :hook-keys] (set (keys hooks-map)))
+      (log/debug "Addon registered hooks" {:addon id :keys (keys hooks-map)}))
+    nil))
+
+(m/=> register-hooks! [:=> [:cat :any :any] :nil])
+
+(defn- register-addon-surface!
+  "Pipeline: everything an initialized addon contributes, in order: schema
+   extensions, metadata extensions, root tools, hooks. Then rebuild the
+   advertised surface, so a remount re-seats the registry WITH the addon's
+   root tools (the refresh its initialize! triggered ran before they were
+   registered; tool-friction 20261020202536-3357f82c)."
+  [id addon result]
+  (register-schema-extensions! id addon)
+  (register-metadata-extensions! id result)
+  (doseq [t (proto/tools addon)]
+    (ext/register-tool! t))
+  (register-hooks! id addon)
+  (when-let [names (seq (keep :name (r/rescue [] (proto/tools addon))))]
+    (ext/notify-tools-registered! id names))
+  nil)
+
+(m/=> register-addon-surface! [:=> [:cat :any :any :map] :nil])
+
+(defn- activate-addon!
+  "Boundary: an initialize! that succeeded marks the addon :active, records
+   when and what, and registers its surface."
+  [id addon result elapsed-ms]
+  (swap! addon-registry update id assoc
+         :state :active :init-time (java.time.Instant/now) :init-result result)
+  (register-addon-surface! id addon result)
+  (log/info "Addon initialized" {:addon id :elapsed-ms elapsed-ms})
+  (assoc result :addon-name id :elapsed-ms elapsed-ms))
+
+(m/=> activate-addon! [:=> [:cat :any :any :map :double] :map])
+
+(defn- reject-addon!
+  "Boundary: an initialize! that answered failure marks the addon :error."
+  [id result]
+  (swap! addon-registry update id assoc :state :error :init-result result)
+  (log/warn "Addon init failed" {:addon id :errors (:errors result)})
+  (assoc result :addon-name id))
+
+(m/=> reject-addon! [:=> [:cat :any :map] :map])
+
+(defn- run-initialize!
+  "Collect: call the addon's initialize! with its composed config, timed, and
+   settle the outcome into the registry."
+  [id addon opts]
+  (let [start-time (System/nanoTime)
+        result (addon-metrics/timed-call
+                [:addon/init (addon-metrics/label id)]
+                #(proto/initialize! addon (init-config id opts)))
+        elapsed-ms (/ (- (System/nanoTime) start-time) 1e6)]
+    (if (:success? result)
+      (activate-addon! id addon result elapsed-ms)
+      (reject-addon! id result))))
+
+(m/=> run-initialize! [:=> [:cat :any :any [:maybe :map]] :map])
+
+(defn- init-threw
+  "The outcome for an init that threw: the addon is marked :error."
+  [id err]
+  (swap! addon-registry assoc-in [id :state] :error)
+  (log/error "Addon init threw exception" {:addon id :error (:message err)})
+  {:success? false :addon-name id :errors [(:message err)]})
+
+(m/=> init-threw [:=> [:cat :any :map] schema/AddonOutcome])
+
 (defn init-addon!
   "Initialize a registered addon.
 
    On success, also registers any extensions returned by the addon's
    `(proto/hooks addon)` into the extension registry, and tracks the
    set of registered keys per-addon so shutdown can remove only the
-   hooks owned by this addon."
+   hooks owned by this addon.
+
+   Stages: `run-initialize!` (-> `activate-addon!` | `reject-addon!`), with
+   a throw answered by `init-threw`."
   [id & [opts]]
   (if-let [{:keys [addon state]} (get-addon-entry id)]
     (if (= state :active)
       (do
         (log/info "Addon already active, skipping init" {:addon id})
         {:success? true :addon-name id :already-active? true})
-      (let [init-result
-            (r/try-effect* :addon/init-exception
-                           (let [start-time (System/nanoTime)
-                                 result (addon-metrics/timed-call
-                                         [:addon/init (addon-metrics/label id)]
-                                         #(proto/initialize! addon (init-config id opts)))
-                                 elapsed-ms (/ (- (System/nanoTime) start-time) 1e6)]
-                             (if (:success? result)
-                               (do
-                                 (swap! addon-registry assoc-in [id :state] :active)
-                                 (swap! addon-registry assoc-in [id :init-time]
-                                        (java.time.Instant/now))
-                                 (swap! addon-registry assoc-in [id :init-result] result)
-                    ;; Register schema extensions from protocol method
-                                 (let [schema-exts (proto/schema-extensions addon)]
-                                   (when (seq schema-exts)
-                                     (doseq [[tool-name props] schema-exts]
-                                       (ext/register-schema! id tool-name props))
-                                     (log/debug "Addon registered schema extensions"
-                                                {:addon id :tools (keys schema-exts)})))
-                    ;; Register extensions from init result metadata (opaque fn registry)
-                                 (when-let [exts (:extensions (:metadata result))]
-                                   (if (map? exts)
-                                     (do (ext/register-many! exts)
-                                         (log/debug "Addon registered extensions"
-                                                    {:addon id :keys (keys exts)}))
-                                     (log/warn "Addon init metadata :extensions is not a {keyword fn} map; nothing registered"
-                                               {:addon id :type (type exts)})))
-                    ;; Register tools
-                                 (doseq [t (proto/tools addon)]
-                                   (ext/register-tool! t))
-                    ;; Register hooks declared via IAddon `hooks` protocol method.
-                    ;; Legacy addons that don't implement `hooks` rescue to {}.
-                    ;; Per-addon hook-keys are tracked so shutdown only removes
-                    ;; the hooks this addon registered (no clobber across addons).
-                                 (let [hooks-map (r/rescue {} (proto/hooks addon))]
-                                   (when (seq hooks-map)
-                                     (doseq [[k v] hooks-map]
-                                       (case (namespace k)
-                                         "multi" ((requiring-resolve 'hive-mcp.multi.registry/register-by-key!)
-                                                  id k v)
-                                         "saa" ((requiring-resolve 'hive-mcp.saa.registry/register-by-key!)
-                                                id k v)
-                                         "plan" ((requiring-resolve 'hive-mcp.plan.field-registry/register-by-key!)
-                                                 id k v)
-                                         "wf" ((requiring-resolve 'hive-mcp.workflows.strategy-registry/register-by-key!)
-                                               id k v)
-                                         "op-schema" ((requiring-resolve 'hive-mcp.spi.op-schema-registry/register-by-key!)
-                                                      id k v)
-                                         (ext/register! k v)))
-                                     (swap! addon-registry assoc-in
-                                            [id :hook-keys] (set (keys hooks-map)))
-                                     (log/debug "Addon registered hooks"
-                                                {:addon id :keys (keys hooks-map)})))
-
-                    ;; Now that the addon is :active with its root tools
-                    ;; registered, rebuild the advertised surface and the
-                    ;; agent-delegation registry. The refresh its initialize!
-                    ;; triggered by contributing commands ran before both, so
-                    ;; on a remount it re-seated the registry WITHOUT the
-                    ;; addon's root tools (tool-friction 20261020202536-3357f82c).
-                                 (when-let [names (seq (keep :name (r/rescue [] (proto/tools addon))))]
-                                   (ext/notify-tools-registered! id names))
-                                 (log/info "Addon initialized" {:addon id
-                                                                :elapsed-ms elapsed-ms})
-                                 (assoc result :addon-name id :elapsed-ms elapsed-ms))
-                               (do
-                                 (swap! addon-registry assoc-in [id :state] :error)
-                                 (swap! addon-registry assoc-in [id :init-result] result)
-                                 (log/warn "Addon init failed" {:addon id
-                                                                :errors (:errors result)})
-                                 (assoc result :addon-name id)))))]
+      (let [init-result (r/try-effect* :addon/init-exception
+                                       (run-initialize! id addon opts))]
         (if (r/err? init-result)
-          (do (swap! addon-registry assoc-in [id :state] :error)
-              (log/error "Addon init threw exception"
-                         {:addon id :error (:message init-result)})
-              {:success? false
-               :addon-name id
-               :errors [(:message init-result)]})
+          (init-threw id init-result)
           (:ok init-result))))
     {:success? false
      :addon-name id
