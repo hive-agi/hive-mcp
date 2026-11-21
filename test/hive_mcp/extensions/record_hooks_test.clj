@@ -18,7 +18,8 @@
             [hive-mcp.tools.consolidated.project :as project-tool]
             [hive-mcp.tools.kanban.effects :as effects]
             [hive-mcp.tools.migration :as migration]
-            [hive-mcp.vectordb.facade :as facade]))
+            [hive-mcp.vectordb.facade :as facade]
+            [hive-mcp.test.project-fs :refer [write-project!]]))
 
 (def ^:private points
   [:temporal/mutation :kanban/history :archive/record :export/entry :project/visible])
@@ -205,10 +206,6 @@
 ;; =============================================================================
 ;; :project/visible
 ;; =============================================================================
-
-(defn- write-project! [dir cfg]
-  (.mkdirs (io/file dir))
-  (spit (io/file dir ".hive-project.edn") (pr-str cfg)))
 
 (defn- enclaved? [entity]
   (contains? (edn/read-string (or (:project/config entity) "{}")) :seal/enclave))
