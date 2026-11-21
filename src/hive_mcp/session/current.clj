@@ -18,7 +18,8 @@
    id is stable for the process's life, which is the session's life."
   (:require [hive-mcp.session.identity :as sid]
             [taoensso.timbre :as log]
-            [malli.core :as m]))
+            [malli.core :as m]
+            [hive-mcp.extensions.soft :as soft]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -47,21 +48,14 @@
   []
   (env "CLAUDE_SWARM_SLAVE_ID"))
 
-(defn- safe-resolve
-  "requiring-resolve that never throws. The swarm store is an optional
-   dependency here: a wrap in a plain editor session must work with no swarm
-   loaded at all, so a missing var means 'no world', not a failure."
-  [sym]
-  (try (requiring-resolve sym) (catch Throwable _ nil)))
-
 (defn world-snapshot
   "Project the swarm store into the `world` shape identity/resolve-ref expects.
    Returns {:slaves {} :coordinators {}} when the store is absent or unreadable
    -- every caller then degrades to an :adhoc session, which is correct."
   []
   (try
-    (let [list-slaves (safe-resolve 'hive-mcp.swarm.datascript/get-all-slaves)
-          list-coords (safe-resolve 'hive-mcp.swarm.datascript.coordination/get-all-coordinators)
+    (let [list-slaves (soft/resolve-soft 'hive-mcp.swarm.datascript/get-all-slaves)
+          list-coords (soft/resolve-soft 'hive-mcp.swarm.datascript.coordination/get-all-coordinators)
           slaves (when list-slaves (list-slaves))
           coords (when list-coords (list-coords))]
       {:slaves (into {} (map (juxt :slave/id
