@@ -1,0 +1,7 @@
+{:all-skipped :retry-skipped,
+ :attempt :attempt,
+ :empty-chain :providers-exhausted,
+ :expired-at-end :deadline,
+ :expired-mid :deadline,
+ :failed-and-done :providers-exhausted,
+ :skipped-forced :providers-exhausted}
