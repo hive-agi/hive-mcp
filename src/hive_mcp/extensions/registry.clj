@@ -99,7 +99,7 @@
 (defn extension-available?
   "Check if an extension is registered under the given key."
   [k]
-  (contains? (reg/reg-snapshot ext-slot) k))
+  (reg/reg-has? ext-slot k))
 
 (m/=> extension-available? [:=> [:cat :any] :boolean])
 
