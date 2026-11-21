@@ -37,6 +37,23 @@
    :gc gc
    :rss-bytes rss :open-fds 512})
 
+(deftest admission-slots-mirror-hive-clj
+  (testing "floor(MemAvailable / (Xmx + margin)), the rule hive-clj launches by"
+    (is (= 6 (res/admission-slots (* 24623 mb) 2048 1536)))
+    (is (= 5 (res/admission-slots (* 18757 mb) 2048 1536)))
+    (is (= 0 (res/admission-slots (* 3583 mb) 2048 1536)))
+    (is (nil? (res/admission-slots nil 2048 1536)))))
+
+(deftest a-sample-carries-host-capacity-and-anon-rss
+  (let [s (res/derive-sample nil (assoc (raw 0) :mem-available-bytes (* 24623 mb)
+                                        :rss-anon-bytes (* 3000 mb))
+                             10)]
+    (is (= {:mem-available-bytes (* 24623 mb) :jvm-slots-2g 6} (:host s)))
+    (is (= (* 3000 mb) (get-in s [:process :rss-anon-bytes]))))
+  (testing "off Linux the host block is present but empty, never a throw"
+    (is (= {:mem-available-bytes nil :jvm-slots-2g nil}
+           (:host (res/derive-sample nil (raw 0) 10))))))
+
 (deftest first-sample-has-no-deltas
   (let [s (res/derive-sample nil (raw 0) 5)]
     (is (nil? (:interval-ms s)))

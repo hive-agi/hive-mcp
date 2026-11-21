@@ -7,14 +7,14 @@
     :description "",
     :files [],
     :estimate :small,
-    :execution {:model "", :persona {}}}},
+    :execution {:model "", :tier "", :work-class :S}}},
   :in
   ({:id "",
     :title "",
     :description "",
     :files [],
     :estimate :small,
-    :execution {:model "", :persona {}}})},
+    :execution {:model "", :tier "", :work-class :S}})},
  :case-1
  {:out
   {:valid false,
@@ -55,14 +55,14 @@
     :depends-on ["74" "j2h7"],
     :files ["7n85" "6i" "zh97"],
     :estimate :large,
-    :execution {:model "016"}}},
+    :execution {:model "016", :persona {}, :tier "IqK"}}},
   :in
   ({:id "3qE",
     :title "o",
     :depends-on ["74" "j2h7"],
     :files ["7n85" "6i" "zh97"],
     :estimate :large,
-    :execution {:model "016"}})},
+    :execution {:model "016", :persona {}, :tier "IqK"}})},
  :case-5
  {:out
   {:valid true,
@@ -85,14 +85,14 @@
     :depends-on [],
     :estimate :large,
     :tags ["K" "DI13qJ" "B3uO0" "4NJl"],
-    :execution {:spawn-mode ""}}},
+    :execution {:spawn-mode "", :tier :T}}},
   :in
   ({:id "",
     :title "Z3A",
     :depends-on [],
     :estimate :large,
     :tags ["K" "DI13qJ" "B3uO0" "4NJl"],
-    :execution {:spawn-mode ""}})},
+    :execution {:spawn-mode "", :tier :T}})},
  :case-7
  {:out
   {:valid true,
@@ -102,11 +102,17 @@
     :description "N",
     :files [""],
     :execution
-    {:provider "2", :spawn-mode "3JWB", :presets ["mdp0" "op" ""]}}},
+    {:provider "2",
+     :spawn-mode "3JWB",
+     :presets ["mdp0" "op" ""],
+     :tier :Y1q}}},
   :in
   ({:id "i8an",
     :title "13",
     :description "N",
     :files [""],
     :execution
-    {:provider "2", :spawn-mode "3JWB", :presets ["mdp0" "op" ""]}})}}
+    {:provider "2",
+     :spawn-mode "3JWB",
+     :presets ["mdp0" "op" ""],
+     :tier :Y1q}})}}

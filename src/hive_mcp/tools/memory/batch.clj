@@ -26,7 +26,8 @@
             [hive-mcp.tools.cli :as cli]
             [hive-mcp.dispatch.handler :as dispatch]
             [malli.core :as m]
-            [hive-mcp.tools.memory.schema :as ms]))
+            [hive-mcp.tools.memory.schema :as ms]
+            [hive-mcp.dispatch.lazy :as lazy]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -37,15 +38,13 @@
 ;; =============================================================================
 
 (defn- lazy-canonical-handlers
-  "Resolve `hive-mcp.tools.consolidated.memory/canonical-handlers` on
-   first use. Returns the deref'd var, or `{}` if the ns is unavailable
-   (e.g. in a contract-test context where we never touch the real map)."
+  "Resolve `hive-mcp.tools.consolidated.memory/canonical-handlers` on first
+   use, through the shared `lazy/resolve-lazily`: the deref'd var, `{}` when
+   the namespace is absent, or a placeholder that answers the load failure and
+   retries the load on later calls (never a frozen empty tree in the shared
+   runner)."
   []
-  (or (rescue nil
-              (when-let [v (requiring-resolve
-                            'hive-mcp.tools.consolidated.memory/canonical-handlers)]
-                @v))
-      {}))
+  (lazy/resolve-lazily 'hive-mcp.tools.consolidated.memory/canonical-handlers deref))
 
 (defn- resolve-memory-handler
   "Look up a command (string / keyword / dotted nested path) in the memory

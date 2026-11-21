@@ -126,6 +126,412 @@
          vec)))
 
 ;; =============================================================================
+;; Main Catchup Handler — CPPB decomposition (QH-2)
+;;
+;;   Collect   — resolve caller context, fan out parallel queries
+;;   Promote   — unwrap the bundle outcome into named entry buckets
+;;   Pipeline  — pure transforms: entry -> metadata, piggyback filtering
+;;   Boundary  — effects (extensions, cursors, context-store, piggyback) and
+;;               the final response builder
+;; =============================================================================
+
+;; -----------------------------------------------------------------------------
+;; Collect: project-id resolution
+;; -----------------------------------------------------------------------------
+
+(defn- resolve-project-id
+  "Resolve the project-id for DIRECTORY using the four-step priority:
+     1. request-ctx project-id (pre-resolved by wrap-handler-context)
+     2. :project-id from .hive-project.edn in the exact dir
+     3. Walk up the path finding the nearest .hive-project.edn
+     4. Legacy fallback: last-path-segment / \"global\""
+  [directory]
+  (let [ctx-pid        (ctx/current-project-id)
+        direct-cfg-pid (when directory
+                         (rescue nil (:project-id (project-scope/read-direct-project-config directory))))
+        walked-pid     (when (and directory (not direct-cfg-pid))
+                         (rescue nil (project-scope/infer-scope-from-path directory)))]
+    (or ctx-pid
+        direct-cfg-pid
+        (when (and walked-pid (not= walked-pid "global")) walked-pid)
+        (project-scope/get-current-project-id directory))))
+
+;; -----------------------------------------------------------------------------
+;; Collect: caller context (project, scopes, private-view, tree)
+;; -----------------------------------------------------------------------------
+
+(defn- collect-catchup-context
+  "Gather the static per-call context that downstream stages read.
+
+   Returns a map with :directory :project-id :project-name :scopes :private?
+   :caller-id. Also runs the project-tree scan + private-view pre-query!
+   seam (both effects required before any memory read). The caller is
+   responsible for the initial directory resolution + info log; this fn is
+   invoked only after the store-configured guard."
+  [args]
+  (let [directory    (ctx/resolve-caller-directory args)
+        project-id   (resolve-project-id directory)
+        project-name (catchup-scope/get-current-project-name directory)
+        scopes       (fmt/build-scopes project-name project-id)
+        caller-id    (:_caller_id args)
+        _            (rescue nil (project-tree/maybe-scan-project-tree! (or directory ".")))
+        _            (pv/run-pre-query! {:caller-id caller-id :directory directory :project-id project-id})
+        private?     (pv/private-view? caller-id project-id)]
+    {:directory    directory
+     :project-id   project-id
+     :project-name project-name
+     :scopes       scopes
+     :caller-id    caller-id
+     :private?     private?}))
+
+;; -----------------------------------------------------------------------------
+;; Collect: launch parallel queries
+;; -----------------------------------------------------------------------------
+
+(defn- launch-bundle-future
+  "Fire the bundle future. Reads the :catchup/bundle-profile + :catchup/caps
+   extensions to decide whether to pass caps to query-catchup-bundle."
+  [{:keys [project-id caller-id private?]}]
+  (let [bundle-profile (when-let [profile-fn (ext/get-extension :catchup/bundle-profile)]
+                         (catchup-caller/resolve-for-caller profile-fn caller-id project-id))]
+    (pool/with-io
+      (pv/in-view private?
+                  (tt/timed-query "catchup/bundle-total"
+                                  #(let [caps-provider (ext/get-extension :catchup/caps)
+                                         caps (catchup-caps/resolve-caps caps-provider project-id bundle-profile)]
+                                     (if (or caps-provider (seq (:caps bundle-profile)))
+                                       (catchup-scope/query-catchup-bundle project-id {:caps caps})
+                                       (catchup-scope/query-catchup-bundle project-id))))))))
+
+(defn- launch-git-future
+  [{:keys [directory]}]
+  (pool/with-io
+    ((tt/timed-query "catchup/git-total"
+                     #(catchup-git/gather-git-info directory)))))
+
+(defn- launch-status-future
+  [{:keys [project-id]}]
+  (let [status-providers (or (ext/get-extension :catchup/status-providers) {})]
+    (pool/with-io
+      ((tt/timed-query "catchup/status-providers-total"
+                       #(reduce-kv (fn [acc k provider-fn]
+                                     (assoc acc k
+                                            (rescue nil (block-cache/run-status-provider k provider-fn project-id))))
+                                   {} status-providers))))))
+
+(defn- launch-blocks-future
+  [{:keys [project-id directory caller-id]}]
+  (pool/with-io
+    ((tt/timed-query "catchup/blocks-total"
+                     #(compose-blocks {:project-id project-id
+                                       :directory  directory
+                                       :caller-id  caller-id})))))
+
+(defn- launch-catchup-queries
+  "Fire the four parallel queries. Returns a map of futures:
+     {:f-bundle :f-git :f-status :f-blocks}"
+  [catchup-ctx]
+  {:f-bundle (launch-bundle-future catchup-ctx)
+   :f-git    (launch-git-future    catchup-ctx)
+   :f-status (launch-status-future catchup-ctx)
+   :f-blocks (launch-blocks-future catchup-ctx)})
+
+;; -----------------------------------------------------------------------------
+;; Collect: await the parallel queries
+;; -----------------------------------------------------------------------------
+
+(defn- await-catchup-queries
+  "Deref every future under safe-deref with the shared timeout budget.
+   Returns {:bundle outcome :git-info map :addon-status map :contributed vec}."
+  [{:keys [f-bundle f-git f-status f-blocks]}]
+  (let [bundle       (safe-deref f-bundle query-timeout-ms "bundle")
+        git-info     (outcome/value-or (safe-deref f-git query-timeout-ms "git-info") {})
+        addon-status (outcome/value-or (safe-deref f-status query-timeout-ms "addon-status") {})
+        contributed  (outcome/value-or (safe-deref f-blocks query-timeout-ms "blocks") [])]
+    {:bundle       bundle
+     :git-info     git-info
+     :addon-status addon-status
+     :contributed  contributed}))
+
+;; -----------------------------------------------------------------------------
+;; Promote: bundle outcome -> named entry buckets
+;; -----------------------------------------------------------------------------
+
+(def ^:private bundle-buckets
+  "The eleven buckets the catchup bundle is decomposed into. Order matches the
+   historical let-bindings so the metadata map built downstream is identical."
+  [:axioms :axiom-candidates :principles :priority-principles
+   :priority-conventions :sessions :recent-wraps :decisions :snippets
+   :expiring :conventions])
+
+(defn- promote-bundle
+  "Unwrap the bundle OUTCOME into a map of {bucket -> vector-of-entries}.
+   Each bucket defaults to [] so downstream mapv calls never see nil."
+  [bundle]
+  (let [data (outcome/value-or bundle {})]
+    (reduce (fn [acc k]
+              (assoc acc k (get data k [])))
+            {}
+            bundle-buckets)))
+
+;; -----------------------------------------------------------------------------
+;; Pipeline: entries -> metadata (pure)
+;; -----------------------------------------------------------------------------
+
+(defn- entries->metadata
+  "Apply the per-bucket format/entry->... transform to each bucket.
+   Pure: no IO, no clocks, no extensions. Returns a map of meta keys ready
+   for fmt/build-catchup-response."
+  [buckets]
+  (let [{:keys [axioms axiom-candidates principles priority-principles
+                priority-conventions sessions recent-wraps decisions
+                snippets expiring conventions]} buckets]
+    {:axioms-meta               (mapv fmt/entry->axiom-meta axioms)
+     :axiom-candidates-meta     (mapv fmt/entry->review-meta axiom-candidates)
+     :principles-meta           (mapv #(fmt/entry->catchup-meta % 80) principles)
+     :priority-principles-meta  (mapv #(fmt/entry->catchup-meta % 80) priority-principles)
+     :priority-meta             (mapv fmt/entry->priority-meta priority-conventions)
+     :sessions-meta             (mapv #(fmt/entry->catchup-meta % 80) sessions)
+     :recent-wraps              (mapv fmt/entry->wrap-preview recent-wraps)
+     :decisions-base            (mapv #(fmt/entry->catchup-meta % 80) decisions)
+     :conventions-base          (mapv #(fmt/entry->catchup-meta % 80) conventions)
+     :snippets-meta             (mapv #(fmt/entry->catchup-meta % 60) snippets)
+     :expiring-meta             (mapv #(fmt/entry->catchup-meta % 80) expiring)}))
+
+;; -----------------------------------------------------------------------------
+;; Pipeline: piggyback relevance filtering (pure, except for ext lookup)
+;; -----------------------------------------------------------------------------
+
+(defn- piggyback-scope-pass?
+  "Predicate: does ENTRY survive the project-scope piggyback filter?
+   Axioms always pierce (already relevance-filtered). catchup-priority tags
+   pierce. Untagged entries pass. Tagged entries pass when any tag is in
+   SCOPE-TAGS."
+  [entry scope-tags]
+  (let [tags       (set (or (:tags entry) []))
+        entry-type (str (or (:type entry) ""))]
+    (or (= entry-type "axiom")
+        (contains? tags "catchup-priority")
+        (not-any? #(.startsWith ^String % "scope:project:") tags)
+        (some tags scope-tags))))
+
+(defn- filter-piggyback-by-scope
+  "Filter ENTRIES down to the subset that should be piggybacked for PROJECT-ID.
+   Outside a real project scope every entry passes through."
+  [entries project-id]
+  (let [in-project? (and project-id (not= project-id "global"))]
+    (if-not in-project?
+      entries
+      (let [scope-tags (sf/compute-full-scope-tags project-id)]
+        (filterv #(piggyback-scope-pass? % scope-tags) entries)))))
+
+(defn- build-relevance-context
+  "Compute the relevance context map, optionally augmented with the
+   :persona-lens resolved via the :catchup/persona-lens extension."
+  [{:keys [project-id raw-caller-id priority-conventions decisions sessions]}]
+  (let [persona-lens-fn (ext/get-extension :catchup/persona-lens)
+        persona-lens    (when persona-lens-fn
+                          (rescue nil (catchup-caller/resolve-for-caller persona-lens-fn raw-caller-id project-id)))]
+    (cond-> (relevance/build-context
+             {:project-id        project-id
+              :co-loaded-entries (concat priority-conventions decisions sessions)})
+      persona-lens (assoc :persona-lens persona-lens))))
+
+(defn- compute-piggyback-entries
+  "Relevance-filter axioms, run the optional :catchup/lens provider, concat
+   with priority-principles + priority-conventions, then apply the
+   project-scope piggyback filter. Pure apart from extension lookups."
+  [{:keys [project-id raw-caller-id axioms priority-principles
+           priority-conventions decisions sessions]}]
+  (let [relevance-ctx  (build-relevance-context
+                        {:project-id           project-id
+                         :raw-caller-id        raw-caller-id
+                         :priority-conventions priority-conventions
+                         :decisions            decisions
+                         :sessions             sessions})
+        lens-fn        (ext/get-extension :catchup/lens)
+        relevant-axioms (cond-> (relevance/filter-by-relevance (vec axioms) relevance-ctx)
+                          lens-fn (lens-fn relevance-ctx))
+        piggyback-raw   (into (into (vec relevant-axioms) priority-principles) priority-conventions)]
+    (filter-piggyback-by-scope piggyback-raw project-id)))
+
+;; -----------------------------------------------------------------------------
+;; Boundary: enrichment extension
+;; -----------------------------------------------------------------------------
+
+(defn- run-enrichment!
+  "Fire the optional :cu/a enrichment addon. No-op when the bundle is
+   unavailable or the extension is absent."
+  [{:keys [bundle directory project-id caller-id buckets metadata]}]
+  (when (outcome/available? bundle)
+    (when-let [enrich-fn (ext/get-extension :cu/a)]
+      (enrich-fn {:directory           directory
+                  :project-id          project-id
+                  :caller-id           caller-id
+                  :decisions           (:decisions-base metadata)
+                  :decisions-raw       (:decisions buckets)
+                  :conventions         (:conventions-base metadata)
+                  :conventions-raw     (:conventions buckets)
+                  :sessions            (:sessions-meta metadata)
+                  :sessions-raw        (:sessions buckets)
+                  :axioms              (:axioms buckets)
+                  :principles          (:principles buckets)
+                  :priority-principles (:priority-principles buckets)
+                  :priority-conventions (:priority-conventions buckets)}))))
+
+;; -----------------------------------------------------------------------------
+;; Boundary: cursor hygiene
+;; -----------------------------------------------------------------------------
+
+(defn- run-cursor-hygiene!
+  "Adopt cursor + evict stale cursors + adopt orphaned piggyback buffers.
+   All wrapped in rescue so a failure never fails catchup."
+  [{:keys [piggyback-agent-id project-id raw-caller-id]}]
+  (rescue nil
+          (do
+            (piggyback/adopt-cursor! piggyback-agent-id project-id)
+            (piggyback/evict-stale-cursors! 1800000) ;; 30 min
+            (memory-piggyback/adopt-buffer! raw-caller-id))))
+
+;; -----------------------------------------------------------------------------
+;; Boundary: dual-write entry buckets into context-store
+;; -----------------------------------------------------------------------------
+
+(defn- context-store-payload
+  "Build the {category -> {:data :tags :ttl-ms}} map for context-put-batch!.
+   Pure function of the raw buckets + scope-tag."
+  [buckets scope-tag catchup-ttl]
+  (let [{:keys [axioms principles priority-principles priority-conventions
+                sessions decisions conventions snippets recent-wraps]} buckets]
+    {:axioms               {:data axioms               :tags #{"catchup" "axioms" scope-tag}               :ttl-ms catchup-ttl}
+     :principles           {:data principles           :tags #{"catchup" "principles" scope-tag}           :ttl-ms catchup-ttl}
+     :priority-principles  {:data priority-principles  :tags #{"catchup" "priority-principles" scope-tag}  :ttl-ms catchup-ttl}
+     :priority-conventions {:data priority-conventions :tags #{"catchup" "priority-conventions" scope-tag} :ttl-ms catchup-ttl}
+     :sessions             {:data sessions             :tags #{"catchup" "sessions" scope-tag}             :ttl-ms catchup-ttl}
+     :decisions            {:data decisions            :tags #{"catchup" "decisions" scope-tag}            :ttl-ms catchup-ttl}
+     :conventions          {:data conventions          :tags #{"catchup" "conventions" scope-tag}          :ttl-ms catchup-ttl}
+     :snippets             {:data snippets             :tags #{"catchup" "snippets" scope-tag}             :ttl-ms catchup-ttl}
+     :recent-wraps         {:data recent-wraps         :tags #{"catchup" "recent-wraps" scope-tag}         :ttl-ms catchup-ttl}}))
+
+(defn- persist-context-refs!
+  "Dual-write the bundle's raw buckets into the context-store under a single
+   shared refs key so callers sharing a cached bundle reuse refs. Returns the
+   {category -> ctx-id} map or nil on failure (non-fatal)."
+  [{:keys [scope-tag private? bundle buckets catchup-ttl]}]
+  (rescue nil
+          (block-cache/shared-context-refs
+           scope-tag (when-not private? (outcome/value-or bundle nil))
+           (fn []
+             (let [refs (context-store/context-put-batch!
+                         (context-store-payload buckets scope-tag catchup-ttl))]
+               (when (seq refs)
+                 (log/info "catchup: stored" (count refs) "categories in context-store"
+                           {:refs (keys refs)}))
+               refs)))))
+
+;; -----------------------------------------------------------------------------
+;; Boundary: piggyback enqueue
+;; -----------------------------------------------------------------------------
+
+(defn- enqueue-piggyback!
+  [{:keys [raw-caller-id piggyback-entries context-refs]}]
+  (when (seq piggyback-entries)
+    (memory-piggyback/enqueue! raw-caller-id
+                               (mapv fmt/cap-piggyback-entry piggyback-entries)
+                               context-refs)))
+
+;; -----------------------------------------------------------------------------
+;; Top-level orchestration: run-catchup-pipeline
+;; -----------------------------------------------------------------------------
+
+(defn- caller-identity
+  "Resolve the session and project-scoped identities for a catchup caller."
+  [caller-id project-id]
+  (let [raw-caller-id (or caller-id "coordinator")
+        caller        (ctx-id/parse-caller-id raw-caller-id)
+        scope         (ctx-id/parse-project-scope project-id)]
+    {:raw-caller-id      raw-caller-id
+     :piggyback-agent-id (ctx-id/make-piggyback-agent-id caller scope)}))
+
+(defn- build-response
+  "Build the final MCP response from the collected queries, raw buckets and
+   metadata transforms. Values and merge semantics match the historical
+   response literal exactly."
+  [{:keys [bundle git-info addon-status contributed metadata context-refs
+           project-id project-name scopes]}]
+  (fmt/build-catchup-response
+   {:scopes                    scopes
+    :axiom-candidates-meta     (:axiom-candidates-meta metadata)
+    :project-name              project-name
+    :principles-meta           (:principles-meta metadata)
+    :priority-principles-meta  (:priority-principles-meta metadata)
+    :recent-wraps              (:recent-wraps metadata)
+    :context-refs              context-refs
+    :axioms-meta               (:axioms-meta metadata)
+    :memory-status             (memory-status-with-writes bundle)
+    :priority-meta             (:priority-meta metadata)
+    :carto-status              (:carto-status addon-status)
+    :expiring-meta             (:expiring-meta metadata)
+    :git-info                  git-info
+    :sessions-meta             (:sessions-meta metadata)
+    :snippets-meta             (:snippets-meta metadata)
+    :decisions-meta            (:decisions-base metadata)
+    :conventions-meta          (:conventions-base metadata)
+    :project-id                project-id
+    :contributed-blocks        contributed}))
+
+(defn- run-catchup-pipeline
+  "Sequence the catchup pipeline after the store guard. Returns the final
+   fmt/build-catchup-response value. Throws propagate to the caller's
+   try/catch — same scope as the historical inline implementation."
+  [args]
+  (let [catchup-ctx (collect-catchup-context args)
+        futures     (launch-catchup-queries catchup-ctx)
+        {:keys [bundle git-info addon-status contributed]} (await-catchup-queries futures)
+        buckets     (promote-bundle bundle)
+        metadata    (entries->metadata buckets)
+        {:keys [directory project-id project-name scopes caller-id private?]} catchup-ctx
+        _ (run-enrichment! {:bundle bundle
+                            :directory directory
+                            :project-id project-id
+                            :caller-id caller-id
+                            :buckets buckets
+                            :metadata metadata})
+        {:keys [raw-caller-id piggyback-agent-id]} (caller-identity caller-id project-id)
+        _ (run-cursor-hygiene! {:piggyback-agent-id piggyback-agent-id
+                                :project-id project-id
+                                :raw-caller-id raw-caller-id})
+        piggyback-entries (compute-piggyback-entries
+                           {:project-id           project-id
+                            :raw-caller-id        raw-caller-id
+                            :axioms               (:axioms buckets)
+                            :priority-principles  (:priority-principles buckets)
+                            :priority-conventions (:priority-conventions buckets)
+                            :decisions            (:decisions buckets)
+                            :sessions             (:sessions buckets)})
+
+        context-refs (persist-context-refs!
+                      {:scope-tag   (or project-id "global")
+                       :private?    private?
+                       :bundle      bundle
+                       :buckets     buckets
+                       :catchup-ttl 3600000})
+
+        _ (enqueue-piggyback! {:raw-caller-id     raw-caller-id
+                               :piggyback-entries piggyback-entries
+                               :context-refs      context-refs})]
+
+    (build-response {:bundle bundle
+                     :git-info git-info
+                     :addon-status addon-status
+                     :contributed contributed
+                     :metadata metadata
+                     :context-refs context-refs
+                     :project-id project-id
+                     :project-name project-name
+                     :scopes scopes})))
+
+;; =============================================================================
 ;; Main Catchup Handler
 ;; =============================================================================
 
@@ -140,7 +546,7 @@
   ;; HCR directory resolution: explicit :directory > :_caller_cwd (bb-mcp) >
   ;; request-ctx :directory > server user.dir. Matches handle-native-wrap so
   ;; catchup auto-resolves scope from caller's bash pwd when :directory absent.
-  (let [directory (ctx/resolve-caller-directory args)
+  (let [directory  (ctx/resolve-caller-directory args)
         dir-source (ctx/caller-directory-source args)]
     (log/info "native-catchup: querying memory store with project scope"
               {:directory directory :source dir-source})
@@ -148,247 +554,7 @@
     (if-not (mem-proto/store-set?)
       (fmt/store-not-configured-error)
       (try
-        ;; Project-id resolution priority:
-        ;;   1. request-ctx project-id (pre-resolved by wrap-handler-context)
-        ;;   2. :project-id from .hive-project.edn in the exact dir
-        ;;   3. Walk up the path finding the nearest .hive-project.edn
-        ;;      (covers calls from deep subdirs of a hive project — without
-        ;;      this, project-scope/get-current-project-id returns the last path
-        ;;      segment, producing a bogus project scope like "catchup".)
-        ;;   4. Legacy fallback: last-path-segment / "global"
-        (let [ctx-pid          (ctx/current-project-id)
-              direct-cfg-pid   (when directory
-                                 (rescue nil (:project-id (project-scope/read-direct-project-config directory))))
-              walked-pid       (when (and directory (not direct-cfg-pid))
-                                 (rescue nil (project-scope/infer-scope-from-path directory)))
-              project-id       (or ctx-pid
-                                   direct-cfg-pid
-                                   (when (and walked-pid (not= walked-pid "global")) walked-pid)
-                                   (project-scope/get-current-project-id directory))
-              project-name (catchup-scope/get-current-project-name directory)
-              scopes (fmt/build-scopes project-name project-id)
-
-              ;; ── Tree scan: ensure project hierarchy is populated before queries ──
-              ;; Without this, descendant-scopes returns [] and sessions stored
-              ;; under child projects (e.g. hive-mcp under hive) are invisible.
-              _ (rescue nil (project-tree/maybe-scan-project-tree! (or directory ".")))
-              ;; Per-caller seams before any memory read (catchup.private-view).
-              _        (pv/run-pre-query! {:caller-id (:_caller_id args) :directory directory :project-id project-id})
-              private? (pv/private-view? (:_caller_id args) project-id)
-
-              ;; ── Wave 1: ONE memory bundle + git + extension status in parallel ──
-              ;; The bundle replaces 7 per-type Milvus RPCs with 2 queries
-              ;; (hierarchy + global-pierce), grouped by :type in memory. Avoids
-              ;; Milvus type-filter scalar-scan storms that blew the budget.
-              ;; The :catchup/status-providers extension lets registered
-              ;; addons attach status fields to the response without the
-              ;; core knowing about them — DIP.
-              bundle-profile (when-let [profile-fn (ext/get-extension :catchup/bundle-profile)]
-                               (catchup-caller/resolve-for-caller profile-fn (:_caller_id args) project-id))
-              ;; :catchup/caps is a project-id-keyed display-budget provider,
-              ;; independent of the :catchup/lens axiom reranker.
-              f-bundle (pool/with-io (pv/in-view private? (tt/timed-query "catchup/bundle-total"
-                                                                          #(let [caps-provider (ext/get-extension :catchup/caps)
-                                                                                 caps (catchup-caps/resolve-caps caps-provider project-id bundle-profile)]
-                                                                             (if (or caps-provider (seq (:caps bundle-profile)))
-                                                                               (catchup-scope/query-catchup-bundle project-id {:caps caps})
-                                                                               (catchup-scope/query-catchup-bundle project-id))))))
-              f-git    (pool/with-io ((tt/timed-query "catchup/git-total"
-                                                      #(catchup-git/gather-git-info directory))))
-              status-providers (or (ext/get-extension :catchup/status-providers) {})
-              f-status (pool/with-io ((tt/timed-query "catchup/status-providers-total"
-                                                      #(reduce-kv (fn [acc k provider-fn]
-                                                                    (assoc acc k
-                                                                           (rescue nil (block-cache/run-status-provider k provider-fn project-id))))
-                                                                  {} status-providers))))
-              ;; Contributed blocks (hive-spi.catchup.registry): core's own
-              ;; domains and addons register {:block/id :block/fn :block/order};
-              ;; catchup composes them without naming a contributor.
-              f-blocks (pool/with-io ((tt/timed-query "catchup/blocks-total"
-                                                      #(compose-blocks {:project-id project-id
-                                                                        :directory  directory
-                                                                        :caller-id  (:_caller_id args)}))))
-
-              bundle        (safe-deref f-bundle query-timeout-ms "bundle")
-              git-info      (outcome/value-or (safe-deref f-git query-timeout-ms "git-info") {})
-              addon-status  (outcome/value-or (safe-deref f-status query-timeout-ms "addon-status") {})
-              carto-status  (:carto-status addon-status)
-              contributed   (outcome/value-or (safe-deref f-blocks query-timeout-ms "blocks") [])
-
-              axioms               (:axioms (outcome/value-or bundle {}) [])
-              axiom-candidates     (:axiom-candidates (outcome/value-or bundle {}) [])
-              principles           (:principles (outcome/value-or bundle {}) [])
-              priority-principles  (:priority-principles (outcome/value-or bundle {}) [])
-              priority-conventions (:priority-conventions (outcome/value-or bundle {}) [])
-              sessions             (:sessions (outcome/value-or bundle {}) [])
-              recent-wraps-raw     (:recent-wraps (outcome/value-or bundle {}) [])
-              decisions            (:decisions (outcome/value-or bundle {}) [])
-              snippets             (:snippets (outcome/value-or bundle {}) [])
-              expiring             (:expiring (outcome/value-or bundle {}) [])
-              conventions          (:conventions (outcome/value-or bundle {}) [])
-
-              ;; Convert to metadata (pure, fast)
-              axioms-meta (mapv fmt/entry->axiom-meta axioms)
-              ;; Review queue. Deliberately absent from piggyback-raw below —
-              ;; a nomination is not law and must never drain as if it were.
-              axiom-candidates-meta (mapv fmt/entry->review-meta axiom-candidates)
-              principles-meta (mapv #(fmt/entry->catchup-meta % 80) principles)
-              priority-principles-meta (mapv #(fmt/entry->catchup-meta % 80) priority-principles)
-              priority-meta (mapv fmt/entry->priority-meta priority-conventions)
-              sessions-meta (mapv #(fmt/entry->catchup-meta % 80) sessions)
-              recent-wraps (mapv fmt/entry->wrap-preview recent-wraps-raw)
-              decisions-base (mapv #(fmt/entry->catchup-meta % 80) decisions)
-              conventions-base (mapv #(fmt/entry->catchup-meta % 80) conventions)
-              snippets-meta (mapv #(fmt/entry->catchup-meta % 60) snippets)
-              expiring-meta (mapv #(fmt/entry->catchup-meta % 80) expiring)
-
-              ;; Addon extension: fire-and-forget (async, returns nil immediately).
-              _ (when (outcome/available? bundle) (when-let [enrich-fn (ext/get-extension :cu/a)] (enrich-fn {:directory directory
-                              :project-id project-id
-                              :caller-id (:_caller_id args)
-                              :decisions decisions-base
-                              :decisions-raw decisions
-                              :conventions conventions-base
-                              :conventions-raw conventions
-                              :sessions sessions-meta
-                              :sessions-raw sessions
-                              :axioms axioms
-                              :principles principles
-                              :priority-principles priority-principles
-                              :priority-conventions priority-conventions})))
-
-              ;; Memory piggyback: enqueue axioms + priority conventions for
-              ;; incremental delivery via ---MEMORY--- blocks on subsequent calls.
-              ;; Axioms first (highest priority), then priority conventions.
-              ;;
-              ;; SESSION-SCOPED: memory piggyback uses raw caller-id (no project
-              ;; dimension) for buffer key alignment with routes.clj drain wrappers.
-              ;; Hivemind cursor still uses project-scoped piggyback-agent-id.
-              raw-caller-id (or (:_caller_id args) "coordinator")
-              caller (ctx-id/parse-caller-id raw-caller-id)
-              scope (ctx-id/parse-project-scope project-id)
-              piggyback-agent-id (ctx-id/make-piggyback-agent-id caller scope)
-
-              ;; Cursor hygiene: adopt previous coordinator's cursor position
-              ;; so we don't re-read hivemind messages from timestamp 0 after
-              ;; a bb-mcp restart. Also evict stale cursors (> 30 min) and
-              ;; adopt orphaned memory-piggyback buffers from dead instances.
-              _ (rescue nil
-                        (do
-                          (piggyback/adopt-cursor! piggyback-agent-id project-id)
-                          (piggyback/evict-stale-cursors! 1800000) ;; 30 min
-                          (memory-piggyback/adopt-buffer! raw-caller-id)))
-
-              ;; Scope-filter piggyback: keep entries relevant to this agent's
-              ;; project hierarchy. Axioms used to ALWAYS pierce scope which
-              ;; flooded sessions with off-topic axioms (windows-ntlm,
-              ;; bufferbloat, JMM, typography). Now axioms must also pass a
-              ;; tag-overlap relevance score against the project's vocabulary
-              ;; — `catchup-priority` and `scope:project:<current>` still
-              ;; pierce. See `hive-mcp.tools.catchup.relevance`.
-              ;; Entries without scope tags pass through (global by convention).
-              ;; Optional persona lens (e.g. hive-agent addon, via
-              ;; :catchup/persona-lens) — mirror of :catchup/status-providers.
-              ;; Resolves an OPAQUE per-caller lens (plain EDN) for the current
-              ;; agent, keyed by (caller-id, project-id). rescue-wrapped: a
-              ;; throwing or absent provider yields nil => identity compose
-              ;; downstream (no persona boost). DIP: core never names the
-              ;; persona NOR the lens shape — hive-knowledge.catchup.lens
-              ;; coerces the EDN at the :catchup/lens seam below.
-              persona-lens-fn (ext/get-extension :catchup/persona-lens)
-              persona-lens    (when persona-lens-fn
-                                (rescue nil (catchup-caller/resolve-for-caller persona-lens-fn raw-caller-id project-id)))
-              relevance-ctx
-              (cond-> (relevance/build-context
-                       {:project-id project-id
-                        :co-loaded-entries (concat priority-conventions
-                                                   decisions
-                                                   sessions)})
-                persona-lens (assoc :persona-lens persona-lens))
-              ;; Optional lens provider (hive-knowledge addon, via :catchup/lens).
-              ;; Re-ranks/refines the relevance-filtered axioms against active
-              ;; work. Absent addon => nil => relevant-axioms is byte-for-byte
-              ;; today's filter output (cond-> guard false). DIP: core never
-              ;; names the provider — see hive-knowledge.catchup.lens-addon.
-              lens-fn (ext/get-extension :catchup/lens)
-              relevant-axioms
-              (cond-> (relevance/filter-by-relevance (vec axioms) relevance-ctx)
-                lens-fn (lens-fn relevance-ctx))
-              piggyback-raw (into (into (vec relevant-axioms) priority-principles) priority-conventions)
-              piggyback-entries
-              (let [in-project? (and project-id (not= project-id "global"))]
-                (if-not in-project?
-                  piggyback-raw
-                  (let [scope-tags (sf/compute-full-scope-tags project-id)]
-                    (filterv (fn [entry]
-                               (let [tags (set (or (:tags entry) []))
-                                     entry-type (str (or (:type entry) ""))]
-                                 (or
-                                  ;; Axioms already filtered above by relevance —
-                                  ;; survivors continue to pierce the scope filter.
-                                  (= entry-type "axiom")
-                                  ;; catchup-priority entries pierce scope
-                                  (contains? tags "catchup-priority")
-                                  ;; No scope tag = global, passes through
-                                  (not-any? #(.startsWith ^String % "scope:project:") tags)
-                                  ;; Scope-matching entries pass through
-                                  (some tags scope-tags))))
-                             piggyback-raw))))
-
-              ;; Dual-write: Cache entry categories in context-store for pass-by-ref mode.
-              ;; Uses context-put-batch! to write all categories in parallel via futures.
-              ;; Each category gets its own ctx-id with 'catchup' + category tags.
-              ;; TTL: 1 hour.
-              ;; Non-fatal: context-store failure doesn't break catchup.
-              catchup-ttl 3600000
-              scope-tag  (or project-id "global")
-              context-refs
-              ;; Shared across callers: agents served the identical cached
-              ;; bundle reuse one set of live refs instead of writing N copies.
-              (rescue nil
-                      (block-cache/shared-context-refs
-                       scope-tag (when-not private? (outcome/value-or bundle nil))
-                       (fn []
-                         (let [refs (context-store/context-put-batch!
-                                     {:axioms                {:data axioms
-                                                              :tags #{"catchup" "axioms" scope-tag}
-                                                              :ttl-ms catchup-ttl}
-                                      :principles            {:data principles
-                                                              :tags #{"catchup" "principles" scope-tag}
-                                                              :ttl-ms catchup-ttl}
-                                      :priority-principles   {:data priority-principles
-                                                              :tags #{"catchup" "priority-principles" scope-tag}
-                                                              :ttl-ms catchup-ttl}
-                                      :priority-conventions  {:data priority-conventions
-                                                              :tags #{"catchup" "priority-conventions" scope-tag}
-                                                              :ttl-ms catchup-ttl}
-                                      :sessions              {:data sessions
-                                                              :tags #{"catchup" "sessions" scope-tag}
-                                                              :ttl-ms catchup-ttl}
-                                      :decisions             {:data decisions
-                                                              :tags #{"catchup" "decisions" scope-tag}
-                                                              :ttl-ms catchup-ttl}
-                                      :conventions           {:data conventions
-                                                              :tags #{"catchup" "conventions" scope-tag}
-                                                              :ttl-ms catchup-ttl}
-                                      :snippets              {:data snippets
-                                                              :tags #{"catchup" "snippets" scope-tag}
-                                                              :ttl-ms catchup-ttl}
-                                      :recent-wraps          {:data recent-wraps-raw
-                                                              :tags #{"catchup" "recent-wraps" scope-tag}
-                                                              :ttl-ms catchup-ttl}})]
-                           (when (seq refs)
-                             (log/info "catchup: stored" (count refs) "categories in context-store"
-                                       {:refs (keys refs)}))
-                           refs))))
-
-              _ (when (seq piggyback-entries)
-                  (memory-piggyback/enqueue! raw-caller-id
-                                             (mapv fmt/cap-piggyback-entry piggyback-entries)
-                                             context-refs))]
-
-          (fmt/build-catchup-response
-           {:scopes scopes, :axiom-candidates-meta axiom-candidates-meta, :project-name project-name, :principles-meta principles-meta, :priority-principles-meta priority-principles-meta, :recent-wraps recent-wraps, :context-refs context-refs, :axioms-meta axioms-meta, :memory-status (memory-status-with-writes bundle), :priority-meta priority-meta, :carto-status carto-status, :expiring-meta expiring-meta, :git-info git-info, :sessions-meta sessions-meta, :snippets-meta snippets-meta, :decisions-meta decisions-base, :conventions-meta conventions-base, :project-id project-id, :contributed-blocks contributed}))
+        (run-catchup-pipeline args)
         (catch Exception e
           (fmt/catchup-error e))))))
 

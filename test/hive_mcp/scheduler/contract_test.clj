@@ -440,8 +440,8 @@
 
 (deftest scheduler-gate-is-not-vacuous
   (let [report (coverage/coverage {:paths ["src/hive_mcp/scheduler"]})]
-    (is (= 54 (count (:universe report))) "every public defn of the tree")
-    (is (= 54 (count (:covered report))))))
+    (is (= 55 (count (:universe report))) "every public defn of the tree")
+    (is (= 55 (count (:covered report))))))
 
 (deftest every-scheduler-contract-generates-both-sides
   (doseq [ns-sym '[hive-mcp.scheduler.dag-eligibility hive-mcp.scheduler.dag-waves

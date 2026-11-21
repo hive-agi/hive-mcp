@@ -145,6 +145,46 @@
                   (subs s (count "role:")))))
             (:tags task))))
 
+(defn- tag-value
+  "The value of the first `<prefix><value>` tag in TAGS, or nil."
+  [prefix tags]
+  (some (fn [t]
+          (let [s (if (keyword? t) (name t) (str t))]
+            (when (str/starts-with? s prefix)
+              (not-empty (str/trim (subs s (count prefix)))))))
+        tags))
+
+(defn- routing-key
+  "A tier or work class as the router reads it: a keyword, nil when blank."
+  [v]
+  (cond
+    (keyword? v) v
+    (and (string? v) (not (str/blank? v))) (keyword (str/trim v))
+    :else nil))
+
+(defn task-routing
+  "What a card asks the spawn router for, by the same convention as its role:
+   an explicit :tier or :work-class on the task, else a `tier:<x>` or
+   `work-class:<x>` tag, else the plan step's [:context :execution] :tier or
+   :work-class. Answers only the keys found, as keywords, so a DAG spawn hands
+   the :spawn/opts-overlay router the same request a direct `agent spawn
+   tier=cheap` does. {} when the card names neither."
+  [task]
+  (let [execution  (get-in task [:context :execution])
+        tags       (:tags task)
+        tier       (routing-key (or (:tier task) (tag-value "tier:" tags) (:tier execution)))
+        work-class (routing-key (or (:work-class task) (tag-value "work-class:" tags)
+                                    (:work-class execution)))]
+    (cond-> {}
+      tier       (assoc :tier tier)
+      work-class (assoc :work-class work-class))))
+
+(def TaskRouting
+  "The routing request a card carries (see task-routing)."
+  [:map [:tier {:optional true} :keyword] [:work-class {:optional true} :keyword]])
+
+(m/=> task-routing [:=> [:cat [:maybe :map]] TaskRouting])
+
 (def capabilities
   "What this scheduler honours in start-dag! opts. A caller that needs a
    guarantee (e.g. :task-ids — never touch cards outside the plan) checks for it
@@ -163,9 +203,22 @@
   [:maybe [:or [:set :any] [:sequential :any]]])
 
 (def ReadyTask
-  "One ready task find-ready-tasks answers."
+  "One ready task find-ready-tasks answers. :routing is what the card asks the
+   spawn router for (task-routing), present only when it asks for something."
   [:map [:task-id :any] [:title :any] [:description :any] [:role :any]
+   [:routing {:optional true} TaskRouting]
    [:deps [:set :any]] [:dep-count [:int {:min 0}]]])
+
+(defn- card-routing
+  "task-routing of a board ROW. A slim board row may not carry the plan step's
+   :context, so a row that names nothing is read again as the full card
+   (through the kanban port, rescued) before concluding the card asks for no
+   routing."
+  [row]
+  (let [from-row (task-routing row)]
+    (if (or (seq from-row) (contains? row :context))
+      from-row
+      (task-routing (get-kanban-task (:id row))))))
 
 (def LingOutcome [:enum :succeeded :failed])
 
@@ -202,7 +255,8 @@
   "Find tasks whose all dependencies have been completed.
    With TASK-IDS (a collection) only those cards are candidates, lowest open
    wave first; nil means every todo on the board. Human-only cards are never
-   candidates (see dag-eligibility)."
+   candidates (see dag-eligibility). A ready task carries :routing when its
+   card asks the spawn router for a tier or work class (task-routing)."
   ([directory completed dispatched failed]
    (find-ready-tasks directory completed dispatched failed nil))
   ([directory completed dispatched failed task-ids]
@@ -223,12 +277,14 @@
                    (when-not (set? deps)
                      (log/warn "DAGWaves: dependencies of" task-id "unreadable; not ready this tick"))
                    (when all-deps-done?
-                     {:task-id task-id
-                      :title   (:title task)
-                      :description (:description task)
-                      :role    (task-role task)
-                      :deps    deps
-                      :dep-count (count deps)}))))
+                     (let [routing (card-routing task)]
+                       (cond-> {:task-id task-id
+                                :title   (:title task)
+                                :description (:description task)
+                                :role    (task-role task)
+                                :deps    deps
+                                :dep-count (count deps)}
+                         (seq routing) (assoc :routing routing)))))))
          vec))))
 
 ;; boundary: reads the kanban port and the KG (both rescued); the sequential
@@ -285,22 +341,26 @@
    hive.v1.wave.<run-id>.completed.<task-id>), :max-budget-usd (this scheduler
    auto-advances waves, so an uncapped agent is an unbounded spend loop) and
    :spawned-by, captured by `start-dag!` because later waves run on an event
-   thread with no request in flight."
-  [task-id title role {:keys [description rules] :as opts}]
-  (let [task {:task-id     task-id
-              :title       title
-              :description description
-              :role        (normalize-role role)
-              :project-id  (:project-id opts)
-              :prompt      (task-prompt task-id title description rules)}
-        out  (task-dispatch/dispatch! task (dissoc opts :description :rules))]
+   thread with no request in flight. The card's :routing (tier, work class)
+   rides on the task as :tier / :work-class, which create-ling-opts hands the
+   spawn router under :spawn/request."
+  [task-id title role {:keys [description rules routing] :as opts}]
+  (let [task (merge {:task-id     task-id
+                     :title       title
+                     :description description
+                     :role        (normalize-role role)
+                     :project-id  (:project-id opts)
+                     :prompt      (task-prompt task-id title description rules)}
+                    (select-keys routing [:tier :work-class]))
+        out  (task-dispatch/dispatch! task (dissoc opts :description :rules :routing))]
     (if (result/ok? out)
       (let [{:keys [value via resolved-by skipped]} (:ok out)]
         (result/ok (assoc value :via via :resolved-by resolved-by :skipped skipped)))
       (assoc out :error (or (:error out) :dag/spawn-failed)))))
 
 (defn dispatch-wave!
-  "Dispatch lings for ready tasks up to available slots."
+  "Dispatch lings for ready tasks up to available slots. A ready task's
+   :routing (its card's tier / work class) travels with its spawn."
   [ready-tasks max-slots opts]
   (let [current-dispatched (:dispatched @dag-state)
         available-slots (max 0 (- max-slots (count current-dispatched)))
@@ -313,9 +373,10 @@
 
     (let [dispatched-results
           (doall
-           (for [{:keys [task-id title role description]} tasks-to-dispatch]
+           (for [{:keys [task-id title role description routing]} tasks-to-dispatch]
              (let [r (spawn-ling-for-task task-id title role
-                                          (assoc opts :description description))]
+                                          (cond-> (assoc opts :description description)
+                                            (seq routing) (assoc :routing routing)))]
                (if-let [ling-id (get-in r [:ok :agent-id])]
                  (let [{:keys [via resolved-by skipped]} (:ok r)]
                    (when (= :fallback resolved-by)

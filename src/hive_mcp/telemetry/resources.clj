@@ -77,16 +77,35 @@
   (some (fn [^MemoryPoolMXBean p] (when (re-find re (.getName p)) p))
         (ManagementFactory/getMemoryPoolMXBeans)))
 
+(defn- proc-lines
+  "The lines of a /proc file. `slurp` cannot read one: its reader throws
+   `IOException: Invalid argument` on procfs in this JVM, which made every
+   /proc read answer nil (RSS was never reported). Files/readAllLines works."
+  [path]
+  (java.nio.file.Files/readAllLines (java.nio.file.Paths/get ^String path (make-array String 0))))
+
 (defn- rss-bytes
   "VmRSS from /proc/self/status in bytes; nil off Linux or on any failure."
   []
   (try
-    (let [f (io/file "/proc/self/status")]
-      (when (.exists f)
-        (some (fn [line]
-                (when (str/starts-with? line "VmRSS:")
+    (when (.exists (io/file "/proc/self/status"))
+      (some (fn [^String line]
+              (when (str/starts-with? line "VmRSS:")
+                (some-> (re-find #"\d+" line) parse-long (* 1024))))
+            (proc-lines "/proc/self/status")))
+    (catch Throwable _ nil)))
+
+(defn- proc-kb-bytes
+  "The `field:` kB line of a /proc key/value file (e.g. /proc/meminfo), in
+   bytes; nil off Linux or on any failure."
+  [path field]
+  (try
+    (let [k (str field ":")]
+      (when (.exists (io/file path))
+        (some (fn [^String line]
+                (when (str/starts-with? line k)
                   (some-> (re-find #"\d+" line) parse-long (* 1024))))
-              (str/split-lines (slurp f)))))
+              (proc-lines path))))
     (catch Throwable _ nil)))
 
 (defn- open-fds []
@@ -144,6 +163,8 @@
                                 :time-ms (max 0 (.getCollectionTime b))})
                              (ManagementFactory/getGarbageCollectorMXBeans))
      :rss-bytes        (rss-bytes)
+     :rss-anon-bytes   (proc-kb-bytes "/proc/self/status" "RssAnon")
+     :mem-available-bytes (proc-kb-bytes "/proc/meminfo" "MemAvailable")
      :open-fds         (open-fds)}))
 
 (m/=> read-mx [:=> [:cat] Raw])
@@ -202,6 +223,21 @@
 
 (defn- delta [a b] (when (and a b) (max 0 (- a b))))
 
+(def admission-margin-mb
+  "hive-clj's default HIVE_CLJ_MARGIN_MB: headroom it requires beyond -Xmx."
+  1536)
+
+(defn admission-slots
+  "How many JVMs with an `xmx-mb` heap hive-clj would admit side by side with
+   `avail-bytes` of MemAvailable: floor(avail / (xmx + margin)). This is the
+   host's multi-task capacity in the unit the launcher actually gates on, so
+   a RAM change can be judged by it over time. nil when avail is unknown."
+  [avail-bytes xmx-mb margin-mb]
+  (when avail-bytes
+    (long (quot (long avail-bytes) (* 1048576 (+ (long xmx-mb) (long margin-mb)))))))
+
+(m/=> admission-slots [:=> [:cat [:maybe :int] [:int {:min 1}] [:int {:min 0}]] [:maybe :int]])
+
 (defn derive-sample
   "Fold reading `raw` against the previous reading `prev` (nil on the first
    sample) into one sample: gauges as read plus deltas over the interval."
@@ -234,7 +270,10 @@
                     :count-delta (when p (delta count (:count p)))
                     :time-ms-delta (when p (delta time-ms (:time-ms p)))}))
                (:gc raw))
-     :process {:rss-bytes (:rss-bytes raw) :open-fds (:open-fds raw)}}))
+     :process {:rss-bytes (:rss-bytes raw) :open-fds (:open-fds raw)
+               :rss-anon-bytes (:rss-anon-bytes raw)}
+     :host {:mem-available-bytes (:mem-available-bytes raw)
+            :jvm-slots-2g (admission-slots (:mem-available-bytes raw) 2048 admission-margin-mb)}}))
 
 (m/=> derive-sample [:=> [:cat [:maybe Raw] Raw [:maybe [:int {:min 1}]]] Sample])
 
@@ -322,7 +361,10 @@
    "thread_group_cpu_ratio"        ["CPU of a thread group over the last interval, cores (top N groups)" ["group"]]
    "metaspace_growth_bytes_per_hour" ["Metaspace growth per hour over the sample ring" []]
    "classes_growth_per_hour"       ["Loaded-class growth per hour over the sample ring" []]
-   "rss_slope_bytes_per_hour"      ["RSS least-squares slope per hour over the sample ring" []]})
+   "rss_slope_bytes_per_hour"      ["RSS least-squares slope per hour over the sample ring" []]
+   "rss_anon_bytes"                ["Anonymous (non-reclaimable) RSS of this JVM" []]
+   "host_mem_available_bytes"      ["Host MemAvailable" []]
+   "jvm_admission_slots_2g"        ["-Xmx2g JVMs hive-clj would admit side by side now" []]})
 
 (defn metric-names
   "Exported Prometheus metric names, sorted."
@@ -378,6 +420,9 @@
     (set-gauge! gs "metaspace_growth_bytes_per_hour" (:metaspace-bytes-per-hour t))
     (set-gauge! gs "classes_growth_per_hour" (:classes-per-hour t))
     (set-gauge! gs "rss_slope_bytes_per_hour" (:rss-bytes-per-hour t))
+    (set-gauge! gs "rss_anon_bytes" (get-in sample [:process :rss-anon-bytes]))
+    (set-gauge! gs "host_mem_available_bytes" (get-in sample [:host :mem-available-bytes]))
+    (set-gauge! gs "jvm_admission_slots_2g" (get-in sample [:host :jvm-slots-2g]))
     (when-let [^Gauge g (get gs "thread_group_cpu_ratio")]
       (.clear g)
       (doseq [{:keys [group core-ratio]} (get-in sample [:threads :groups])]

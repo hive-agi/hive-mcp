@@ -143,7 +143,14 @@ This loads the tool's schema. Then use:
 |-----------|-----------|
 | Replace a top-level form | `mcp__hive__code` `write-form` |
 | Insert before/after a form | `mcp__hive__code` `insert-form` |
+| Exact text in any language | `mcp__hive__code` `carto find-replace` with `apply? true` |
 | Whole-file create/rewrite | `mcp__hive__file_write` (only when no existing form to target) |
+
+**Make the edit write.** `find-replace`, `raw-splice` and `coll-insert` answer a preview unless
+the call passes `apply? true` (the bare `apply true` and `preview? false` mean the same). A
+preview opens with `"notice": "NOTHING WRITTEN: ..."` and `"applied?": false`, and disk is
+unchanged. An edit is done only when its answer says `"applied?": true`. `write-form` writes by
+default; `preview? true` makes it a dry run.
 
 **Why pre-load the schema?** Without it, the ling defaults to `Read`/`Edit` because those need no setup — and silently bypasses lint + REPL refresh. The single `ToolSearch` call up front kills that friction for the rest of the session.
 

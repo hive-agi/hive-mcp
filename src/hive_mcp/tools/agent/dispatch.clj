@@ -29,7 +29,7 @@
   "Dispatch a task to the swarm-registry ling `agent_id`: the terminal path
    (proto/dispatch!). Answers the success data map, throws when the ling is
    unknown."
-  [{:keys [agent_id prompt files priority ctx_refs kg_node_ids scope]}]
+  [{:keys [agent_id prompt files priority ctx_refs kg_node_ids scope deliver-fn]}]
   (if-let [agent-data (queries/get-slave agent_id)]
     (let [agent (ling/->ling agent_id {:cwd (:slave/cwd agent-data)
                                        :presets (:slave/presets agent-data)
@@ -43,10 +43,11 @@
           ctx (build-dispatch-context prompt ctx_refs kg_node_ids
                                       (or scope (:slave/project-id agent-data)))
           resolved-prompt (:prompt (dispatch-ctx/resolve-context ctx))
-          task-opts {:task resolved-prompt
-                     :dispatch-context ctx
-                     :files files
-                     :priority (keyword (or priority "normal"))}
+          task-opts (cond-> {:task resolved-prompt
+                             :dispatch-context ctx
+                             :files files
+                             :priority (keyword (or priority "normal"))}
+                      deliver-fn (assoc :deliver-fn deliver-fn))
           task-id (proto/dispatch! agent task-opts)]
       (log/info "Dispatched task to agent" {:agent_id agent_id
                                             :task-id task-id

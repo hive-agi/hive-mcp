@@ -78,3 +78,43 @@
       (f)
       (finally
         (restore-stores! prior)))))
+
+(def isolated-fixture-report
+  "What fixture-isolation-report answers for a fixture that cannot clobber a
+   live registry."
+  {:rethrew?                 true
+   :restored-after-throw?    true
+   :live-refused?            true
+   :live-body-ran?           false
+   :live-registry-unchanged? true})
+
+(defn fixture-isolation-report
+  "Drive FIXTURE (a clojure.test fixture fn) twice and report what it did to
+   the process-wide memory registry. First around a body that leaks a sentinel
+   slot and throws: an isolated fixture rethrows and leaves the exact prior
+   slot map. Then with the addon registry reporting a running server: an
+   isolated fixture refuses with :live-addon-registry before the body runs and
+   writes nothing. The prior slot map is put back whatever FIXTURE did, so a
+   leaky fixture under test cannot poison the tests after it.
+   Compare the answer with isolated-fixture-report."
+  [fixture]
+  (let [prior     (memory/registered-stores)
+        leak!     #(restore-stores! (assoc (memory/registered-stores) ::sentinel ::leaked))
+        rethrew?  (try (fixture (fn [] (leak!) (throw (ex-info "body failed" {::body true}))))
+                       false
+                       (catch clojure.lang.ExceptionInfo e (boolean (::body (ex-data e)))))
+        thrown    (memory/registered-stores)
+        _         (restore-stores! prior)
+        ran?      (atom false)
+        refusal   (with-redefs [addons/registry-status
+                                (constantly {:total 1 :active 1 :registered 1 :error 0})]
+                    (try (fixture (fn [] (reset! ran? true) (leak!)))
+                         nil
+                         (catch clojure.lang.ExceptionInfo e (:reason (ex-data e)))))
+        live      (memory/registered-stores)]
+    (restore-stores! prior)
+    {:rethrew?                 rethrew?
+     :restored-after-throw?    (= prior thrown)
+     :live-refused?            (= :live-addon-registry refusal)
+     :live-body-ran?           @ran?
+     :live-registry-unchanged? (= prior live)}))

@@ -29,7 +29,10 @@
             [hive-mcp.test.stub.terminal-addon :as stub-term]
             [hive-mcp.isolation-methods]
             [hive-mcp.dispatch.handler :as dispatch]
-            [hive-mcp.dispatch.verbs :as verbs]))
+            [hive-mcp.dispatch.verbs :as verbs]
+            [hive-mcp.transport.registry :as reg]
+            [hive-mcp.test.stub.headless-backend :as headless-stub]
+            [hive-mcp.transport.delivery :as delivery]))
 
 ;; =============================================================================
 ;; Test Fixtures
@@ -45,9 +48,30 @@
                 (constantly {:provider :anthropic :model "claude-test-model"})]
     (try (f) (finally (logic/reset-db!)))))
 
+(defn- headless-backend-fixture
+  "Register a recording stub headless backend through the headless-registry
+   port, restoring the prior registry after. The default spawn mode is
+   :headless and every headless backend is addon-contributed, so a cold test
+   JVM resolves no strategy and every spawn fails with \"No strategy
+   registered for mode: :headless\". The stub names its process
+   slave-<requested id>."
+  [f]
+  (headless-stub/with-backend* :test-headless (headless-stub/->backend :test-headless) f))
+
+(defn- transport-registry-fixture
+  "Start each test from an unbound transport registry. The :delivery chain is
+   sticky: a test that makes a ling's terminal dispatch fail leaves :emacs
+   degraded and the ling lane's :active on :hivemind-shout, so every later
+   dispatch in the JVM answers via the shout instead of reaching the ling."
+  [f]
+  (reg/clear!)
+  (try (f) (finally (reg/clear!))))
+
 (use-fixtures :each
   (iso/with-isolations :swarm-ds)
   stub-term/with-terminal
+  headless-backend-fixture
+  transport-registry-fixture
   logic-and-redefs-fixture)
 
 ;; =============================================================================
@@ -107,43 +131,31 @@
 
 (deftest test-handle-spawn-ling-success
   (testing "spawn ling returns agent-id on success"
-    ;; Mock elisp calls at the emacsclient level
-    ;; The vterm strategy uses (:result resp) as the slave-id, so mock must
-    ;; return the expected agent name (not a generic string like "spawned").
-    (with-redefs [ec/eval-elisp-with-timeout (fn [_elisp _timeout]
-                                               {:success true :result "test-ling-1"})]
-      (let [result (agent/handle-spawn {:type "ling"
-                                        :name "test-ling-1"
-                                        :cwd "/tmp/project"
-                                        :presets ["coordinator"]})]
-        (is (not (:isError result)) (str "Unexpected error: " (:text result)))
-        (let [parsed (parse-response result)]
-          (is (:success parsed))
-          (is (= "test-ling-1" (:agent-id parsed)))
-          ;; JSON returns strings, not keywords
-          (is (= "ling" (:type parsed)))
-          (is (= "/tmp/project" (:cwd parsed)))
-          (is (= ["coordinator"] (:presets parsed))))))))
+    ;; The default spawn mode is :headless; `headless-backend-fixture`
+    ;; registers the stub backend, which names its process slave-<id>.
+    (let [result (agent/handle-spawn {:type "ling"
+                                      :name "test-ling-1"
+                                      :cwd "/tmp/project"
+                                      :presets ["coordinator"]})]
+      (is (not (:isError result)) (str "Unexpected error: " (:text result)))
+      (let [parsed (parse-response result)]
+        (is (:success parsed))
+        (is (= "slave-test-ling-1" (:agent-id parsed)))
+        ;; JSON returns strings, not keywords
+        (is (= "ling" (:type parsed)))
+        (is (= "/tmp/project" (:cwd parsed)))
+        (is (= ["coordinator"] (:presets parsed)))))))
 
 (deftest test-handle-spawn-auto-generates-id
   (testing "spawn auto-generates agent-id when name not provided"
-    ;; The vterm strategy uses (:result resp) as the slave-id.
-    ;; When no name is provided, the handler generates a "ling-<uuid>" id
-    ;; and passes it to elisp. The mock returns the elisp result which
-    ;; vterm strategy uses as slave-id. We capture the generated id
-    ;; from the elisp call to return it back correctly.
-    (with-redefs [ec/eval-elisp-with-timeout (fn [elisp _timeout]
-                                               ;; Extract the agent-id from the elisp spawn call
-                                               ;; Format: (hive-mcp-swarm-api-spawn "ling-xxx" ...)
-                                               (let [m (re-find #"\"(ling-[^\"]+)\"" elisp)
-                                                     agent-id (or (second m) "ling-fallback")]
-                                                 {:success true :result agent-id}))]
-      (let [result (agent/handle-spawn {:type "ling" :cwd "/tmp/project"})]
-        (is (not (:isError result)))
-        (let [parsed (parse-response result)]
-          (is (:success parsed))
-          (is (string? (:agent-id parsed)))
-          (is (re-find #"^ling-" (:agent-id parsed))))))))
+    ;; With no name the handler generates a "ling-<uuid>" id and hands it to
+    ;; the backend; the stub headless backend answers slave-<that id>.
+    (let [result (agent/handle-spawn {:type "ling" :cwd "/tmp/project"})]
+      (is (not (:isError result)))
+      (let [parsed (parse-response result)]
+        (is (:success parsed))
+        (is (string? (:agent-id parsed)))
+        (is (re-find #"^slave-ling-" (:agent-id parsed)))))))
 
 (deftest test-handle-spawn-invalid-type
   (testing "spawn requires valid type"
@@ -342,10 +354,20 @@
     ;; Make the DataScript update throw to trigger exception path
     (with-redefs [ds-lings/update-slave! (fn [& _]
                                            (throw (ex-info "DataScript error" {})))]
-      (let [result (agent/handle-dispatch {:agent_id "ling-dispatch-error"
-                                           :prompt "test"})]
-        (is (:isError result))
-        (is (re-find #"Failed to dispatch" (:text result)))))))
+      (testing "the terminal dispatch fails, the :delivery chain falls through to the shout"
+        (let [parsed (parse-response (agent/handle-dispatch {:agent_id "ling-dispatch-error"
+                                                             :prompt "test"}))]
+          (is (= "hivemind-shout" (:via parsed)))
+          (is (= {:adapter "emacs" :reason "failed"}
+                 (select-keys (last (:skipped parsed)) [:adapter :reason])))
+          (is (= "DataScript error" (get-in (last (:skipped parsed)) [:error :message])))))
+      (testing "with the shout undelivered too, no route reached the ling: an error"
+        (reg/clear!)
+        (binding [delivery/*shout* (fn [_ _] {:delivered false :reason :test})]
+          (let [result (agent/handle-dispatch {:agent_id "ling-dispatch-error"
+                                               :prompt "test"})]
+            (is (:isError result))
+            (is (re-find #"Failed to dispatch" (:text result)))))))))
 
 ;; =============================================================================
 ;; Claims Handler Tests

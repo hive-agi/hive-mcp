@@ -484,6 +484,29 @@
         (log/info "Budget guardrail registered for ling"
                   {:ling-id slave-id :max-budget-usd max-budget-usd})))))
 
+(defn- arm-ling-inbox!
+  "Arm ling ID's NATS inbox (hive-mcp.nats.ling-inbox), resolved at call
+   time: the spawn path never depends on the bus. Fail-soft, nil-safe."
+  [id]
+  (r/rescue nil
+    (when-let [arm! (soft/resolve-soft 'hive-mcp.nats.ling-inbox/arm!)]
+      (arm! id))))
+
+(defn- disarm-ling-inbox!
+  "Disarm ling ID's NATS inbox: its loop is gone, nothing reads it again."
+  [id]
+  (r/rescue nil
+    (when-let [disarm! (soft/resolve-soft 'hive-mcp.nats.ling-inbox/disarm!)]
+      (disarm! id))))
+
+(defn- ling-seq-call
+  "Call send-sequence fn SYM of hive-mcp.nats.ling-inbox with ARGS, resolved
+   at call time like the inbox arm: fail-soft, nil when absent."
+  [sym & args]
+  (r/rescue nil
+    (when-let [f (soft/resolve-soft (symbol "hive-mcp.nats.ling-inbox" (name sym)))]
+      (apply f args))))
+
 (defn- dispatch-when-ready!
   [{:keys [mode cwd presets project-id effective-model]} slave-id enriched-task headless?]
   (when (and enriched-task (not headless?))
@@ -516,20 +539,41 @@
    from opts, then applies each contributor of `spawn-overlay-fns` in order as
    (f opts ctx) -> opts', each seeing the opts the one before it returned.
    Fail-soft per contributor: nil or a throw keeps the opts it was given.
-   Applied once in spawn! so plan + executor both see merged opts."
+   Applied by spawn! so plan + executor both see merged opts, and by a caller
+   that needs the opts BEFORE the spawn (see `route-spawn-opts`): opts already
+   marked :spawn/opts-routed come back untouched, so one spawn is never charged
+   two routing decisions."
   [opts ling]
-  (let [req  (:spawn/request opts)
-        opts (dissoc opts :spawn/request)]
-    (reduce (fn [acc f]
-              (or (r/rescue nil
-                    (f acc {:request req
-                            :cwd (:cwd ling)
-                            :project-id (:project-id ling)
-                            :task (:task acc)
-                            :kanban-task-id (:kanban-task-id acc)}))
-                  acc))
-            opts
-            (spawn-overlay-fns))))
+  (if (:spawn/opts-routed opts)
+    (dissoc opts :spawn/opts-routed :spawn/request)
+    (let [req  (:spawn/request opts)
+          opts (dissoc opts :spawn/request)]
+      (reduce (fn [acc f]
+                (or (r/rescue nil
+                      (f acc {:request req
+                              :cwd (:cwd ling)
+                              :project-id (:project-id ling)
+                              :task (:task acc)
+                              :kanban-task-id (:kanban-task-id acc)}))
+                    acc))
+              opts
+              (spawn-overlay-fns)))))
+
+(defn route-spawn-opts
+  "The opts a spawn with OPTS on LING will actually run with: `apply-spawn-overlay`
+   applied here rather than inside spawn!, so a caller can preflight, log and
+   report the routed :model/:provider instead of the ones the host resolved
+   before the overlay ran. Marked :spawn/opts-routed, which spawn! honours by
+   not routing again (the marker is stripped on the way, so neither the plan nor
+   the backend sees it). OPTS come back unchanged when no contributor is
+   registered, and the returned map is safe to hand straight to spawn!."
+  [opts ling]
+  (cond-> (apply-spawn-overlay opts ling)
+    (seq (spawn-overlay-fns)) (assoc :spawn/opts-routed true)))
+
+;; The routed opts are the same map shape a spawn is handed, so the answer can
+;; go straight to spawn!; LING is only read for :cwd, :project-id and :id.
+(m/=> route-spawn-opts [:=> [:cat :map :any] :map])
 
 (defn- execute-spawn-plan!
   "Execute spawn effects: catchup enrichment, store pre-registration, strategy
@@ -555,7 +599,17 @@
                                                    :depth     (:depth plan)
                                                    :grant     (:grant plan)})
         spawn-opts (spawn-opts opts enriched-task headless-inputs (:ling-id plan) credential)]
-    (let [slave-id (strategy/strategy-spawn! strat ctx spawn-opts)]
+    ;; A headless ling's NATS inbox is armed BEFORE its backend starts the
+    ;; loop, so the loop's consumer finds its durable on its first fetch.
+    (when headless? (arm-ling-inbox! (:ling-id plan)))
+    (let [slave-id (try (strategy/strategy-spawn! strat ctx spawn-opts)
+                        (catch Throwable e
+                          ;; No loop started: nothing will ever read the inbox.
+                          (when headless? (disarm-ling-inbox! (:ling-id plan)))
+                          (throw e)))]
+      (when (and headless? (not= slave-id (:ling-id plan)))
+        (disarm-ling-inbox! (:ling-id plan))
+        (arm-ling-inbox! slave-id))
       (reconcile-spawned-slave! plan slave-id enriched-task)
       (stamp-spawn-metadata! plan slave-id headless?)
       (register-ling-resources! slave-id)
@@ -642,7 +696,12 @@
                    :claude)
           strat (lifecycle/resolve-strategy mode)]
       (let [prior-status (:slave/status (ds-queries/get-slave id))
-            resolved-opts (cond-> (assoc task-opts :task resolved-task :task-id task-id)
+            ;; Send order across the ling's two inbox routes (NATS and the
+            ;; in-process hand-off): the loop holds this message back until
+            ;; the last one accepted before it was handed off.
+            ling-seq (ling-seq-call 'seq-stamp! id)
+            resolved-opts (cond-> (assoc task-opts :task resolved-task :task-id task-id
+                                         :ling-seq ling-seq)
                             ctx (assoc :dispatch-context ctx))]
         (ds-lings/update-slave! id {:slave/status :working})
         ;; Everything after the :working write runs inside the try, so no
@@ -659,11 +718,20 @@
                                           :files files})
           (when (seq files)
             (.claim-files! this files task-id))
-          (let [answer (strategy/strategy-dispatch! strat (lifecycle/ling-ctx this) resolved-opts)]
+          ;; A transport the caller chose (:deliver-fn, e.g. the ling's NATS
+          ;; inbox) replaces the strategy's in-process hand-off; everything
+          ;; above and below (task id, dispatch record, :working, refusal and
+          ;; failure handling) is the same for every route.
+          (let [deliver-fn (:deliver-fn task-opts)
+                answer (if deliver-fn
+                         (deliver-fn (dissoc resolved-opts :deliver-fn))
+                         (strategy/strategy-dispatch! strat (lifecycle/ling-ctx this)
+                                                      (dissoc resolved-opts :deliver-fn)))]
             (when-let [refusal (dispatch-refusal answer)]
               (throw (ex-info "Backend refused the dispatch"
                               {:ling-id id :task-id task-id
-                               :dispatch/refused? true :refusal refusal}))))
+                               :dispatch/refused? true :refusal refusal})))
+            (when ling-seq (ling-seq-call 'seq-accepted! id ling-seq)))
           (log/info "Task dispatched to ling" {:ling-id id :task-id task-id
                                                :mode mode :files files
                                                :context-type (when ctx
@@ -727,6 +795,8 @@
                 result (strategy/strategy-kill! strat (lifecycle/ling-ctx this))]
             (when (:killed? result)
               (ds-lings/remove-slave! id)
+              (disarm-ling-inbox! id)
+              (ling-seq-call 'seq-forget! id)
               ;; Publish agent-kill event via NATS backbone (non-fatal).
               (r/rescue nil
                 (when-let [publish! (requiring-resolve 'hive-mcp.nats.bridge/publish-event!)]

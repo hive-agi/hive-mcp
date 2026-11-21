@@ -89,7 +89,9 @@
      [:provider {:optional true} :string]
      [:spawn-mode {:optional true} :string]
      [:presets {:optional true} [:vector :string]]
-     [:persona {:optional true} :map]]]])
+     [:persona {:optional true} :map]
+     [:tier {:optional true} [:or :keyword :string]]
+     [:work-class {:optional true} [:or :keyword :string]]]]])
 
 (def step-keys
   "Set of top-level keys the core Step schema declares, read off Step itself.
@@ -302,6 +304,23 @@
       (update :tags #(or % []))
       field-registry/resolve-step-defaults))
 
+(defn routing-tags
+  "The `tier:<x>` / `work-class:<x>` kanban tags a step's [:execution :tier]
+   and [:execution :work-class] ask for, in that order, lower-cased. Only the
+   keys the step names yield a tag, so a step naming neither answers [].
+
+   These are the tags the DAG scheduler's task-routing reads off a card, so a
+   plan step routes its spawn without anyone hand-tagging the card."
+  [step]
+  (let [execution (:execution step)
+        tag       (fn [prefix k]
+                    (let [v (get execution k)
+                          s (when (or (keyword? v) (string? v))
+                              (str/lower-case (str/trim (if (keyword? v) (name v) v))))]
+                      (when (seq s) (str prefix s))))]
+    (into [] (keep identity)
+          [(tag "tier:" :tier) (tag "work-class:" :work-class)])))
+
 ;; =============================================================================
 ;; Example Plans (Documentation)
 ;; =============================================================================
@@ -452,6 +471,10 @@
 (m/=> normalize-plan
       [:=> [:cat :map]
        :map])
+
+(m/=> routing-tags
+      [:=> [:cat :map]
+       [:vector :string]])
 
 (m/=> valid-plan-to-kanban-result?
       [:=> [:cat :any]

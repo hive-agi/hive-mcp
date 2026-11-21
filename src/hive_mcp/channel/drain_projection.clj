@@ -28,8 +28,8 @@
    `hive-mcp.channel.drain-projection-arc-test`."
   (:require [clojure.string :as str]
             [hive-mcp.channel.drain-rank :as rank]
-            [hive-mcp.channel.axiom-projection :as ax]
-            [malli.core :as m]))
+            [malli.core :as m]
+            [hive-spi.projection.ports :as floor]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -156,9 +156,12 @@
 
    - a POOL entry may become a POINTER, losing its body entirely, because the
      caller can pull it back on demand;
-   - a FLOOR entry may NEVER become a pointer. It is compacted at most, which
-     withholds rationale and guard source while leaving every normative line
-     byte-identical. See `hive-mcp.channel.axiom-projection`.
+   - a FLOOR entry may NEVER become a pointer. Under `:compact` it goes through
+     the floor projection installed in `hive-spi.projection.ports` (hive-prompt
+     provides one), which may withhold rationale and guard source while leaving
+     every normative line byte-identical. Core names the port, never the
+     implementation: with no projection installed the floor entry is sent
+     WHOLE, so an absent addon costs savings, never binding text.
 
    A pool entry is projected only when the pointer is actually SMALLER than the
    entry. A very short entry costs more as a pointer than as itself, because
@@ -171,7 +174,7 @@
         axiom-policy (or axiom-policy (resolve-axiom-policy))]
     (cond
       floor?
-      (if (= :compact axiom-policy) (ax/compact-entry entry) entry)
+      (if (= :compact axiom-policy) (floor/project-or-identity entry) entry)
 
       (or (not= :index policy) (:ref entry))
       entry

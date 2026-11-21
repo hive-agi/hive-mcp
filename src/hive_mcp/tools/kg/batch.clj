@@ -16,19 +16,18 @@
             [hive-mcp.dns.result :refer [rescue]]
             [hive-mcp.tools.cli :as cli]
             [hive-mcp.dispatch.handler :as dispatch]
-            [malli.core :as m]))
+            [malli.core :as m]
+            [hive-mcp.dispatch.lazy :as lazy]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
 
 (defn- lazy-canonical-handlers
+  "`hive-mcp.tools.kg/handlers` through the shared `lazy/resolve-lazily`: a
+   failed load answers its cause and retries, never a frozen `{}`."
   []
-  (or (rescue nil
-              (when-let [v (requiring-resolve
-                            'hive-mcp.tools.kg/handlers)]
-                @v))
-      {}))
+  (lazy/resolve-lazily 'hive-mcp.tools.kg/handlers deref))
 
 (defn- resolve-kg-handler
   [handlers tool-name]

@@ -64,23 +64,33 @@
 
 (defn- resolve-entry!
   "Land `entry` on `new-type`, stripping queue residue and stamping the verdict.
-   Runs the edit with the write gate bypassed — this is the authority."
+   Runs the edit with the write gate bypassed; this is the authority.
+
+   On approve the entry also takes the landed type's registry duration (an
+   :axiom is :permanent), passed EXPLICITLY. A candidate parked before the add
+   path read the registry carries `long` (90 days), and an approved axiom must
+   not expire out of catchup (card 20261102185846-041d31e2). Reject passes no
+   duration, so the candidate's own duration is preserved."
   [entry id new-type verdict reason]
   (let [requested (type-registry/requested-type-of (:tags entry))
         tags      (->> (verdict-tags verdict requested new-type)
                        (into (type-registry/strip-queue-tags (:tags entry)))
                        distinct
-                       vec)]
+                       vec)
+        duration  (when (= :approve verdict)
+                    (type-registry/default-duration new-type))]
     (log/info "memory review:" id (name verdict) "->" new-type
+              (when duration (str "duration:" duration))
               (when reason (str "reason:" reason)))
     (binding [type-registry/*gate-bypass?* true]
       ;; Synchronous on this thread, so the binding is in scope for the seam.
-      (edit/handle-edit {:id     id
-                         :type   new-type
-                         :tags   tags
-                         :reason (or reason
-                                     (str "axiom review: " (name verdict)
-                                          " -> " new-type))}))))
+      (edit/handle-edit (cond-> {:id     id
+                                 :type   new-type
+                                 :tags   tags
+                                 :reason (or reason
+                                             (str "axiom review: " (name verdict)
+                                                  " -> " new-type))}
+                          duration (assoc :duration duration))))))
 
 (defn- pending-entry?
   "True when `entry` is actually parked awaiting review. Guards against
