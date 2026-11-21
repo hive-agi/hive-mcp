@@ -114,6 +114,195 @@
                 [:=> [:cat CallerId [:maybe [:sequential :map]]] :nil]
                 [:=> [:cat CallerId [:maybe [:sequential :map]] :any] :nil]])
 
+;; -----------------------------------------------------------------------------
+;; drain! stages (CPPB): collect -> promote -> pipeline -> boundary
+;; -----------------------------------------------------------------------------
+
+(def ^:private DrainCollected
+  "Collect stage output: the projected buffer and the candidate batch."
+  [:map
+   [:entries [:sequential :map]]
+   [:total [:int {:min 0}]]
+   [:pending [:maybe [:sequential :map]]]
+   [:ranked [:maybe :map]]
+   [:candidate [:sequential :map]]])
+
+(def ^:private DrainPlan
+  "Fixed facts of one drain: buffer position, next seq, refs and budget."
+  [:map
+   [:cursor [:int {:min 0}]]
+   [:total [:int {:min 0}]]
+   [:new-seq pos-int?]
+   [:context-refs :any]
+   [:budget [:int {:min 0}]]
+   [:strict? :boolean]])
+
+(def ^:private DrainStep
+  "Promote stage output: what this drain delivers and where it leaves the buffer."
+  [:map
+   [:plan DrainPlan]
+   [:batch [:vector :map]]
+   [:send-refs? :boolean]
+   [:new-cursor [:int {:min 0}]]
+   [:done? :boolean]
+   [:offers [:maybe :map]]])
+
+(defn- fifo-candidates
+  "Collect (FIFO lane): entries from `cursor` while their running pr-str size
+   stays within `budget`. A first entry over budget is still taken unless
+   `strict?`, so a non-strict drain always makes progress."
+  [entries cursor budget strict?]
+  (let [total (count entries)]
+    (loop [batch [] chars 0 idx cursor]
+      (if (>= idx total)
+        batch
+        (let [entry (nth entries idx)
+              new-chars (+ chars (count (pr-str entry)))]
+          (if (and (> new-chars budget) (or strict? (seq batch)))
+            batch
+            (recur (conj batch entry) new-chars (inc idx))))))))
+
+(m/=> fifo-candidates
+      [:=> [:cat [:sequential :map] [:int {:min 0}] [:int {:min 0}] :boolean]
+       [:vector :map]])
+
+(defn- collect-drain
+  "Collect: resolve the wire policy, project the buffer, and pick the candidate
+   batch. A non-empty (:tokens ctx) ranks the undrained tail two-lane via
+   drain-rank/select-batch and reorders it; otherwise the batch is FIFO."
+  [buf ctx budget strict?]
+  (let [{:keys [cursor offers]} buf
+        policy  (proj/resolve-policy (:policy ctx))
+        entries (proj/project (:entries buf) {:policy policy :pins (:pins ctx)})
+        total   (count entries)
+        tokens  (:tokens ctx)
+        pending (when (seq tokens) (subvec (vec entries) (min cursor total)))
+        ranked  (when (seq pending)
+                  (rank/select-batch pending {:tokens tokens :offers offers
+                                              :pins (:pins ctx)
+                                              :floor-cap (:floor-cap ctx)
+                                              :char-budget budget :strict-budget? strict?}))]
+    {:entries   (if ranked
+                  (into (subvec (vec entries) 0 (min cursor total)) (:ordered ranked))
+                  entries)
+     :total     total
+     :pending   pending
+     :ranked    ranked
+     :candidate (if ranked
+                  (:batch ranked)
+                  (fifo-candidates entries cursor budget strict?))}))
+
+(m/=> collect-drain [:=> [:cat :map DrainCtx [:int {:min 0}] :boolean] DrainCollected])
+
+(defn- drain-result
+  "Pure: the wire result for delivering `batch` under `plan`, carrying the
+   context-refs when `refs?` and the pull instruction when the batch holds
+   pointers."
+  [{:keys [cursor total new-seq context-refs]} batch refs?]
+  (let [new-cursor (+ cursor (count batch))
+        hint (proj/pull-hint batch)]
+    (cond-> {:batch batch :remaining (- total new-cursor)
+             :total total :delivered new-cursor :seq new-seq}
+      (>= new-cursor total) (assoc :done true)
+      refs? (assoc :context-refs context-refs)
+      hint (assoc :pull hint))))
+
+(m/=> drain-result [:=> [:cat DrainPlan [:vector :map] :boolean] DrainResult])
+
+(defn- fits-budget?
+  "True when the serialized result for `batch` (refs, pull hint, metadata and
+   the 30 chars of MEMORY delimiters included) fits the plan's budget. A
+   non-strict drain always fits."
+  [plan batch refs?]
+  (or (not (:strict? plan))
+      (<= (+ 30 (count (pr-str (drain-result plan batch refs?)))) (:budget plan))))
+
+(m/=> fits-budget? [:=> [:cat DrainPlan [:vector :map] :boolean] :boolean])
+
+(defn- fit-batch
+  "The longest prefix of `candidate` whose result fits a strict budget; the
+   whole candidate when the budget is not strict."
+  [plan candidate refs?]
+  (if (:strict? plan)
+    (loop [remaining candidate acc []]
+      (if (and (seq remaining) (fits-budget? plan (conj acc (first remaining)) refs?))
+        (recur (rest remaining) (conj acc (first remaining)))
+        acc))
+    candidate))
+
+(m/=> fit-batch [:=> [:cat DrainPlan [:sequential :map] :boolean] [:vector :map]])
+
+(defn- age-offers
+  "Every entry of `pending` offered but not taken in `batch` ages by one."
+  [offers pending batch]
+  (let [taken (into #{} (keep :id) batch)]
+    (reduce (fn [m e]
+              (let [eid (:id e)]
+                (if (and eid (not (contains? taken eid)))
+                  (update m eid (fnil inc 0))
+                  m)))
+            (or offers {})
+            pending)))
+
+(m/=> age-offers [:=> [:cat [:maybe :map] [:sequential :map] [:vector :map]] :map])
+
+(defn- promote-drain
+  "Promote: settle the batch, whether the context-refs ride along, whether the
+   buffer is exhausted, and the aged offers. Refs have priority over entries
+   but are only sent when they really fit; an oversized ref waits."
+  [buf collected budget strict?]
+  (let [{:keys [cursor seq-num context-refs refs-delivered? offers]} buf
+        {:keys [total pending ranked candidate]} collected
+        plan {:cursor cursor :total total :new-seq (inc seq-num)
+              :context-refs context-refs :budget budget :strict? strict?}
+        refs-pending? (and (some? context-refs) (not refs-delivered?))
+        send-refs? (boolean (and refs-pending? (fits-budget? plan [] true)))
+        batch (fit-batch plan candidate send-refs?)
+        new-cursor (+ cursor (count batch))]
+    {:plan       plan
+     :batch      batch
+     :send-refs? send-refs?
+     :new-cursor new-cursor
+     :done?      (boolean (and (>= new-cursor total) (or (not refs-pending?) send-refs?)))
+     :offers     (if ranked (age-offers offers pending batch) offers)}))
+
+(m/=> promote-drain [:=> [:cat :map DrainCollected [:int {:min 0}] :boolean] DrainStep])
+
+(defn- next-buffer
+  "Pipeline: the buffer written back after `step`. On exhaustion it collapses
+   to a content-free tombstone keeping the delivered ids under :sent."
+  [buf collected step]
+  (let [{:keys [sent context-refs refs-delivered?]} buf
+        {:keys [plan new-cursor done? send-refs? offers]} step
+        new-seq (:new-seq plan)]
+    (cond-> (if done?
+              {:entries [] :cursor 0 :done true :seq-num new-seq
+               :sent (into (set sent) (keep :id) (:entries collected))}
+              {:entries (:entries collected) :cursor new-cursor :done false
+               :seq-num new-seq :sent (set sent)})
+      (some? context-refs)
+      (assoc :context-refs context-refs
+             :refs-delivered? (or (boolean refs-delivered?) send-refs?))
+      (some? offers) (assoc :offers offers))))
+
+(m/=> next-buffer [:=> [:cat :map DrainCollected DrainStep] :map])
+
+(defn- commit-drain!
+  "Boundary: fold the drain into drain-telemetry, write the next buffer back
+   and answer the wire result."
+  [buffer-key buf collected step]
+  (let [{:keys [plan batch send-refs?]} step
+        taken (into #{} (keep :id) batch)]
+    (telemetry/record! {:seq-num (:new-seq plan) :batch batch
+                        :delivered-ids (into [] (keep :id) batch)
+                        :offered-ids (when (:ranked collected)
+                                       (into [] (comp (keep :id) (remove taken))
+                                             (:pending collected)))})
+    (bput! buffers buffer-key (next-buffer buf collected step))
+    (drain-result plan batch send-refs?)))
+
+(m/=> commit-drain! [:=> [:cat :any :map DrainCollected DrainStep] DrainResult])
+
 (defn drain!
   "Drain next batch of entries within char budget for a caller session.
 
@@ -139,7 +328,10 @@
    carries pointers the result gains :pull, the instruction for turning them
    back into entries.
 
-   Every drain folds its offered / delivered ids into `drain-telemetry`."
+   Every drain folds its offered / delivered ids into `drain-telemetry`.
+
+   Stages: `collect-drain` -> `promote-drain` -> `next-buffer` ->
+   `commit-drain!` (the only effectful one)."
   ([caller-id] (drain! caller-id nil))
   ([caller-id ctx]
    (let [budget (max 0 (min drain-char-budget (or (:char-budget ctx) drain-char-budget)))
@@ -147,82 +339,10 @@
          buffer-key (ctx-id/caller-id-key (ctx-id/parse-caller-id caller-id))
          buf (when (pos? budget) (bget buffers buffer-key))]
      (when (and buf (not (:done buf)))
-       (let [{:keys [cursor seq-num context-refs refs-delivered? sent offers]} buf
-             policy (proj/resolve-policy (:policy ctx))
-             entries (proj/project (:entries buf) {:policy policy :pins (:pins ctx)})
-             total (count entries)
-             tokens (:tokens ctx)
-             pending (when (seq tokens) (subvec (vec entries) (min cursor total)))
-             ranked (when (seq pending)
-                      (rank/select-batch pending {:tokens tokens :offers offers
-                                                  :pins (:pins ctx)
-                                                  :floor-cap (:floor-cap ctx)
-                                                  :char-budget budget :strict-budget? strict?}))
-             entries* (if ranked
-                        (into (subvec (vec entries) 0 (min cursor total)) (:ordered ranked))
-                        entries)
-             [candidate _]
-             (if ranked
-               [(:batch ranked) (+ cursor (:taken ranked))]
-               (loop [batch [] chars 0 idx cursor]
-                 (if (>= idx total)
-                   [batch idx]
-                   (let [entry (nth entries idx)
-                         new-chars (+ chars (count (pr-str entry)))]
-                     (if (and (> new-chars budget) (or strict? (seq batch)))
-                       [batch idx]
-                       (recur (conj batch entry) new-chars (inc idx)))))))
-             new-seq (inc seq-num)
-             refs-pending? (and (some? context-refs) (not refs-delivered?))
-             ;; Charge the actual serialized result, including refs, pull hint,
-             ;; metadata and the MEMORY delimiters (the caller reserves 200).
-             result-for (fn [batch refs?]
-                          (let [new-cursor (+ cursor (count batch))
-                                done? (>= new-cursor total)]
-                            (cond-> {:batch batch :remaining (- total new-cursor)
-                                     :total total :delivered new-cursor :seq new-seq}
-                              done? (assoc :done true)
-                              refs? (assoc :context-refs context-refs)
-                              (proj/pull-hint batch) (assoc :pull (proj/pull-hint batch)))))
-             fits? (fn [batch refs?]
-                     (or (not strict?)
-                         (<= (+ 30 (count (pr-str (result-for batch refs?)))) budget)))
-             ;; Refs have priority over entries, but must never be marked sent
-             ;; unless they really fit. An oversized ref waits in the buffer.
-             send-refs? (and refs-pending? (fits? [] true))
-             batch (if strict?
-                     (loop [remaining candidate acc []]
-                       (if (and (seq remaining)
-                                (fits? (conj acc (first remaining)) send-refs?))
-                         (recur (rest remaining) (conj acc (first remaining)))
-                         acc))
-                     candidate)
-             new-cursor (+ cursor (count batch))
-             is-done (and (>= new-cursor total) (or (not refs-pending?) send-refs?))
-             taken-ids (when ranked (into #{} (keep :id) batch))
-             next-offers (if ranked
-                           (reduce (fn [m e]
-                                     (let [eid (:id e)]
-                                       (if (and eid (not (contains? taken-ids eid)))
-                                         (update m eid (fnil inc 0)) m)))
-                                   (or offers {}) pending)
-                           offers)]
-         (when (or (seq batch) send-refs?)
-           (telemetry/record! {:seq-num new-seq :batch batch
-                               :delivered-ids (into [] (keep :id) batch)
-                               :offered-ids (when ranked
-                                              (into [] (comp (keep :id) (remove taken-ids)) pending))})
-           (bput! buffers buffer-key
-                  (cond-> (if is-done
-                            {:entries [] :cursor 0 :done true :seq-num new-seq
-                             :sent (into (set sent) (keep :id) entries*)}
-                            {:entries entries* :cursor new-cursor :done false
-                             :seq-num new-seq :sent (set sent)})
-                    (some? context-refs)
-                    (assoc :context-refs context-refs
-                           :refs-delivered? (or (boolean refs-delivered?) send-refs?))
-                    (some? next-offers) (assoc :offers next-offers)))
-           (result-for batch send-refs?)))))))
+       (let [collected (collect-drain buf ctx budget strict?)
+             step (promote-drain buf collected budget strict?)]
+         (when (or (seq (:batch step)) (:send-refs? step))
+           (commit-drain! buffer-key buf collected step)))))))
 
 (m/=> drain! [:function
               [:=> [:cat CallerId] [:maybe DrainResult]]
