@@ -331,8 +331,8 @@
 
 (deftest resilience-gate-is-not-vacuous
   (let [report (coverage/coverage {:paths ["src/hive_mcp/resilience"]})]
-    (is (= 23 (count (:universe report))) "every public defn of the tree")
-    (is (= 23 (count (:covered report))))
+    (is (= 26 (count (:universe report))) "every public defn of the tree")
+    (is (= 26 (count (:covered report))))
     (is (empty? (:missing report)))))
 
 (def ^:private gated-namespaces

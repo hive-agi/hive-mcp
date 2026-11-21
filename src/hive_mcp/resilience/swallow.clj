@@ -32,10 +32,11 @@
   (try
     (thunk)
     (catch Throwable t
-      (when (instance? InterruptedException t)
-        (.interrupt (Thread/currentThread)))
       (log-ports/debug "swallowed (best-effort):" label "->"
                        (.getSimpleName (class t)) (ex-message t))
+      ;; after the log call: a logger's I/O may clear the flag
+      (when (instance? InterruptedException t)
+        (.interrupt (Thread/currentThread)))
       nil)))
 
 (m/=> attempt* [:=> [:cat :string ifn?] :any])
@@ -53,10 +54,10 @@
   (try
     (thunk)
     (catch Exception e
-      (when (instance? InterruptedException e)
-        (.interrupt (Thread/currentThread)))
       (log-ports/debug "swallowed (best-effort):" label "->"
                        (.getSimpleName (class e)) (ex-message e))
+      (when (instance? InterruptedException e)
+        (.interrupt (Thread/currentThread)))
       nil)))
 
 (m/=> attempt-ex* [:=> [:cat :string ifn?] :any])
