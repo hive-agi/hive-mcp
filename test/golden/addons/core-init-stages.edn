@@ -1,0 +1,18 @@
+{:fails {:success? false, :errors ["nope"], :addon-name :stg/fails},
+ :unregistered
+ {:success? false,
+  :addon-name :stg/never,
+  :errors ["Addon :stg/never is not registered"]},
+ :throws-entry {:state :error, :init-time? false},
+ :metadata-ext-registered? true,
+ :throws {:success? false, :addon-name :stg/throws, :errors [true]},
+ :ok-entry
+ {:state :active, :hook-keys #{:stg/hook-a}, :init-time? true},
+ :fails-entry {:state :error, :init-time? false},
+ :hook-registered? true,
+ :ok
+ {:success? true,
+  :metadata {:extensions [:stg/ext-a]},
+  :saw-ports? true,
+  :addon-name :stg/ok},
+ :again {:success? true, :addon-name :stg/ok, :already-active? true}}

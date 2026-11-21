@@ -404,6 +404,122 @@
         (log/warn "Plan re-index after conversion failed for" (:id entry)
                   "(conversion recorded, index stale):" (ex-message t))))))
 
+;; -----------------------------------------------------------------------------
+;; plan-to-kanban stages (CPPB): guard -> collect source -> pipeline -> respond
+;; -----------------------------------------------------------------------------
+
+(def ^:private PlanSource
+  "Where the plan content came from and the ids the conversion runs under."
+  [:map
+   [:content [:maybe :string]]
+   [:project-id [:maybe :string]]
+   [:plan-id [:maybe :string]]
+   [:source [:enum :file :memory]]])
+
+(defn- conversion-guard
+  "Promote (pure): the response that stops a memory-route conversion before
+   it starts, or nil to proceed. A non-plan entry is refused, a spent plan
+   refuses unless `force`, and an active plan that already holds task ids
+   answers what the first conversion made."
+  [plan-memory-id entry force]
+  (when entry
+    (cond
+      (not (plan-entry? entry))
+      (mcp-error (str "Memory entry " plan-memory-id " is type="
+                      (pr-str (:type entry)) ", not plan. "
+                      "Store the plan as a type=plan memory."))
+
+      (and (contains? terminal-plan-statuses (plan-status entry)) (not force))
+      (mcp-error (str "Plan " plan-memory-id " is " (plan-status entry)
+                      " — already converted. Pass force=true to convert again."))
+
+      (and (= "active" (plan-status entry))
+           (seq (status/task-ids-of entry)) (not force))
+      (already-converted-response entry))))
+
+(m/=> conversion-guard [:=> [:cat :any [:maybe :map] :any] [:maybe :map]])
+
+(defn- plan-source
+  "Collect: the plan content and the ids it converts under. A plan_path is
+   read from disk and scoped to the request's project; otherwise the
+   resolved memory entry supplies both."
+  [plan-memory-id plan-path entry]
+  (if plan-path
+    (do (log/info "plan_to_kanban: loading plan from file" {:path plan-path})
+        {:content (slurp plan-path)
+         :project-id (ctx/current-project-id)
+         :plan-id (str "file:" plan-path)
+         :source :file})
+    {:content (:content entry)
+     :project-id (:project-id entry)
+     :plan-id plan-memory-id
+     :source :memory}))
+
+(m/=> plan-source [:=> [:cat :any [:maybe :string] [:maybe :map]] PlanSource])
+
+(defn- plan-not-found
+  "The error for a request whose plan content resolved to nothing."
+  [plan-memory-id plan-path]
+  (mcp-error (str "Plan not found. Provide plan_id (memory entry) or plan_path (file). "
+                  (when plan-memory-id (str "Tried memory ID: " plan-memory-id))
+                  (when plan-path (str "Tried file: " plan-path)))))
+
+(m/=> plan-not-found [:=> [:cat :any [:maybe :string]] :map])
+
+(defn- conversion-response
+  "Pipeline (pure): the success payload for a finished FSM run."
+  [plan-id source result]
+  (let [{:keys [task-ids waves kg-edges]} result]
+    {:success true
+     :plan-id plan-id
+     :plan-title (get-in result [:plan :title])
+     :plan-source source
+     :decision-id (:decision-id result)
+     :task-ids task-ids
+     :task-count (count task-ids)
+     :waves waves
+     :max-wave (when (seq waves) (apply max (vals waves)))
+     :kg-edges kg-edges
+     :edge-count (count kg-edges)
+     :kg-degraded? (boolean (:kg-degraded? result))
+     :kg-pending? (boolean (:pending? result))
+     :kg-warnings (:kg-warnings result)
+     :step-mapping (:step-mapping result)}))
+
+(m/=> conversion-response [:=> [:cat [:maybe :string] [:enum :file :memory] :map] :map])
+
+(defn- run-conversion!
+  "Boundary: mark the entry active, run the plan FSM with the kanban/KG
+   executor, and record the conversion back on the entry."
+  [{:keys [plan-id project-id content source]} entry directory agent-id]
+  (when entry (mark-plan-active! plan-id))
+  (let [result (plan-fsm/run-plan-fsm
+                {:content content :plan-id plan-id}
+                {:execute-fn (build-execute-fn directory plan-id project-id agent-id)
+                 :directory directory})]
+    (when entry
+      (persist-conversion! entry (:task-ids result) (:waves result)))
+    (mcp-json (conversion-response plan-id source result))))
+
+(m/=> run-conversion! [:=> [:cat PlanSource [:maybe :map] [:maybe :string] [:maybe :string]] :map])
+
+(defn- conversion-failure
+  "The error envelope for a conversion that threw. An ex-info carries the
+   FSM's validation and errors into the message."
+  [e]
+  (if (instance? clojure.lang.ExceptionInfo e)
+    (let [data (ex-data e)]
+      (log/error e "plan_to_kanban FSM failed" data)
+      (mcp-error (str "Plan conversion failed: " (ex-message e)
+                      (when-let [v (:validation data)]
+                        (str "\nValidation: " (pr-str v)))
+                      (when-let [errs (:errors data)]
+                        (str "\nErrors: " (str/join ", " errs))))))
+    (do (log/error e "plan_to_kanban failed")
+        (mcp-error (str "Failed to convert plan to kanban: " (ex-message e))))))
+
+(m/=> conversion-failure [:=> [:cat [:fn #(instance? Throwable %)]] :map])
+
 (defn plan-to-kanban
   "Convert a plan memory entry (or file) to kanban tasks with KG edges.
 
@@ -436,84 +552,27 @@
      - Marks the plan entry `active`, then records task-ids/waves on it
      - Creates kanban tasks in memory system
      - Creates KG edges: plan --depends-on--> tasks
-     - Creates KG edges: task --depends-on--> task (based on step dependencies)"
+     - Creates KG edges: task --depends-on--> task (based on step dependencies)
+
+   Stages: `conversion-guard` -> `plan-source` -> `run-conversion!`
+   (-> `conversion-response`); a throw answers `conversion-failure`."
   [plan-memory-id & {:keys [directory plan-path force]}]
   (log/info "plan_to_kanban" {:plan-id plan-memory-id :plan-path plan-path
                               :directory directory :force force})
   (try
     (let [directory (or directory (ctx/current-directory))
-          agent-id (System/getenv "CLAUDE_SWARM_SLAVE_ID")
           ;; Resolve the entry once: the memory route takes content, project and
           ;; status off it, and writes the conversion back to it.
           entry (when-not (str/blank? (str plan-memory-id))
                   (facade/get-entry-by-id plan-memory-id))]
-
-      (cond
-        (and entry (not (plan-entry? entry)))
-        (mcp-error (str "Memory entry " plan-memory-id " is type="
-                        (pr-str (:type entry)) ", not plan. "
-                        "Store the plan as a type=plan memory."))
-
-        (and entry (contains? terminal-plan-statuses (plan-status entry)) (not force))
-        (mcp-error (str "Plan " plan-memory-id " is " (plan-status entry)
-                        " — already converted. Pass force=true to convert again."))
-
-        (and entry (= "active" (plan-status entry))
-             (seq (status/task-ids-of entry)) (not force))
-        (already-converted-response entry)
-
-        :else
-        (let [content (if plan-path
-                        (do (log/info "plan_to_kanban: loading plan from file" {:path plan-path})
-                            (slurp plan-path))
-                        (:content entry))
-              project-id (if plan-path (ctx/current-project-id) (:project-id entry))
-              plan-id (if plan-path (str "file:" plan-path) plan-memory-id)]
-
-          (if-not content
-            (mcp-error (str "Plan not found. Provide plan_id (memory entry) or plan_path (file). "
-                            (when plan-memory-id (str "Tried memory ID: " plan-memory-id))
-                            (when plan-path (str "Tried file: " plan-path))))
-
-            (do
-              (when entry (mark-plan-active! plan-id))
-              (let [execute-fn (build-execute-fn directory plan-id project-id agent-id)
-
-                    ;; Run Plan FSM: draft → validated → approved → executing
-                    result (plan-fsm/run-plan-fsm
-                            {:content content :plan-id plan-id}
-                            {:execute-fn execute-fn :directory directory})]
-
-                (when entry
-                  (persist-conversion! entry (:task-ids result) (:waves result)))
-
-                (mcp-json {:success true
-                           :plan-id plan-id
-                           :plan-title (get-in result [:plan :title])
-                           :plan-source (if plan-path :file :memory)
-                           :decision-id (:decision-id result)
-                           :task-ids (:task-ids result)
-                           :task-count (count (:task-ids result))
-                           :waves (:waves result)
-                           :max-wave (when (seq (:waves result)) (apply max (vals (:waves result))))
-                           :kg-edges (:kg-edges result)
-                           :edge-count (count (:kg-edges result))
-                           :kg-degraded? (boolean (:kg-degraded? result))
-                           :kg-pending? (boolean (:pending? result))
-                           :kg-warnings (:kg-warnings result)
-                           :step-mapping (:step-mapping result)})))))))
-
-    (catch clojure.lang.ExceptionInfo e
-      (let [data (ex-data e)]
-        (log/error e "plan_to_kanban FSM failed" data)
-        (mcp-error (str "Plan conversion failed: " (.getMessage e)
-                        (when-let [v (:validation data)]
-                          (str "\nValidation: " (pr-str v)))
-                        (when-let [errs (:errors data)]
-                          (str "\nErrors: " (str/join ", " errs)))))))
+      (or (conversion-guard plan-memory-id entry force)
+          (let [source (plan-source plan-memory-id plan-path entry)]
+            (if-not (:content source)
+              (plan-not-found plan-memory-id plan-path)
+              (run-conversion! source entry directory
+                               (System/getenv "CLAUDE_SWARM_SLAVE_ID"))))))
     (catch Exception e
-      (log/error e "plan_to_kanban failed")
-      (mcp-error (str "Failed to convert plan to kanban: " (.getMessage e))))))
+      (conversion-failure e))))
 
 (defn handle-plan-to-kanban
   "MCP tool handler for plan_to_kanban.
