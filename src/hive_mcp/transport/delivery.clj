@@ -11,7 +11,15 @@
 
    Each adapter answers for the kinds it serves and says :inapplicable for the
    rest (the chain skips it without touching its health):
-     :nats-inbox      coordinator with an armed inbox -> inbox send!
+     :nats-inbox      coordinator with an armed inbox -> inbox send!;
+                      headless ling whose inbox is armed AND whose loop's
+                      consumer is attached -> the hive-mcp dispatch records
+                      the task, then publishes it to hive.v1.inbox.<ling>
+                      with the task id as message id. Otherwise
+                      :inapplicable, naming the missing fact (bus down,
+                      inbox unarmed, consumer detached), so the ling lane
+                      falls through to :headless-ling.
+     :headless-ling   headless ling -> the in-process loop inbox
      :tmux            coordinator -> hive-agent's coordinator-reply
      :emacs           ling -> the agent dispatch terminal path
      :hivemind-shout  any kind, last resort, a shout tagged to:<id>
@@ -24,6 +32,7 @@
             [hive-mcp.extensions.soft :as soft]
             [hive-mcp.nats.client :as client]
             [hive-mcp.nats.inbox :as inbox]
+            [hive-mcp.nats.ling-inbox :as ling-inbox]
             [hive-mcp.transport.registry :as reg]
             [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
@@ -100,6 +109,17 @@
   "1-arg port (spawn mode): the mode's registry :io-model, or nil."
   default-io-model)
 
+(defn- default-ling-route
+  [id]
+  (binding [ling-inbox/*connection* *connection*]
+    (ling-inbox/route id)))
+
+(def ^:dynamic *ling-route*
+  "1-arg port (ling id): the ling-lane NATS route view
+   {:nats-up? :armed? :consumer-attached? :reachable?}
+   (hive-mcp.nats.ling-inbox/route), read on this port's connection."
+  default-ling-route)
+
 ;; =============================================================================
 ;; Target resolution
 ;; =============================================================================
@@ -168,10 +188,57 @@
   [category message]
   (r/err category {:error/kind :unavailable :message message}))
 
+(defn- ling-nats-deliver-fn
+  "The :deliver-fn a NATS ling dispatch hands Ling.dispatch!: once hive-mcp
+   has recorded the task (task-id, dispatch record, :working), the task is
+   published to the ling's inbox with the task-id as the message id, so a
+   redelivery or a retried publish is the same message to the ling's
+   consumer (it dedups by id) and to the stream (duplicate window)."
+  [conn inbox-id from]
+  (fn [{:keys [task-id task ling-seq]}]
+    (let [receipt (inbox/send! conn (cond-> {:id (str task-id) :to inbox-id :body task
+                                             :meta (cond-> {:task-id (str task-id)}
+                                                     ;; send order across the ling's
+                                                     ;; routes (nats.ling-inbox/seq-stamp!)
+                                                     ling-seq (assoc :ling-seq ling-seq))}
+                                      from (assoc :from from)))]
+      {:dispatched true :task-id task-id :via :nats-inbox
+       :seq (:seq receipt) :duplicate? (:duplicate? receipt)})))
+
+(defn- nats-send-ling
+  "A ling over its NATS inbox: only when the ling-lane route is reachable
+   (bus up, inbox armed, the loop's consumer attached). A ling the bus cannot
+   reach is :inapplicable, naming which fact is missing, so the chain falls
+   through to :headless-ling without marking the bus down."
+  [{:keys [kind to params from] :as op}]
+  (let [{:keys [nats-up? armed? consumer-attached?] :as rt} (*ling-route* to)]
+    (cond
+      (not= :headless (ling-route op))
+      (inapplicable :nats-inbox kind (str "spawn mode " (pr-str (:spawn-mode op))
+                                          " runs no headless loop"))
+
+      (not nats-up?)
+      (inapplicable :nats-inbox kind "NATS is down")
+
+      (not armed?)
+      (inapplicable :nats-inbox kind (str "NATS is up, but " to "'s inbox is not armed"))
+
+      (not consumer-attached?)
+      (inapplicable :nats-inbox kind (str "NATS is up and the inbox armed, but no consumer of "
+                                          to " is attached"))
+
+      :else
+      (let [conn (*connection*)
+            id   (inbox/safe-encode-inbox-id to)]
+        (r/ok (assoc (*ling-dispatch* (assoc params :deliver-fn (ling-nats-deliver-fn conn id from)))
+                     :route rt))))))
+
 (defn- nats-send
-  [{:keys [kind to message from]}]
-  (if (not= :coordinator kind)
-    (inapplicable :nats-inbox kind "only coordinators have an inbox")
+  [{:keys [kind to message from] :as op}]
+  (cond
+    (= :ling kind) (nats-send-ling op)
+    (not= :coordinator kind) (inapplicable :nats-inbox kind "only coordinators and lings have an inbox")
+    :else
     (if-let [conn (*connection*)]
       (if-let [id (inbox/safe-encode-inbox-id to)]
         (if (:armed? (inbox/status conn id))
@@ -254,8 +321,23 @@
 ;; coordinator delivery and a ling delivery each keep their own sticky
 ;; :active instead of flipping one shared one (registry lanes).
 
+;; :nats-inbox's probe answers for the BUS only: a lane-wide adapter health
+;; can never say whether one ling's consumer is attached. That is a fact of
+;; the target, read per call (`ling-route-health`): a ling with no attached
+;; consumer makes :nats-inbox :inapplicable, never :degraded, so one ling
+;; without a consumer cannot push the whole ling lane off NATS.
+
+(defn ling-route-health
+  "The ling-lane NATS health of `ling-id`, as the delivery chain sees it:
+   {:nats-up? :armed? :consumer-attached? :reachable?}. :nats-up? is the
+   probe's fact; the other two are this ling's."
+  [ling-id]
+  (*ling-route* ling-id))
+
+(m/=> ling-route-health [:=> [:cat :any] :map])
+
 (defmethod reg/open-adapter [:delivery :nats-inbox] [_ _]
-  {:call nats-send :probe probe-nats :serves #{:coordinator}})
+  {:call nats-send :probe probe-nats :serves #{:coordinator :ling}})
 
 (defmethod reg/open-adapter [:delivery :tmux] [_ _]
   {:call tmux-say :probe probe-tmux :serves #{:coordinator}})

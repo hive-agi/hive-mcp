@@ -345,7 +345,7 @@
                                          {:backend backend-id :adapter (str adapter-sym)}))
                            (log/warn "Configured vector-collection adapter not on classpath"
                                      {:backend backend-id :adapter (str adapter-sym)}))
-                         (if-let [make (requiring-resolve 'hive-mcp.chroma.vector-store/chroma-vector-store)]
+                         (if-let [make (soft/resolve-soft 'hive-chroma.vector-store/chroma-vector-store)]
                            (do (vec-proto/set-store! (make))
                                (log/info "Chroma wired as the IVectorCollectionStore (legacy fallback)"
                                          {:backend backend-id}))
@@ -353,19 +353,25 @@
                                      {:backend backend-id}))))))
 
 (defn- create-chroma-store
-  "The legacy Chroma memory store, resolved BY SYMBOL.
+  "The Chroma memory store as the NO-ADDON fallback, resolved BY SYMBOL from
+   the hive-chroma addon jar (`hive-chroma.store/create-store`).
 
-   This is the composition root, the one place allowed to name a backend, but
-   naming is not requiring: `hive-mcp.memory.store.chroma` is a hive-memory
-   extraction target and the axiom 20260711221408-2ae3b6ae wants no backend
-   compiled into the kernel. The same file already resolves
-   `chroma.vector-store/chroma-vector-store` this way.
+   Chroma left this repo for the hive-chroma IAddon, which registers its own
+   store when mounted. This fallback only covers a deployment that has the
+   hive-chroma jar on the classpath but did not mount the addon: the store is
+   built from the :services :chroma endpoint (config.edn > CHROMA_HOST /
+   CHROMA_PORT > localhost:8000) and connected, the job embeddings.boot did
+   while Chroma lived here.
 
-   Returns nil when Chroma is not in this build, which leaves the store unset
-   for an addon to register."
+   Returns nil when hive-chroma is not in this build, which leaves the store
+   unset for an addon to register."
   []
-  (if-let [create (soft/resolve-soft 'hive-mcp.memory.store.chroma/create-store)]
-    (create)
+  (if-let [create (soft/resolve-soft 'hive-chroma.store/create-store)]
+    (let [cfg   {:host (global-config/get-service-value :chroma :host :env "CHROMA_HOST" :default "localhost")
+                 :port (global-config/get-service-value :chroma :port :env "CHROMA_PORT" :parse parse-long :default 8000)}
+          store (create cfg)]
+      (mem-proto/connect! store cfg)
+      store)
     (log/warn "no Chroma store in this build; leaving the memory store for an addon to register")))
 
 (defn- deferred-store-addon

@@ -25,7 +25,8 @@
             [hive-mcp.swarm.datascript.queries :as ds-queries]
             [clojure.string :as str]
             [hive-test.isolation :as iso]
-            hive-mcp.isolation-methods))
+            hive-mcp.isolation-methods
+            [hive-mcp.agent.ling.start-preflight :as preflight]))
 
 ;; =============================================================================
 ;; Test Fixtures
@@ -213,12 +214,17 @@
       (try
         (is (= :claude (:spawn-mode ling))
             "an explicit :claude spawn mode is kept")
-        (let [slave-id (proto/spawn! ling {:depth 1})]
-          (is (= "facade-terminal" slave-id))
-          ;; Verify DataScript registration (common concern)
-          (let [slave (ds-queries/get-slave "facade-terminal")]
-            (is (some? slave))
-            (is (= :claude (:ling/spawn-mode slave)))))
+        ;; A :claude spawn runs the folder-trust preflight, which otherwise
+        ;; reads the host's ~/.claude.json; trust /tmp through its port.
+        (binding [preflight/*folder-trust* (reify preflight/IFolderTrust
+                                             (trusted-roots [_] #{"/tmp"})
+                                             (checkout-root [_ _] nil))]
+          (let [slave-id (proto/spawn! ling {:depth 1})]
+            (is (= "facade-terminal" slave-id))
+            ;; Verify DataScript registration (common concern)
+            (let [slave (ds-queries/get-slave "facade-terminal")]
+              (is (some? slave))
+              (is (= :claude (:ling/spawn-mode slave))))))
         (finally
           (terminal-reg/deregister-terminal! :claude))))))
 

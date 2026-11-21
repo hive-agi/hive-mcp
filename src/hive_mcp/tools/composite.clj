@@ -21,7 +21,8 @@
             [hive-mcp.tools.core :as core]
             [hive-mcp.addons.metrics :as addon-metrics]
             [hive-mcp.tools.composite.moved :as moved]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [hive-mcp.dispatch.lazy :as lazy]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -157,6 +158,7 @@
 
       :else leaf)))
 
+
 (defn lazy-resolve-handlers
   "Lazily resolve a consolidated tool's `handlers` map by fully-qualified
    symbol, triggering ns load on first access (DIP).
@@ -181,13 +183,18 @@
    is gone, or the verb was removed, the handler read at load time answers,
    logged once and marked in the response (`stale-response`).
 
-   Returns the handlers tree on success, `{}` on miss. Caller merges
-   into its canonical-handlers tree the same way the literal reference
-   would have."
-  [sym]
-  (or (try (some->> (requiring-resolve sym) dispatch/current (late-bound sym []))
-           (catch Throwable _ nil))
-      {}))
+   Resolution goes through `hive-mcp.dispatch.lazy/resolve-lazily`, the one
+   path every lazy handler-tree resolver shares. `{}` when SYM's namespace is
+   absent from the classpath or holds no such var. When loading THREW, the
+   result is a placeholder subtree whose calls answer the failure with its
+   cause and which retries the load (at most once per cooldown) on later
+   calls, so the tree is never frozen empty: the first call after the cause
+   is fixed dispatches, with no reload of the root."
+  ([sym] (lazy-resolve-handlers sym nil))
+  ([sym opts]
+   (lazy/resolve-lazily sym
+                        (fn [v] (some->> v dispatch/current (late-bound sym [])))
+                        opts)))
 
 (defn lazy-resolve-schema-props
   "Lazily resolve a consolidated tool's advertised inputSchema :properties by
@@ -195,20 +202,72 @@
    tool-defs whose first entry is the root), or its `tool-defs` (a 0-arity fn
    returning that vector), triggering ns load on first access (DIP).
 
-   Returns the properties map on success, `{}` on miss.
+   Returns the properties map on success, `{}` when SYM's namespace is absent
+   or holds no such var.
+
+   Resolution goes through `hive-mcp.dispatch.lazy/resolve-lazily`, the path
+   `lazy-resolve-handlers` takes, so a load that THREW is not frozen into `{}`:
+   the answer is an empty map whose metadata carries the load error and the
+   ::dispatch/refresh port, and reading it through `dispatch/current` retries
+   the load (at most once per cooldown) and answers the recovered properties.
+   `with-folded-props` keeps that port on the root tool-def it folds into.
 
    Sibling of `lazy-resolve-handlers`: a domain root that folds a subdomain's
    HANDLERS must fold that subdomain's PARAMS too. The MCP layer forwards only
    params the called tool declares, so an undeclared one is dropped and the
-   subdomain handler runs on its default instead."
-  [sym]
-  (or (try (let [v  (some-> (requiring-resolve sym) deref)
-                 td (cond (fn? v)         (first (v))
-                          (sequential? v) (first v)
-                          :else           v)]
-             (get-in td [:inputSchema :properties]))
-           (catch Throwable _ nil))
-      {}))
+   subdomain handler runs on its default instead.
+
+   OPTS are `resolve-lazily`'s test seams."
+  ([sym] (lazy-resolve-schema-props sym nil))
+  ([sym opts]
+   (let [props-of (fn [var-ref]
+                    (let [v  @var-ref
+                          td (cond (fn? v)         (first (v))
+                                   (sequential? v) (first v)
+                                   :else           v)]
+                      (or (get-in td [:inputSchema :properties]) {})))
+         r        (lazy/resolve-lazily sym props-of opts)]
+     (if-let [msg (lazy/load-error r)]
+       (let [self (volatile! nil)
+             ph   (with-meta {}
+                    {::lazy/load-error msg
+                     ::dispatch/refresh
+                     (fn []
+                       (let [c (dispatch/current r)]
+                         (if (lazy/load-error c) @self c)))})]
+         (vreset! self ph))
+       r))))
+
+(defn fold-subdomain-props
+  "BASE tool-def with the advertised params of every subdomain SYMS names
+   (`lazy-resolve-schema-props`) merged UNDER its own, so a root description
+   wins, and `command` left to the root.
+
+   When a subdomain's load threw, the answer carries a ::dispatch/refresh
+   port. Reading it through `dispatch/current` (the tool registry does, for
+   every root it advertises) re-reads the failed subdomains, each retrying at
+   most once per cooldown, and answers the tool-def folded over what they
+   advertise now, so tools/list carries the recovered params with no reload of
+   the root. Once none is failed that tool-def is kept and answered from then
+   on. OPTS are `resolve-lazily`'s test seams."
+  ([base syms] (fold-subdomain-props base syms nil))
+  ([base syms opts]
+   (let [subs    (mapv #(lazy-resolve-schema-props % opts) syms)
+         fold    (fn [ps]
+                   (update-in base [:inputSchema :properties]
+                              #(merge (dissoc (apply merge-with merge {} ps) "command") %)))
+         failed? (fn [ps] (boolean (some lazy/load-error ps)))]
+     (if-not (failed? subs)
+       (fold subs)
+       (let [done (volatile! nil)]
+         (with-meta (fold subs)
+           {::dispatch/refresh
+            (fn []
+              (or @done
+                  (let [ps (mapv dispatch/current subs)
+                        td (fold ps)]
+                    (when-not (failed? ps) (vreset! done td))
+                    td)))}))))))
 
 ;; =============================================================================
 ;; Composite Handler Builder
@@ -695,9 +754,20 @@
 (m/=> advertised-contributions
       [:=> [:cat [:maybe [:map-of :string ContributionSpec]]] [:map-of :string ContributionSpec]])
 
-(m/=> lazy-resolve-handlers [:=> [:cat :symbol] :map])
+(m/=> lazy-resolve-handlers
+      [:function
+       [:=> [:cat :symbol] :map]
+       [:=> [:cat :symbol [:maybe :map]] :map]])
 
-(m/=> lazy-resolve-schema-props [:=> [:cat :symbol] :map])
+(m/=> lazy-resolve-schema-props
+      [:function
+       [:=> [:cat :symbol] :map]
+       [:=> [:cat :symbol [:maybe :map]] :map]])
+
+(m/=> fold-subdomain-props
+      [:function
+       [:=> [:cat :map [:sequential :symbol]] :map]
+       [:=> [:cat :map [:sequential :symbol] [:maybe :map]] :map]])
 
 (m/=> contributed-verbs [:=> [:cat :string [:or :keyword :string :symbol]]
                          [:maybe [:sequential :any]]])

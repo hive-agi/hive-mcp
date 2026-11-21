@@ -93,7 +93,11 @@
       (factory/forget-slave! bs "s2")
       (let [rows (factory/load-slaves bs)]
         (is (every? #(m/validate bp/SlaveRow %) rows))
-        (is (= [{:slave-id "s1" :name "one" :status :idle :depth 1 :cwd "/w"}] rows)))
+        ;; The datahike load hands back the row's :snapshot-at
+        ;; (hive-agent 7a9cd1a); its value is the snapshot clock's.
+        (is (every? #(inst? (:snapshot-at %)) rows))
+        (is (= [{:slave-id "s1" :name "one" :status :idle :depth 1 :cwd "/w"}]
+               (mapv #(dissoc % :snapshot-at) rows))))
       (is (true? (driver/database-exists? cfg)))
       (finally
         (factory/close! bs)

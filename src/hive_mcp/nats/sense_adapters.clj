@@ -30,17 +30,149 @@
 ;; Feed: hive-agent sixth-sense
 ;; =============================================================================
 
+(def drain-consumer
+  "The sense-log consumer id the replay drain reads as.
+
+   A STRING, not a keyword, on purpose: hive-agent persists consumer cursors
+   keyed by a string (hive-agent.sixth-sense.store/cursors-value? requires
+   one), so a keyword id would be dropped by `restore` and the cursor would
+   not survive a re-init. A cursor that survives is the whole point of the
+   replay lane, so the id is part of the contract, not a detail."
+  "inbox-republish")
+
+(def SensePort
+  "The host sense port: where sixth-sense pushes from, and where it drains.
+     :listen!   (fn [key f])   register a push wake, `f` called per sense
+     :unlisten! (fn [key])     remove that wake
+     :drain!    (fn [{:keys [consumer cursor limit receptor]}] -> batch)
+               consume-once read of the sense log, one cursor per consumer
+               id; the batch is {:senses [Sense] :cursor n :epoch id ...}
+
+   `:drain!` is optional. A hive-agent predating `sense-port` has none, and
+   then nothing can be replayed: a sense that arrived while no listener was
+   attached is simply not heard (see `drain-feed`)."
+  [:map
+   [:listen! ifn?]
+   [:unlisten! ifn?]
+   [:drain! {:optional true} [:maybe ifn?]]])
+
+(defn sense-port?
+  "Does `port` answer the host sense port contract? Shape only: nothing is
+   invoked, so asking cannot consume a sense from the live log. Behaviour is
+   the conformance suite's job (hive-mcp.nats.sense-replay-conformance-test)."
+  [port]
+  (boolean (and (map? port) (m/validate SensePort port))))
+
+(m/=> sense-port? [:=> [:cat :any] :boolean])
+
+(defn resolve-drain
+  "hive-agent's consume-once sense drain, or nil when this JVM has no
+   hive-agent (or one too old to expose `sense-port`).
+
+   Resolved rather than required, like every other hive-agent touchpoint: the
+   host is loaded into this image, not compiled against. The 0-arity
+   `sense-port` re-resolves the process sensorium on each call, so the fn
+   built here survives a sensorium remount — resolve it once, call it for the
+   life of the process."
+  []
+  (try
+    (when-let [sp (requiring-resolve 'hive-agent.sixth-sense.api/sense-port)]
+      (:drain! (sp)))
+    (catch Throwable _ nil)))
+
+(m/=> resolve-drain [:=> [:cat] [:maybe ifn?]])
+
 (defn host-sense-port
-  "hive-agent's sixth-sense push as {:listen! f :unlisten! f}, or nil when
-   hive-agent is not in this JVM."
+  "hive-agent's sixth-sense as the host sense port (see `SensePort`), or nil
+   when hive-agent is not in this JVM.
+
+   `:drain!` is the replay lane's first slice. Push alone cannot deliver a
+   sense that arrived while no listener was attached (the republisher was not
+   installed yet, or the parent was unbound), nor one the client skipped; the
+   sense log can, because it outlives both. Push is then only a WAKE and the
+   drain is the read path. A hive-agent without `sense-port` yields a port
+   with no `:drain!`, which is a working push-only port, never an error."
   []
   (try
     (let [l (requiring-resolve 'hive-agent.sixth-sense.api/listen!)
           u (requiring-resolve 'hive-agent.sixth-sense.api/unlisten!)]
-      (when (and l u) {:listen! l :unlisten! u}))
+      (when (and l u)
+        (if-let [d (resolve-drain)]
+          {:listen! l :unlisten! u :drain! d}
+          {:listen! l :unlisten! u})))
     (catch Throwable _ nil)))
 
-(m/=> host-sense-port [:=> [:cat] [:maybe [:map [:listen! ifn?] [:unlisten! ifn?]]]])
+(m/=> host-sense-port [:=> [:cat] [:maybe SensePort]])
+
+;; =============================================================================
+;; The replay read path
+;; =============================================================================
+
+(def DrainResult
+  "What one replay drain answered.
+     :ok?      did the port answer at all (false: no drain, or it threw)
+     :senses   the senses this consumer had not been handed, oldest first
+     :cursor   where the next drain resumes (advanced past :senses)
+     :epoch    the log the cursor belongs to; a DIFFERENT epoch next time
+               means the log was reset and the cursor is meaningless
+     :more?    a limit left senses for the next drain
+     :hidden   how many senses in the span the receptor filtered out
+     :orphans  how many of those name no parent (no reader will hear them)
+     :consumer the sense-log consumer id this drain was charged to
+     :reason   why it did not answer: :no-drain | :drain-failed"
+  [:map
+   [:ok? :boolean]
+   [:consumer :string]
+   [:senses [:vector :map]]
+   [:cursor {:optional true} [:maybe :int]]
+   [:epoch {:optional true} [:maybe [:or :string :keyword]]]
+   [:more? {:optional true} :boolean]
+   [:hidden {:optional true} :int]
+   [:orphans {:optional true} :int]
+   [:reason {:optional true} :keyword]
+   [:error {:optional true} [:maybe :string]]])
+
+(defn drain-senses
+  "One consume-once replay read of the host sense log, through `port`.
+
+   This is the read path the replay loop calls when a sense wakes it (the
+   wake itself comes from :listen!); it is the whole reason `host-sense-port`
+   resolves `:drain!`. Push alone loses a sense that arrived while nothing was
+   listening; the log does not, because the consumer cursor advanced only by a
+   drain is what says the sense was READ.
+
+   Never throws: a port with no drain answers {:ok? false :reason :no-drain},
+   and a drain that throws answers :reason :drain-failed with :error. Both
+   carry the consumer id, because the caller's one decision is whether to
+   retry, and a failed drain must NOT be treated as an empty one."
+  ([port] (drain-senses port nil))
+  ([port {:keys [cursor limit receptor consumer]}]
+   (let [consumer (or consumer drain-consumer)]
+     (if-let [drain! (:drain! port)]
+       (try
+         (let [b    (drain! (cond-> {:consumer consumer}
+                              (some? cursor) (assoc :cursor cursor)
+                              (some? limit) (assoc :limit limit)
+                              (some? receptor) (assoc :receptor receptor)))
+               ok!  (some? b)]
+           (if ok!
+             (cond-> {:ok? true :consumer consumer
+                      :senses (vec (:senses b))}
+               (some? (:cursor b)) (assoc :cursor (:cursor b))
+               (some? (:epoch b)) (assoc :epoch (:epoch b))
+               (some? (:more? b)) (assoc :more? (boolean (:more? b)))
+               (some? (:hidden b)) (assoc :hidden (int (:hidden b)))
+               (some? (:orphans b)) (assoc :orphans (int (:orphans b))))
+             {:ok? false :consumer consumer :senses [] :reason :drain-failed
+              :error "the port's :drain! answered nil"}))
+         (catch Throwable t
+           {:ok? false :consumer consumer :senses [] :reason :drain-failed
+            :error (or (.getMessage t) (str (class t)))}))
+       {:ok? false :consumer consumer :senses [] :reason :no-drain}))))
+
+(m/=> drain-senses [:function
+                    [:=> [:cat :any] DrainResult]
+                    [:=> [:cat :any [:maybe :map]] DrainResult]])
 
 (defrecord SixthSenseFeed [port-fn]
   sr/ISenseFeed

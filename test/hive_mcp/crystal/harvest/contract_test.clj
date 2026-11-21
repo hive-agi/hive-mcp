@@ -151,18 +151,22 @@
 
 (deftest c2-memory-ok-on-data
   (testing "memory-source returns :harvest/ok when notes exist"
+    ;; memory-source reads through the memory PORT (Chroma left for the
+    ;; hive-chroma addon), so the store is injected at the port: the stub
+    ;; store, seeded with two ephemeral notes. No with-redefs.
     (with-source-mocks {}
-      (with-redefs [clojure.core/requiring-resolve
-                    (fn [sym]
-                      (case (name sym)
-                        "query-entries"
-                        (fn [& _] [{:content "note1" :duration "ephemeral"}
-                                    {:content "note2" :duration "ephemeral"}])
-                        (requiring-resolve sym)))]
-        (let [result (proto/harvest (sources/memory-source) base-opts)]
-          (is (= :harvest/ok (:adt/variant result)))
-          (is (= :memory (:source result)))
-          (is (= 2 (get-in result [:data :count]))))))))
+      ((requiring-resolve 'hive-mcp.test.stub.memory-store/with-stub-store)
+       (fn []
+         (let [store ((requiring-resolve 'hive-spi.memory.registry/get-store))]
+           ((requiring-resolve 'hive-mcp.test.stub.memory-store/seed!)
+            store [{:type "note" :content "note1" :duration "ephemeral"
+                    :project-id (or (:project-id base-opts) "global")}
+                   {:type "note" :content "note2" :duration "ephemeral"
+                    :project-id (or (:project-id base-opts) "global")}]))
+         (let [result (proto/harvest (sources/memory-source) base-opts)]
+           (is (= :harvest/ok (:adt/variant result)))
+           (is (= :memory (:source result)))
+           (is (= 2 (get-in result [:data :count])))))))))
 
 (deftest c2-git-ok-on-commits
   (testing "git-source returns :harvest/ok when commits exist"

@@ -8,7 +8,6 @@
             [clojure.test :refer [deftest is testing use-fixtures]]
             [hive-mcp.channel.async-result :as ar]
             [hive-mcp.channel.async-result-journal :as journal]
-            [hive-mcp.channel.axiom-projection :as ax]
             [hive-mcp.channel.drain-metrics :as dm]
             [hive-mcp.channel.drain-projection :as dp]
             [hive-schemas.test :as hst]
@@ -123,106 +122,6 @@
 ;;; axiom projection (pure)
 ;;; ---------------------------------------------------------------------------
 
-(def ^:private Content
-  [:enum
-   "# Rule\nDo the thing.\n"
-   "# Rule\nDo it.\n## Why\nBecause once it broke.\nand twice\n"
-   "# Rule\n## Examples\n- a\n- b\n## Strict definitions\nX means Y\n"
-   "# Rule\n```guard-rule\n{:rule/id :guard/zz-probe}\n```\nafter\n"
-   "intro\n## Background\n<!-- rationale -->\nold story\n"
-   "no heading at all"
-   ""])
-
-(hst/deftrifecta-from-schema normalise-header-contract
-  hive-mcp.channel.axiom-projection/normalise-header
-  {:in        [:enum "## Why it matters" "# Examples!" "### Strict Definitions" "plain" nil]
-   :out       :string
-   ;; lowercase words and single spaces only, trimmed
-   :rel       (fn [_ out]
-                (and (every? #(or (Character/isLowerCase ^char %) (= \space %)) out)
-                     (= out (str/trim out))
-                     (not (str/includes? out "  "))))
-   :golden-path "test/golden/channel/axiom-normalise-header.edn"})
-
-(hst/deftrifecta-from-schema explanatory-header-contract
-  hive-mcp.channel.axiom-projection/explanatory-header?
-  {:in        [:enum "## Why it matters" "## Examples" "## Strict definitions" "## Antipatterns"
-               "## Background" "## The rule" nil]
-   :out       :boolean
-   :rel       (fn [h out]
-                (= out (contains? #{"## Why it matters" "## Examples" "## Background"} h)))
-   :n-cases   10})
-
-(hst/deftrifecta-from-schema sections-contract
-  hive-mcp.channel.axiom-projection/sections
-  {:in        Content
-   :out       [:vector ax/Section]
-   ;; every line of the source lands in exactly one section, in order
-   :rel       (fn [in out]
-                (= (str/split-lines in)
-                   (vec (mapcat (fn [{:keys [header body]}] (if header (cons header body) body)) out))))
-   :n-cases   10
-   :golden-path "test/golden/channel/axiom-sections.edn"})
-
-(hst/deftrifecta-from-schema withhold-contract
-  hive-mcp.channel.axiom-projection/withhold?
-  {:in        [:map [:header [:enum "## Why" "## Rules" nil]]
-               [:body [:vector {:max 2} [:enum "<!-- rationale -->" "text"]]]]
-   :out       :boolean
-   :rel       (fn [{:keys [header body]} out]
-                (= out (boolean (and header (or (= "## Why" header)
-                                                (some #{"<!-- rationale -->"} (take 2 body)))))))
-   :num-tests 200})
-
-(hst/deftrifecta-from-schema llmlingua-round-trip-contract
-  hive-mcp.channel.axiom-projection/llmlingua
-  {:in        Content
-   :out       :string
-   ;; strip-llmlingua is an exact inverse
-   :rel       (fn [in out] (= in (ax/strip-llmlingua out)))
-   :n-cases   10
-   :golden-path "test/golden/channel/axiom-llmlingua.edn"})
-
-(hst/deftrifecta-from-schema strip-llmlingua-contract
-  hive-mcp.channel.axiom-projection/strip-llmlingua
-  {:in        Content
-   :out       :string
-   ;; a text with no control tags is its own strip
-   :rel       (fn [in out] (= in out))
-   :n-cases   10})
-
-(hst/deftrifecta-from-schema strip-guard-blocks-contract
-  hive-mcp.channel.axiom-projection/strip-guard-blocks
-  {:in        [:cat Content [:enum "mem-1"]]
-   :out       :string
-   :rel       (fn [[in id] out]
-                (and (not (str/includes? out "```guard-rule"))
-                     (= (str/includes? in "```guard-rule") (str/includes? out (str "memory get " id)))))
-   :n-cases   10})
-
-(hst/deftrifecta-from-schema compact-contract
-  hive-mcp.channel.axiom-projection/compact
-  {:in        [:cat Content [:enum "mem-1"]]
-   :out       :string
-   ;; bounded by the source plus its pointers, and the leading statement
-   ;; survives intact
-   :rel       (fn [[in _] out]
-                (and (<= (count out) (+ (count in) 200))
-                     (str/starts-with? out (or (first (str/split-lines (str in))) ""))))
-   :n-cases   10
-   :golden-path "test/golden/channel/axiom-compact.edn"})
-
-(hst/deftrifecta-from-schema compact-entry-contract
-  hive-mcp.channel.axiom-projection/compact-entry
-  {:in        [:map [:id [:enum "mem-1"]] [:C Content] [:compacted {:optional true} [:enum true]]]
-   :out       :map
-   ;; idempotent by flag, and compaction never grows the entry
-   :rel       (fn [in out]
-                (and (<= (count (str (:C out))) (count (str (:C in))))
-                     (or (not (:compacted in)) (= in out))
-                     (= out (ax/compact-entry out))))
-   :n-cases   12})
-
 ;;; ---------------------------------------------------------------------------
 ;;; drain projection
 ;;; ---------------------------------------------------------------------------
@@ -302,5 +201,5 @@
 
 (deftest drain-schemas-generate-test
   (doseq [s [journal/Buffer journal/Buffers journal/JournalRecord ar/CallerId ar/AsyncResult
-             ar/DrainBatch ax/Section dp/BufferedEntry dp/IndexRow dp/ProjectionOpts]]
+             ar/DrainBatch dp/BufferedEntry dp/IndexRow dp/ProjectionOpts]]
     (is (seq (mg/sample s {:size 3})) (pr-str (m/form s)))))

@@ -156,12 +156,40 @@
     {:kept     (vec (mapcat :kept parts))
      :shadowed (vec (mapcat :shadowed parts))}))
 
+;; [project-id shadowed-path] pairs already reported at WARN by this process.
+;; A worktree checkout keeps its id for as long as it exists, and every scan
+;; rediscovers it: re-warning each pair on every scan buried the log under ~60
+;; identical WARNs per scan (kanban 20261118161704-483c0ccf).
+(defonce ^:private reported-shadows (atom #{}))
+
+(defn- report-shadowed!
+  "Report the discoveries a duplicate project-id displaced. A pair
+   [project-id shadowed-path] is logged at WARN the first time this process
+   sees it; pairs already reported are folded into ONE debug summary line.
+   Returns {:warned n :repeated n}."
+  [shadowed]
+  (let [pairs      (into [] (comp (map (fn [{:keys [path config]}]
+                                         [(:project-id config) path]))
+                                  (distinct))
+                         shadowed)
+        [before _] (swap-vals! reported-shadows into pairs)
+        fresh      (remove before pairs)
+        repeated   (filter before pairs)]
+    (doseq [[pid path] fresh]
+      (log/warn "Duplicate project-id; ignoring shadowed checkout"
+                {:project-id pid :shadowed-path path}))
+    (when (seq repeated)
+      (log/debug "Duplicate project-ids; ignoring shadowed checkouts already reported"
+                 {:count (count repeated)}))
+    {:warned (count fresh) :repeated (count repeated)}))
+
 (defn- discover-hive-projects
   "Discover .hive-project.edn files from root-path using parallel scanning.
 
    Strategy: scan root, then fan-out child directories via bounded-pmap
    (hive-weave). Each subtree is scanned single-threaded; parallelism
-   is across sibling directories.
+   is across sibling directories. Checkouts shadowed by a duplicate id are
+   reported through `report-shadowed!` (once per process per pair).
 
    Args:
      root-path - Starting directory for scan
@@ -180,9 +208,7 @@
         (let [all (cond-> (vec (mapcat identity child-results))
                     root-result (conj root-result))
               {:keys [kept shadowed]} (dedupe-by-project-id all)]
-          (doseq [{:keys [path config]} shadowed]
-            (log/warn "Duplicate project-id; ignoring shadowed checkout"
-                      {:project-id (:project-id config) :shadowed-path path}))
+          (report-shadowed! shadowed)
           kept)))))
 
 ;; =============================================================================

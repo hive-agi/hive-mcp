@@ -52,9 +52,14 @@
               ;; AGENT chose to make. Without it the digest folds a burst of
               ;; :progress rows from one agent into one, and turns 1 and 3
               ;; would be indistinguishable from a single noisy one.
+              ;; :parent-id names the lings' spawner: a coordinator is shown
+              ;; only conversations in its own lineage (audience/
+              ;; supervised-conversations, 13c991f1), so the peers are this
+              ;; coordinator's lings.
               (msg/shout-with-verdict!
                from :progress
-               (cond-> {:to to :message text :project-id project :deliberate? true}
+               (cond-> {:to to :message text :project-id project :deliberate? true
+                        :parent-id coordinator}
                  ctx (assoc :context-id ctx))))
         ;; Turns are separated so their timestamps differ. Ordering is the
         ;; claim under test, and three shouts inside one millisecond would

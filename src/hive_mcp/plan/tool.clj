@@ -127,6 +127,7 @@
                          execution (assoc :execution execution))
           task-tags    (vec (distinct (cond-> (vec tags)
                                         (some? wave) (conj (str "wave:" wave))
+                                        true         (into (schema/routing-tags {:execution execution}))
                                         (seq deps)   (into (map #(str "dep:" %) (sort deps))))))
           request      (cond-> {:title title
                                 :priority priority-str

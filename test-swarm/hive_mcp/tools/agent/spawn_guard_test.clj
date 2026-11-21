@@ -21,7 +21,7 @@
             [hive-mcp.agent.provider.collect :as provider-collect]
             [hive-test.isolation :as iso]
             [hive-mcp.isolation-methods]
-            [hive-mcp.test.stub.terminal-addon :as term-stub]))
+            [hive-mcp.test.stub.headless-backend :as headless-stub]))
 
 ;; =============================================================================
 ;; Test Fixtures
@@ -37,8 +37,20 @@
                 (constantly {:provider :anthropic :model "claude-test-model"})]
     (try (f) (finally (logic/reset-db!)))))
 
+(defn- headless-backend-fixture
+  "Register a recording stub headless backend through the headless-registry
+   port for the test, restoring the prior registry after.
+
+   The default spawn mode is :headless and every headless backend is
+   addon-contributed, so a cold test JVM resolves no strategy for it and every
+   allowed spawn fails with \"No strategy registered for mode: :headless\".
+   The stub registers at high priority, so `resolve-default-backend` picks it."
+  [f]
+  (headless-stub/with-backend* :test-headless (headless-stub/->backend :test-headless) f))
+
 (use-fixtures :each
   (iso/with-isolations :swarm-ds)
+  headless-backend-fixture
   logic-and-redefs-fixture)
 
 ;; =============================================================================
@@ -97,19 +109,18 @@
 
 (deftest test-spawn-guard-allows-coordinator-ling-spawn
   (testing "coordinator (non-child) can spawn lings normally"
-    ;; Every terminal backend is addon-contributed, so a cold core resolves NO
-    ;; strategy for :claude. Arrange one the way an addon would.
-    (term-stub/with-terminal
-      (fn []
-        (with-redefs [guards/child-ling? (constantly false)]
-          (let [result (spawn/handle-spawn {:type "ling"
-                                            :name "coord-ling-1"
-                                            :cwd "/tmp/project"})
-                parsed (parse-response result)]
-            (is (not (:isError result))
-                (str "Coordinator should be allowed to spawn, got: " (:text result)))
-            (is (:success parsed))
-            (is (= "coord-ling-1" (:agent-id parsed)))))))))
+    ;; The default spawn mode is :headless and every headless backend is
+    ;; addon-contributed; `headless-backend-fixture` registers the stub one.
+    (with-redefs [guards/child-ling? (constantly false)]
+      (let [result (spawn/handle-spawn {:type "ling"
+                                        :name "coord-ling-1"
+                                        :cwd "/tmp/project"})
+            parsed (parse-response result)]
+        (is (not (:isError result))
+            (str "Coordinator should be allowed to spawn, got: " (:text result)))
+        (is (:success parsed))
+        ;; The stub backend names its process slave-<requested id>.
+        (is (= "slave-coord-ling-1" (:agent-id parsed)))))))
 
 (deftest test-spawn-guard-allows-coordinator-type-validation
   (testing "coordinator reaches type validation for invalid types"
@@ -188,22 +199,25 @@
                           (normalize-budget 0)))))
 
 (deftest economy-tier-controls-model-selection
-  (term-stub/with-terminal
-    (fn []
-      (with-redefs [guards/child-ling? (constantly false)]
-        (let [cheap (parse-response
-                     (spawn/handle-spawn {:type "ling"
-                                          :name "cheap-tier"
-                                          :cwd "/tmp/project"
-                                          :tier "cheap"
-                                          :model "premium-model"
-                                          :token_budget "1200"}))
-              frontier (parse-response
-                        (spawn/handle-spawn {:type "ling"
-                                             :name "frontier-tier"
-                                             :cwd "/tmp/project"
-                                             :tier "frontier"
-                                             :model "frontier-model"}))]
-          (is (= "claude-test-model" (:model cheap)))
-          (is (= 1200 (:token-budget cheap)))
-          (is (= "frontier-model" (:model frontier))))))))
+  ;; The frontier model is a claude- id: the fixture's ling default routes to
+  ;; :anthropic, which serves only its own model family
+  ;; (provider.policy/routing-refusal), so a non-Claude id is refused there.
+  (with-redefs [guards/child-ling? (constantly false)]
+    (let [cheap (parse-response
+                 (spawn/handle-spawn {:type "ling"
+                                      :name "cheap-tier"
+                                      :cwd "/tmp/project"
+                                      :tier "cheap"
+                                      :model "premium-model"
+                                      :token_budget "1200"}))
+          frontier (parse-response
+                    (spawn/handle-spawn {:type "ling"
+                                         :name "frontier-tier"
+                                         :cwd "/tmp/project"
+                                         :tier "frontier"
+                                         :model "claude-frontier-model"}))]
+      (is (= "claude-test-model" (:model cheap))
+          "cheap tier ignores the requested model and takes the ling default")
+      (is (= 1200 (:token-budget cheap)))
+      (is (= "claude-frontier-model" (:model frontier))
+          "frontier tier keeps the requested model"))))

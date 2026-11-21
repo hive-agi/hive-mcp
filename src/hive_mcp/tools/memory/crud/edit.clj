@@ -144,11 +144,35 @@
       :else
       (find-replace (or current "") find replace))))
 
+(defn- requested-duration
+  "The duration an edit EXPLICITLY asks for, as a duration-name string, or nil
+   when it asks for none. Absent, nil and blank all mean 'not passed', so
+   the stored duration is preserved. A blank value used to be written through
+   as an empty duration with no expiry (card 20261102185846-041d31e2). A
+   value that is not a duration name throws {:type :invalid-edit}, and
+   nothing is written."
+  [params]
+  (let [d (get params :duration)
+        s (some-> d (#(if (keyword? %) (name %) (str %))) str/trim not-empty)]
+    (when s
+      (when-not (duration/valid-duration? s)
+        (invalid-edit! (str "duration must be one of "
+                            (str/join ", " duration/duration-order)
+                            "; got " (pr-str d))
+                       {:duration d}))
+      s)))
+
 (defn- build-updates
   "Compute the partial-update map from the incoming edit params against the
-   existing entry. Returns [updates content-changed?]."
-  [existing {:keys [type tags duration abstraction_level] :as params}]
+   existing entry. Returns [updates content-changed?].
+
+   :duration and :expires are written ONLY when the caller passed a duration
+   (`requested-duration`). Every other edit (content, find/replace, tags,
+   type, including a review landing an axiom) leaves the stored duration
+   exactly as it is."
+  [existing {:keys [type tags abstraction_level] :as params}]
   (let [content (resolve-content existing params)
+        duration (requested-duration params)
         ;; Same write gate as the add path: an edit may not launder an entry
         ;; into a human-gated type either. Parking rewrites BOTH the type and
         ;; the tags, merging onto the entry's existing tags when the edit did

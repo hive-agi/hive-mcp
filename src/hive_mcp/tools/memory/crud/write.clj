@@ -624,6 +624,22 @@
                       (when kg-check
                         (str " Check edges with: " (:how kg-check))))))))
 
+(defn effective-duration
+  "Duration an add lands with: the caller's `duration` when given, else
+   \"permanent\" when the registry default of `type`
+   (`type-registry/default-duration`) is \"permanent\" (:axiom, :principle),
+   else \"long\". Registry defaults other than permanent are NOT applied: an
+   add has always landed \"long\". It used to be \"long\" for every type,
+   which is how approved axioms came to expire (card 20261102185846-041d31e2).
+   Pure."
+  [type duration]
+  (or (some-> duration (#(if (keyword? %) (name %) (str %))) str/trim not-empty)
+      (when (= "permanent" (type-registry/default-duration type))
+        "permanent")
+      "long"))
+
+(m/=> effective-duration [:=> [:cat :any [:maybe [:or :string :keyword]]] :string])
+
 (defn- do-add!
   "Inner core of handle-add. Runs the memory-store/KG IO path through
    the IMemoryStore registered under `:store-key` (default `:default`).
@@ -675,7 +691,7 @@
                               (= type "plan") (plan-status/with-status "draft"))
             store (mem-proto/get-store store-key)
             content-hash (mem-proto/content-hash content)
-            duration-str (or duration "long")
+            duration-str (effective-duration type duration)
             expires (dur/calculate-expires duration-str)
             existing (run-stage! progress :dedup-lookup
                                  #(with-stage-resilience

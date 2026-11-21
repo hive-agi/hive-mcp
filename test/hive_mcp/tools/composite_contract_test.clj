@@ -8,7 +8,12 @@
             [hive-mcp.tools.composite :as composite]
             [hive-schemas.test :refer [deftrifecta-from-schema]]
             [hive-test.golden :as golden]
-            [malli.core :as m]))
+            [malli.core :as m]
+            [taoensso.timbre :as timbre]))
+
+;; A missing subdomain namespace is logged with its "Could not locate ... on
+;; classpath" message, which bin/test-count-floor.sh reads as a LOAD ABORT.
+(clojure.test/use-fixtures :once (fn [f] (timbre/with-merged-config {:min-level :fatal} (f))))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -59,7 +64,7 @@
    :stripped  (:command ((composite/subdomain-handler "carto" identity) {:command "carto search"}))
    :kept      (:command ((composite/subdomain-handler "carto" identity) {:command "kg traverse"}))
    :no-addon  (composite/build-merged-tool {:name "m24-no-such-tool" :description "d"})
-   :lazy-miss (composite/lazy-resolve-handlers 'm24.no-such/handlers)})
+   :lazy-miss (set (keys (composite/lazy-resolve-handlers 'm24.no-such/handlers)))})
 
 (deftest unknown-tools-answer-empty-shapes
   (is (= {} (composite/lazy-resolve-schema-props 'm24.no-such/tool-def)))

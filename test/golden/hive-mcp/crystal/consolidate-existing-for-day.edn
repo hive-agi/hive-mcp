@@ -1,0 +1,71 @@
+{:by-scope-tag
+ {:in
+  ["a"
+   "2026-11-17"
+   [{:id "20261117090000-00000001",
+     :tags
+     ["session-summary" "session:2026-11-17" "scope:project:a"]}]],
+  :out "20261117090000-00000001"},
+ :day-from-id-only
+ {:in
+  ["a"
+   "2026-11-17"
+   [{:id "20261117090000-00000001",
+     :project-id "a",
+     :tags ["session-summary"]}]],
+  :out "20261117090000-00000001"},
+ :newest-of-two
+ {:in
+  ["a"
+   "2026-11-17"
+   [{:id "20261117090000-00000001",
+     :project-id "a",
+     :tags ["session-summary" "session:2026-11-17"]}
+    {:id "20261117150000-00000002",
+     :project-id "a",
+     :tags ["session-summary" "session:2026-11-17"]}]],
+  :out "20261117150000-00000002"},
+ :none {:in ["a" "2026-11-17" []], :out nil},
+ :not-a-summary
+ {:in
+  ["a"
+   "2026-11-17"
+   [{:id "20261117090000-00000001",
+     :project-id "a",
+     :tags ["decision" "session:2026-11-17"]}
+    {:id "20261117070000-00000003",
+     :project-id "a",
+     :tags ["session-summary" "session:2026-11-17"]}]],
+  :out "20261117070000-00000003"},
+ :other-scope
+ {:in
+  ["a"
+   "2026-11-17"
+   [{:id "20261117090000-00000001",
+     :project-id "b",
+     :tags ["session-summary" "session:2026-11-17"]}]],
+  :out nil},
+ :same-day
+ {:in
+  ["a"
+   "2026-11-17"
+   [{:id "20261117090000-00000001",
+     :project-id "a",
+     :tags ["session-summary" "session:2026-11-17"]}]],
+  :out "20261117090000-00000001"},
+ :umbrella-scope
+ {:in
+  ["multi-project"
+   "2026-11-17"
+   [{:id "20261117090000-00000001",
+     :project-id "multi-project",
+     :tags ["session-summary" "session:2026-11-17" "umbrella"]}]],
+  :out "20261117090000-00000001"},
+ :yesterday-only
+ {:in
+  ["a"
+   "2026-11-17"
+   [{:id "20261116090000-00000001",
+     :project-id "a",
+     :tags ["session-summary" "session:2026-11-16"]}]],
+  :out nil}}

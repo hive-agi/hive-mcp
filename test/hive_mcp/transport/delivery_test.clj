@@ -31,7 +31,7 @@
 (defn- world
   "Run f with the ports scripted: :nats? whether a connection exists, :armed?
    whether the coordinator's inbox is armed, :tmux? whether the pane takes it."
-  [{:keys [nats? armed? tmux? lings backends]} f]
+  [{:keys [nats? armed? tmux? lings backends ling-inboxes consumers]} f]
   (reg/clear!)
   (reset! sent [])
   (reg/rebind! transports)
@@ -39,6 +39,13 @@
                 inbox/send!  (fn [_ msg] (swap! sent conj [:nats msg])
                                {:id "m1" :to (:to msg) :subject "s" :seq 1 :duplicate? false})]
     (binding [delivery/*connection*    (fn [] (when nats? :conn))
+              ;; Lings: :ling-inboxes armed, :consumers attached (by id).
+              delivery/*ling-route*    (fn [id]
+                                         (let [up? (boolean nats?)
+                                               a?  (contains? (set ling-inboxes) id)
+                                               c?  (contains? (set consumers) id)]
+                                           {:ling-id id :nats-up? up? :armed? a?
+                                            :consumer-attached? c? :reachable? (and up? a? c?)}))
               delivery/*find-ling*     (fn [id] (get lings id))
               delivery/*tmux-reply*    (fn [to msg]
                                          (swap! sent conj [:tmux to msg])
@@ -47,8 +54,12 @@
               delivery/*ling-dispatch* (fn [p]
                                          (when (str/starts-with? (str (:agent_id p)) "down")
                                            (throw (ex-info "no Emacs daemon answers" {})))
-                                         (swap! sent conj [:ling (:agent_id p)])
-                                         {:task-id "t1"})
+                                         (if-let [deliver (:deliver-fn p)]
+                                           ;; Ling.dispatch! records the task,
+                                           ;; then hands it to the route.
+                                           (deliver {:task-id "t1" :task (:prompt p)})
+                                           (do (swap! sent conj [:ling (:agent_id p)])
+                                               {:task-id "t1"})))
               delivery/*headless-backends* (fn [] (or backends #{:hive-agent}))
               delivery/*io-model*      {:claude :buffer :vterm :buffer :tmux :buffer
                                         :headless :stdin-stdout}
@@ -111,9 +122,10 @@
            (let [res (delivery/deliver! {:to "ling-1" :message "m"
                                          :params {:agent_id "ling-1" :prompt "m"}})]
              (is (= :emacs (get-in res [:ok :via])))
-             (is (= [{:adapter :headless-ling :reason :inapplicable}]
+             (is (= [{:adapter :nats-inbox :reason :inapplicable}
+                     {:adapter :headless-ling :reason :inapplicable}]
                     (mapv #(select-keys % [:adapter :reason]) (get-in res [:ok :skipped])))
-                 "the ling lane never walks the coordinator adapters")
+                 "the ling lane never walks :tmux, a coordinator-only adapter")
              (is (= [[:ling "ling-1"]] @sent))))))
 
 (deftest a-ling-with-no-spawn-mode-is-a-terminal-claude-ling
@@ -139,9 +151,9 @@
              (doseq [id ["hl-1" "hl-2"]]
                (let [res (delivery/deliver! {:to id :message "m" :params {:agent_id id}})]
                  (is (= :headless-ling (get-in res [:ok :via])) id)
-                 (is (= :primary (get-in res [:ok :resolved-by]))
-                     "headless-ling heads the ling lane")
-                 (is (empty? (get-in res [:ok :skipped])))))
+                 (is (= [{:adapter :nats-inbox :reason :inapplicable}]
+                        (mapv #(select-keys % [:adapter :reason]) (get-in res [:ok :skipped])))
+                     "no consumer attached: NATS is skipped, never degraded")))
              (testing "a probe round with Emacs down leaves the ling lane on headless-ling"
                (reg/probe-port! :delivery {:force? true})
                (is (= :headless-ling
@@ -173,18 +185,99 @@
                  (is (= :headless-ling (get-in (delivery/deliver! {:to "hl-1" :message "m"
                                                                   :params {:agent_id "hl-1"}})
                                                [:ok :via]))))
-               (is (= #{[:coordinator nil :nats-inbox] [:ling nil :headless-ling]}
+               (is (= #{[:coordinator nil :nats-inbox]}
                       (set (map (juxt :lane :from :to) @switches)))
-                   "one election per lane, then no failover/recovered churn")
+                   (str "one election in the coordinator lane, then no churn; the ling"
+                        " lane elects nothing past an inapplicable :nats-inbox"))
                (let [lanes (get-in (reg/status) [:ports :delivery :lanes])]
                  (is (= :nats-inbox (get-in lanes [:coordinator :active])))
-                 (is (= :headless-ling (get-in lanes [:ling :active])))
-                 (is (= [:headless-ling :emacs :hivemind-shout] (get-in lanes [:ling :chain]))))
+                 (is (nil? (get-in lanes [:ling :active]))
+                     "headless-ling served only lings NATS does not reach: no evidence against NATS")
+                 (is (= [:nats-inbox :headless-ling :emacs :hivemind-shout]
+                        (get-in lanes [:ling :chain]))))
                (testing "a vterm ling in the same lane still lands via :emacs"
                  (is (= :emacs (get-in (delivery/deliver! {:to "vt-1" :message "m"
                                                           :params {:agent_id "vt-1"}})
                                        [:ok :via]))))
                (finally (reg/set-switch-sink! prev)))))))
+
+(deftest a-ling-with-an-attached-consumer-goes-via-nats-inbox
+  (world {:nats? true :lings {"hl-n" {:slave/id "hl-n" :ling/spawn-mode :hive-agent}}
+          :ling-inboxes #{"hl-n"} :consumers #{"hl-n"}}
+         (fn []
+           (let [res (delivery/deliver! {:to "hl-n" :message "do it" :from "coordinator:7"
+                                         :params {:agent_id "hl-n" :prompt "do it"}})
+                 v   (:ok res)]
+             (is (r/ok? res))
+             (is (= :nats-inbox (:via v)))
+             (is (= :primary (:resolved-by v)) ":nats-inbox heads the ling lane")
+             (is (= "t1" (get-in v [:value :task-id]))
+                 "task bookkeeping stays in hive-mcp: the dispatch's task id is answered")
+             (is (true? (get-in v [:value :route :consumer-attached?])))
+             (is (= [:nats] (mapv first @sent)) "no in-process hand-off")
+             (let [msg (get-in @sent [0 1])]
+               (is (= "hl-n" (:to msg)))
+               (is (= "t1" (:id msg)) "the task id is the message id the consumer dedups by")
+               (is (= "do it" (:body msg)))
+               (is (= "coordinator:7" (:from msg)))))
+           (is (= :nats-inbox (get-in (reg/status) [:ports :delivery :lanes :ling :active]))))))
+
+(deftest the-nats-route-carries-the-ling-sequence-in-meta
+  (world {:nats? true :lings {"hl-s" {:slave/id "hl-s" :ling/spawn-mode :hive-agent}}
+          :ling-inboxes #{"hl-s"} :consumers #{"hl-s"}}
+         (fn []
+           (let [stamp {:epoch "e1" :seq 3 :after 2}]
+             ;; Ling.dispatch! stamps the task, then hands it to the route.
+             (binding [delivery/*ling-dispatch* (fn [p] ((:deliver-fn p) {:task-id "t3" :task "go"
+                                                                          :ling-seq stamp}))]
+               (is (r/ok? (delivery/deliver! {:to "hl-s" :message "go"
+                                              :params {:agent_id "hl-s" :prompt "go"}}))))
+             (is (= {:task-id "t3" :ling-seq stamp} (get-in @sent [0 1 :meta]))
+                 "the consumer reads the stamp from the envelope meta"))
+           (reset! sent [])
+           (binding [delivery/*ling-dispatch* (fn [p] ((:deliver-fn p) {:task-id "t4" :task "go"}))]
+             (delivery/deliver! {:to "hl-s" :message "go" :params {:agent_id "hl-s" :prompt "go"}}))
+           (is (= {:task-id "t4"} (get-in @sent [0 1 :meta])) "an unstamped task carries no stamp"))))
+
+(deftest a-ling-without-a-consumer-falls-back-to-headless-ling
+  (testing "inbox armed, consumer missing"
+    (world {:nats? true :lings {"hl-x" {:slave/id "hl-x" :ling/spawn-mode :hive-agent}}
+            :ling-inboxes #{"hl-x"}}
+           (fn []
+             (let [res (delivery/deliver! {:to "hl-x" :message "m" :params {:agent_id "hl-x"}})]
+               (is (= :headless-ling (get-in res [:ok :via])))
+               (is (= :fallback (get-in res [:ok :resolved-by])))
+               (is (re-find #"no consumer of hl-x is attached"
+                            (get-in res [:ok :skipped 0 :error :message])))
+               (is (= [[:ling "hl-x"]] @sent))
+               (is (not= :degraded (get-in (reg/status) [:ports :delivery :adapters :nats-inbox :status]))
+                   "a missing consumer is the ling's fact, not the bus's")))))
+  (testing "NATS down"
+    (world {:nats? false :lings {"hl-y" {:slave/id "hl-y" :ling/spawn-mode :hive-agent}}
+            :ling-inboxes #{"hl-y"} :consumers #{"hl-y"}}
+           (fn []
+             (let [res (delivery/deliver! {:to "hl-y" :message "m" :params {:agent_id "hl-y"}})]
+               (is (= :headless-ling (get-in res [:ok :via])))
+               (is (= "nats-inbox does not serve ling targets: NATS is down"
+                      (get-in res [:ok :skipped 0 :error :message])))))))
+  (testing "a consumer-less ling between two reachable ones keeps the lane on NATS"
+    (world {:nats? true :lings {"a" {:slave/id "a" :ling/spawn-mode :hive-agent}
+                                "b" {:slave/id "b" :ling/spawn-mode :hive-agent}}
+            :ling-inboxes #{"a" "b"} :consumers #{"a"}}
+           (fn []
+             (is (= :nats-inbox (get-in (delivery/deliver! {:to "a" :message "1" :params {:agent_id "a"}}) [:ok :via])))
+             (is (= :headless-ling (get-in (delivery/deliver! {:to "b" :message "2" :params {:agent_id "b"}}) [:ok :via])))
+             (is (= :nats-inbox (get-in (reg/status) [:ports :delivery :lanes :ling :active])))
+             (is (= :nats-inbox (get-in (delivery/deliver! {:to "a" :message "3" :params {:agent_id "a"}}) [:ok :via])))))))
+
+(deftest the-ling-lane-probe-tells-nats-up-from-consumer-attached
+  (world {:nats? true :ling-inboxes #{"hl-p"}}
+         (fn []
+           (is (r/ok? ((:probe (reg/open-adapter :delivery :nats-inbox)))) "the bus is up")
+           (is (= {:nats-up? true :armed? true :consumer-attached? false :reachable? false}
+                  (select-keys (delivery/ling-route-health "hl-p")
+                               [:nats-up? :armed? :consumer-attached? :reachable?]))
+                  "but this ling's consumer is not attached"))))
 
 (deftest unknown-target-is-an-addressing-error-with-no-fallback
   (world {:nats? true :armed? true :tmux? true}
