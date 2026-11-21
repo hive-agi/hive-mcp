@@ -11,7 +11,8 @@
             [hive-mcp.addons.boot-health :as boot-health]
             [hive-mcp.tools.op-outcome :as op-outcome]
             [hive-mcp.dispatch.verbs :as verbs]
-            [malli.core :as m]))
+            [malli.core :as m]
+            [hive-mcp.dispatch.lazy :as lazy]))
 
 ;; =============================================================================
 ;; Command Normalization
@@ -319,25 +320,33 @@
            (catch Throwable _ nil)))))
 
 (defn- unknown-command-error
-  "Loud error for a command this tree cannot resolve. Leads with the root
-   tool the first word names when it is not this tool's command at all
-   (`root-route-line`), then the roots that own the token (`Did you mean:
-   carto multi?`), then the nearest known commands by edit distance, then the
-   valid roots. A root that neither enumerates nor declares the token is never
-   offered."
+  "Loud error for a command this tree cannot resolve. When the first word
+   names a subdomain whose namespace failed to load (it carries
+   hive-mcp.dispatch.lazy/load-error), says that, with the cause, instead of
+   `Unknown command`: listing the subdomain as valid while calling its verb
+   unknown contradicts itself. Otherwise leads with the root tool the first
+   word names when it is not this tool's command at all (`root-route-line`),
+   then the roots that own the token (`Did you mean: carto multi?`), then the
+   nearest known commands by edit distance, then the valid roots. A root that
+   neither enumerates nor declares the token is never offered."
   [command handlers]
   (let [raw       (normalize-command command)
         cmd       (when (and raw (not (str/blank? raw))) (str/trim raw))
-        route     (root-route-line cmd handlers)
-        roots     (when cmd (:roots (qualification-hints cmd handlers)))
-        qualified (map #(str (name %) " " cmd) roots)
-        near      (when cmd (nearest-commands cmd handlers))
-        suggest   (distinct (concat qualified near))]
-    (mcp-error (str (when route (str route " "))
-                    "Unknown command: " command "."
-                    (when (seq suggest)
-                      (str " Did you mean: " (str/join ", " suggest) "?"))
-                    " Valid: " (str/join ", " (sort (map name (keys handlers))))))))
+        head      (first (parse-command cmd))
+        load-err  (when head (lazy/load-error (get handlers head)))]
+    (if load-err
+      (mcp-error (str "Subdomain '" (name head) "' failed to load: " load-err
+                      ". Fix the cause; a later call retries the load (no reload needed)."))
+      (let [route     (root-route-line cmd handlers)
+            roots     (when cmd (:roots (qualification-hints cmd handlers)))
+            qualified (map #(str (name %) " " cmd) roots)
+            near      (when cmd (nearest-commands cmd handlers))
+            suggest   (distinct (concat qualified near))]
+        (mcp-error (str (when route (str route " "))
+                        "Unknown command: " command "."
+                        (when (seq suggest)
+                          (str " Did you mean: " (str/join ", " suggest) "?"))
+                        " Valid: " (str/join ", " (sort (map name (keys handlers))))))))))
 
 (defn- subtree-at
   "The node PATH names in HANDLERS, every level resolved through
@@ -357,6 +366,48 @@
     (when (dispatch/handler? own)
       (fn [params]
         (own (assoc params :command (str (str/join " " (map name path)) " help")))))))
+
+(defn- deprecated-leaf?
+  "Is V a deprecated alias: a var whose metadata says :deprecated, or whose
+   docstring starts with DEPRECATED? Such a leaf keeps routing but is left out
+   of a help listing."
+  [v]
+  (let [m (when (var? v) (meta v))]
+    (boolean (or (:deprecated m)
+                 (re-find #"^(?i)\s*deprecated" (str (:doc m)))))))
+
+(defn- subtree-listing-help
+  "The generic `<subdomain> help` answer: the commands the enumerable subtree
+   at PATH routes, spelled with their full path, as a help response; nil when
+   PATH is not a subtree or routes nothing enumerable. The fallback for a
+   subdomain that registers no `help` leaf of its own, so `help` on any
+   subdomain of any consolidated tool answers its verbs rather than Unknown
+   command.
+
+   Deprecated aliases (`deprecated-leaf?`) are not listed. When the subtree
+   has a `:_handler`, a last line says what bare `<subdomain>` runs: the
+   sibling verb that handler is, when it is one."
+  [handlers path]
+  (let [node  (when (seq path) (dispatch/current (subtree-at handlers path)))
+        paths (when (map? node)
+                (remove #(deprecated-leaf? (get-in node %)) (collect-command-paths node [])))
+        sub   (str/join " " (map name path))
+        dflt  (when (map? node) (:_handler node))
+        dverb (when dflt
+                (some (fn [[k v]]
+                        (when (and (not= k :_handler)
+                                   (identical? (dispatch/current v) (dispatch/current dflt)))
+                          k))
+                      (sort-by (comp str key) node)))]
+    (when (seq paths)
+      {:type "text"
+       :text (str "'" sub "' commands:\n"
+                  (str/join "\n" (map #(str "  - " sub " " (str/join " " (map name %)))
+                                      (sort-by #(str/join " " (map name %)) paths)))
+                  (when dflt
+                    (str "\nBare '" sub "' runs "
+                         (if dverb (str "'" sub " " (name dverb) "'") "its default handler")
+                         ".")))})))
 
 (defn- with-subtree-listing
   "ERR with the commands the subtree at PATH routes appended, when PATH names
@@ -403,8 +454,10 @@
 
    A bare subdomain (`ss`) or `<subdomain> help` its subtree does not route
    itself answers the subtree's own `help` leaf when it registers one
-   (`subdomain-help-handler`); without one the error lists what the subtree
-   routes (`with-subtree-listing`).
+   (`subdomain-help-handler`), else the commands the subtree routes
+   (`subtree-listing-help`). `<subdomain> help` reaches that listing even when
+   the subtree has a `:_handler` default router, as long as the subtree
+   enumerates verbs: the router would only answer Unknown command for `help`.
 
    Optional coerce-schema: map of {field-key [type-spec]} for MCP boundary coercion.
    When provided, string params are coerced to declared types before dispatch.
@@ -446,12 +499,16 @@
            ;; Normal dispatch via n-depth resolve-handler
            :else
            (let [{:keys [handler tree path-used remaining]} (resolve-handler handlers path)
-                 sub-help (when (and (not handler) (seq path-used)
-                                     (or tree (= [:help] remaining)))
-                            (subdomain-help-handler handlers path-used))]
+                 help?    (and (seq path-used) (= [:help] remaining))
+                 sub-help (when (and (seq path-used) (or (and (not handler) tree) help?))
+                            (subdomain-help-handler handlers path-used))
+                 listing  (when (and (not sub-help) (seq path-used)
+                                     (or (and (not handler) tree) help?))
+                            (subtree-listing-help handlers path-used))]
              (cond
-               handler  (run handler params)
                sub-help (run sub-help params)
+               listing  (with-degraded-notice listing)
+               handler  (run handler params)
                :else
                (let [qualified (auto-qualified-command (str/trim cmd-str) handlers)
                      owner     (when qualified

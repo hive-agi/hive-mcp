@@ -86,6 +86,13 @@
    namespace reaches the table — so the chain is a consequence of doing the
    thing correctly twice, not an abuse to be forbidden.
 
+   A map whose metadata carries a ::refresh port (a 0-arity fn) is followed
+   the same way: the port answers what the map stands for now. That is the
+   placeholder a subdomain whose load failed leaves in its root's tree
+   (hive-mcp.dispatch.lazy): every read asks it, so the tree it recovers to
+   reaches dispatch with no reload of the root. A port that throws, or answers
+   the same map, ends the walk at that map.
+
    Bounded rather than trusting. A var chain is finite in every non-pathological
    case, but `(alter-var-root #'a (constantly #'a))` is expressible, and a seam
    that HANGS is worse than one that refuses: exhausting the bound returns the
@@ -93,9 +100,13 @@
    gate reports an uninvocable handler instead of spinning."
   [x]
   (loop [v x, hops 0]
-    (if (and (var? v) (< hops max-var-hops))
-      (recur (deref v) (inc hops))
-      v)))
+    (cond
+      (>= hops max-var-hops) v
+      (var? v) (recur (deref v) (inc hops))
+      (and (map? v) (ifn? (::refresh (meta v))))
+      (let [n (try ((::refresh (meta v))) (catch Throwable _ v))]
+        (if (or (nil? n) (identical? n v)) v (recur n (inc hops))))
+      :else v)))
 
 (m/=> current [:=> [:cat :any] :any])
 

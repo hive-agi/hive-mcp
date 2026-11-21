@@ -9,7 +9,8 @@
             [clojure.test.check.properties :as prop]
             [hive-mcp.extensions.registry :as ext]
             [hive-mcp.tools.cli :as cli]
-            [hive-mcp.tools.composite :as composite]))
+            [hive-mcp.tools.composite :as composite]
+            [hive-mcp.dispatch.handler]))
 
 (defn- opaque [m] (with-meta m {:hive-mcp.tools.cli/opaque-roots (set (keys m))}))
 
@@ -28,17 +29,85 @@
   (is (= (assoc help-body :seen "ss help") (call "ss help")))
   (is (= :drained (call "ss drain"))))
 
-(deftest a-subtree-without-help-errors-with-its-listing
+(deftest a-subtree-without-help-answers-its-listing
+  ;; AF-06 (card 20261118230911-7c2010b4): `kanban help`, `workflow help` and
+  ;; `swarm dag help` answered Unknown command; command=help is the documented
+  ;; discovery path, so a subdomain answers its verbs.
   (doseq [c ["plain" "plain help"]]
     (testing c
       (let [r (call c)]
-        (is (:isError r))
-        (is (str/includes? (:text r) "'plain' routes: plain a, plain b"))
+        (is (not (:isError r)))
+        (is (str/includes? (:text r) "'plain' commands:"))
+        (is (str/includes? (:text r) "  - plain a"))
+        (is (str/includes? (:text r) "  - plain b"))
         (is (not (str/includes? (:text r) "plain plain"))))))
   (testing "a deeper miss is not mistaken for help"
     (let [r (call "plain zzz")]
       (is (:isError r))
       (is (str/includes? (:text r) "plain a")))))
+
+(deftest a-default-router-subtree-still-answers-help
+  (let [h (cli/make-cli-handler {:wf {:_handler (fn [p] [:routed (:command p)])
+                                      :forge    {:strike (fn [_] :s)}
+                                      :catchup  (fn [_] :c)}
+                                 :opaque {:_handler (fn [p] [:opaque (:command p)])}})]
+    (testing "help lists the verbs instead of reaching the router"
+      (let [r (h {:command "wf help"})]
+        (is (str/includes? (:text r) "  - wf catchup"))
+        (is (str/includes? (:text r) "  - wf forge strike"))))
+    (testing "other commands still route"
+      (is (= :c (h {:command "wf catchup"})))
+      (is (= [:routed "wf other"] (h {:command "wf other"}))))
+    (testing "a router that enumerates nothing keeps its own help"
+      (is (= [:opaque "opaque help"] (h {:command "opaque help"}))))))
+
+(deftest every-consolidated-subdomain-answers-help
+  ;; Over the real consolidated trees: every enumerable subdomain answers
+  ;; `<subdomain> help` and bare `<subdomain>` with something other than
+  ;; Unknown command. Only the trees are read; no handler is invoked except a
+  ;; subdomain's own `help` leaf, which describes and does nothing. A root
+  ;; that does not resolve FAILS here rather than being skipped.
+  (let [roots '[hive-mcp.tools.consolidated.project/canonical-handlers
+                hive-mcp.tools.consolidated.swarm/canonical-handlers
+                hive-mcp.tools.consolidated.memory/canonical-handlers]
+        checked (atom 0)]
+    (doseq [sym roots
+            :let [v (try (requiring-resolve sym) (catch Throwable t t))]]
+      (testing (str sym " resolves")
+        (is (var? v) (str "root did not resolve: " (if (instance? Throwable v) (ex-message v) "no such var"))))
+      (when (var? v)
+        (let [tree @v
+              h    (cli/make-cli-handler tree)]
+          (doseq [[k node] tree
+                  :let [cur (hive-mcp.dispatch.handler/current node)]
+                  :when (and (map? cur) (seq (remove #{:_handler :help} (keys cur)))
+                             (not (contains? cur :help)))
+                  c [(str (name k) " help") (name k)]]
+            (swap! checked inc)
+            (testing (str sym " " c)
+              (let [text (str (:text (h {:command c})))]
+                (is (not (str/includes? text "Unknown command")) text)
+                (is (str/includes? text (str "'" (name k) "' commands:")) text)))))))
+    (is (pos? @checked) "non-vacuous: at least one consolidated subdomain was checked")))
+
+(deftest help-listing-omits-deprecated-aliases-and-names-the-bare-default
+  (let [tree @(requiring-resolve 'hive-mcp.tools.consolidated.workflow/canonical-handlers)
+        h    (cli/make-cli-handler {:workflow tree})
+        text (str (:text (h {:command "workflow forge help"})))]
+    (testing "the listing keeps the live verbs"
+      (is (str/includes? text "  - workflow forge strike\n"))
+      (is (str/includes? text "  - workflow forge status")))
+    (testing "a deprecated alias still routes but is not listed"
+      (is (not (str/includes? text "strike-imperative")))
+      (is (contains? (:forge tree) :strike-imperative)))
+    (testing "it says what bare `workflow forge` runs, and bare really runs it"
+      (is (str/includes? text "Bare 'workflow forge' runs 'workflow forge status'."))))
+  (testing "a subtree with no :_handler has no bare-default line"
+    (let [h (cli/make-cli-handler {:plain {:a (fn [_] :a) :b (fn [_] :b)}})]
+      (is (not (str/includes? (str (:text (h {:command "plain help"}))) "Bare")))))
+  (testing "a default that is no sibling verb is named generically"
+    (let [h (cli/make-cli-handler {:wf {:_handler (fn [_] :d) :x (fn [_] :x)}})]
+      (is (str/includes? (str (:text (h {:command "wf help"}))) "Bare 'wf' runs its default handler.")))))
 
 (deftest a-command-is-never-qualified-by-the-subdomain-it-names
   (doseq [c ["ss nope" "ss ss help" "plain zzz" "plain help me"]]
@@ -52,7 +121,7 @@
     (let [old (opaque {:ss        {:drain (fn [_] :d) :recent (fn [_] :r)}
                        :goal-plan (fn [_] :g)})
           r   ((cli/make-cli-handler old) {:command "ss help"})]
-      (is (:isError r))
+      (is (not (:isError r)) "AF-06: it lists its verbs instead")
       (is (not (str/includes? (:text r) "ss ss help")))
       (is (str/includes? (:text r) "ss drain")))))
 

@@ -13,10 +13,11 @@
    resources/hive-mcp/boot-contributions.edn), the hive-memory addon at
    `initialize!` afterwards. With nobody contributing, boot skips the step and
    says so, which is what a kernel-only build should do."
-  (:require [hive-mcp.chroma.core :as chroma]
+  (:require [hive-mcp.embeddings.active :as active]
             [hive-mcp.config.core :as global-config]
             [hive-mcp.dns.result :as result]
             [hive-mcp.embeddings.config :as embedding-config]
+            [hive-mcp.embeddings.host-services :as host-services]
             [hive-mcp.embeddings.ollama :as ollama]
             [hive-mcp.embeddings.service :as embedding-service]
             [taoensso.timbre :as log]
@@ -29,8 +30,8 @@
 (defn init-embedding-provider!
   "Initialize embedding providers for semantic memory search.
 
-  Sets up:
-  1. Chroma connection (vector database)
+  Sets up (the vector-store connection is each backend addon's own):
+  1. (none: Chroma moved to the hive-chroma addon)
   2. EmbeddingService (per-collection routing)
   3. Per-collection embedding configuration:
      - hive-mcp-memory  : Ollama
@@ -51,6 +52,11 @@
   global fallback (default `ollama/->provider`, whose constructor probes
   <host>/api/tags over HTTP)."
   [& [{:keys [ollama-provider-fn] :or {ollama-provider-fn ollama/->provider}}]]
+  ;; Publish the host services backend addons consume (hive-spi
+  ;; vector.host-services) first: it needs no config, and a backend whose
+  ;; initialize! runs after this step must find them even when the rest of
+  ;; the wiring below fails.
+  (result/rescue-log "register host services" nil (host-services/register!))
   (result/rescue-log "init-embedding-provider!" false
     ;; Load global config to get :embeddings section
                  (let [cfg (global-config/get-global-config)
@@ -58,11 +64,8 @@
                        ollama-cfg (get embed-cfg :ollama {})
                        openrouter-cfg (get embed-cfg :openrouter {})]
 
-      ;; Configure Chroma connection - config.edn :services > env vars > defaults
-                   (let [chroma-host (global-config/get-service-value :chroma :host :env "CHROMA_HOST" :default "localhost")
-                         chroma-port (global-config/get-service-value :chroma :port :env "CHROMA_PORT" :parse parse-long :default 8000)]
-                     (chroma/configure! {:host chroma-host :port chroma-port})
-                     (log/info "Chroma configured:" chroma-host ":" chroma-port))
+      ;; No vector-store connection is configured here: each backend addon
+      ;; (hive-chroma, hive-milvus, hive-qdrant) owns its own endpoint.
 
       ;; Initialize EmbeddingService for per-collection routing
                    (embedding-service/init!)
@@ -119,7 +122,7 @@
 
         ;; Global fallback provider (Ollama), only with a configured model
                      (when ollama-model
-                       (chroma/set-embedding-provider! (ollama-provider-fn {:host ollama-host :model ollama-model})
+                       (active/set-embedding-provider! (ollama-provider-fn {:host ollama-host :model ollama-model})
                                                        {:impl :ollama :host ollama-host :model (str ollama-model)})
                        (log/info "Global fallback embedding provider: Ollama at" ollama-host))
 

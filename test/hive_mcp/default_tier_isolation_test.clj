@@ -48,8 +48,6 @@
     :nats-url "this gate's own pattern table and docstring"
     :live-config "this gate's own pattern table and docstring"
     :reachability "this gate's own pattern table and docstring"}
-   "test/hive_mcp/memory_chroma_test.clj"
-   {:live-endpoint "docstring recounts the old :8000 probe; the suite runs on the in-memory transport"}
    "test/hive_mcp/plans_test.clj"
    {:live-endpoint "docstring explains why it installs a stub store instead of Chroma on :8000"}
    "test/hive_mcp/presets_test.clj"

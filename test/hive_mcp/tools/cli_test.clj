@@ -236,7 +236,7 @@
     (testing "unknown at depth 1 without _handler: 'a' returns error"
       ;; :a is a map without _handler, so no handler found
       (let [result (cli-handler {:command "a"})]
-        (is (:isError result))))))
+        (is (not (:isError result)) "AF-06: a bare subtree lists what it routes")))))
 
 ;; =============================================================================
 ;; Unknown command handling tests
