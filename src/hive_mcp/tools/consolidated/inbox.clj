@@ -77,8 +77,8 @@
 (defn auto-arm!
   "Bind a coordinator caller to its own inbox without an explicit `inbox arm`.
    `caller` is the transport's caller id; only a coordinator lane that names a
-   session (`coordinator:<pid>`) is armed, under its encoded id
-   (`coordinator-<pid>`). Arms the durable, binds the caller so the senses of
+   session (`coordinator:<pid>` or `coordinator:<8 hex of the session id>`)
+   is armed, under its encoded id (`coordinator-<session>`). Arms the durable, binds the caller so the senses of
    its lings are republished there, and starts the sense adapters. Never
    throws: -> {:armed? true :inbox id} | {:armed? false :reason kw}."
   [caller]

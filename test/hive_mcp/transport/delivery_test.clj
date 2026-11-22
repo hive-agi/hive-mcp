@@ -9,7 +9,6 @@
             [clojure.test :refer [deftest is testing use-fixtures]]
             [hive-dsl.result :as r]
             [hive-mcp.extensions.soft :as soft]
-            [hive-mcp.nats.inbox :as inbox]
             [hive-mcp.tools.agent.dispatch :as dispatch]
             [hive-mcp.tools.consolidated.hivemind :as hivemind]
             [hive-mcp.transport.chain :as chain]
@@ -35,9 +34,11 @@
   (reg/clear!)
   (reset! sent [])
   (reg/rebind! transports)
-  (with-redefs [inbox/status (fn [_ id] {:inbox id :armed? (boolean armed?)})
-                inbox/send!  (fn [_ msg] (swap! sent conj [:nats msg])
-                               {:id "m1" :to (:to msg) :subject "s" :seq 1 :duplicate? false})]
+  (binding [delivery/*inbox-status* (fn [_ id] {:inbox id :armed? (if (set? armed?)
+                                                                      (contains? armed? id)
+                                                                      (boolean armed?))})
+            delivery/*inbox-send*   (fn [_ msg] (swap! sent conj [:nats msg])
+                                      {:id "m1" :to (:to msg) :subject "s" :seq 1 :duplicate? false})]
     (binding [delivery/*connection*    (fn [] (when nats? :conn))
               ;; Lings: :ling-inboxes armed, :consumers attached (by id).
               delivery/*ling-route*    (fn [id]
@@ -76,6 +77,54 @@
     (is (nil? (delivery/target-kind "")))
     (is (= :ling (delivery/target-kind "ling-1")))
     (is (nil? (delivery/target-kind "nobody")))))
+
+(deftest both-coordinator-id-spellings-are-coordinators
+  (binding [delivery/*find-ling* (constantly nil)]
+    (testing "a pid and the first 8 hex of a session id (bb-mcp #45)"
+      (doseq [id ["coordinator:12345" "coordinator:72216f39" "coordinator:1"]]
+        (is (true? (delivery/coordinator-id? id)) id)
+        (is (= :coordinator (delivery/target-kind id)) id)))
+    (testing "ling ids and garbage are not coordinators"
+      (doseq [id ["ling-72216f39" "72216f39" "swarm-worker-1" "coordinator" "coordinator-hive"
+                  "coordinator:" "coordinator:abc" "coordinator:zzzzzzzz" "coordinator:72216F39"
+                  "coordinator:72216f3" "coordinator:72216f390" "coordinator:72216f39-hive"
+                  "coordinator:4fc0ff75-f9c0-4185-8fe4-371c0d1c8ba7" "coordinator:12 34"
+                  " coordinator:12345" "" nil 12345 :coordinator]]
+        (is (false? (delivery/coordinator-id? id)) (pr-str id))
+        (is (nil? (delivery/target-kind id)) (pr-str id))))))
+
+(deftest an-unknown-hex-coordinator-reaches-the-inbox-route
+  (world {:nats? true :armed? #{"coordinator-72216f39"} :tmux? true}
+         (fn []
+           (let [res (delivery/deliver! {:to "coordinator:72216f39" :message "wake"
+                                         :from "coordinator:593a2651"})
+                 v   (:ok res)]
+             (is (r/ok? res) "no registry row, and still no \"Agent not found\"")
+             (is (not (chain/addressing? res)))
+             (is (= :nats-inbox (:via v)))
+             (is (= [:nats] (mapv first @sent)))
+             (is (= "coordinator-72216f39" (get-in @sent [0 1 :to])))
+             (is (= "coordinator:593a2651" (get-in @sent [0 1 :from])))))))
+
+(deftest an-unarmed-hex-coordinator-falls-through-to-tmux-then-the-shout
+  (world {:nats? true :armed? false :tmux? true}
+         (fn []
+           (let [res (delivery/deliver! {:to "coordinator:72216f39" :message "wake"})]
+             (is (= :tmux (get-in res [:ok :via])))
+             (is (= [[:tmux "coordinator:72216f39" "wake"]] @sent)))))
+  (world {:nats? false :tmux? false}
+         (fn []
+           (let [res (delivery/deliver! {:to "coordinator:72216f39" :message "wake"})]
+             (is (= :hivemind-shout (get-in res [:ok :via])))
+             (is (= [:shout "coordinator:72216f39" "wake"] (last @sent)))))))
+
+(deftest dispatch-to-a-hex-coordinator-is-not-agent-not-found
+  (world {:nats? true :armed? #{"coordinator-72216f39"}}
+         (fn []
+           (let [out  (dispatch/handle-dispatch {:agent_id "coordinator:72216f39" :prompt "wake"})
+                 body (json/read-str (:text out) :key-fn keyword)]
+             (is (not (:isError out)) (:text out))
+             (is (= "nats-inbox" (:via body)))))))
 
 (deftest coordinator-with-armed-inbox-lands-via-nats-inbox
   (world {:nats? true :armed? true :tmux? true}

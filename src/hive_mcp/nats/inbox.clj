@@ -110,8 +110,10 @@
 
 (defn encode-inbox-id
   "Pure: the canonical inbox id for `id`. The coordinator lane spells its
-   session `coordinator:<pid>`; ':' is no subject-token character, so every
-   ':' becomes '-' (`coordinator:134462` -> `coordinator-134462`). A valid id
+   session `coordinator:<pid>` or `coordinator:<first 8 hex of the session
+   id>`; ':' is no subject-token character, so every ':' becomes '-'
+   (`coordinator:134462` -> `coordinator-134462`, `coordinator:72216f39` ->
+   `coordinator-72216f39`). A valid id
    is returned unchanged, so encoding is idempotent. `valid-inbox-id?` stays
    the one strict grammar: an id that still fails it after encoding throws
    :inbox/invalid-id naming the given and the encoded form."
