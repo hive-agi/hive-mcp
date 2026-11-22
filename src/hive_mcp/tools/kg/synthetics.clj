@@ -448,8 +448,58 @@
 
 (m/=> rotate-after [:=> [:cat [:sequential ks/SynthId] [:maybe ks/SynthId]] [:vector ks/SynthId]])
 
+(def ^:private BlindSpot [:map [:class :keyword] [:reason [:maybe :string]]])
+
+(defn- cleanup-blind-spots
+  "Promote: what a cleanup call could NOT see, read off its collected
+   universe. A projection-edge count with no derived source, a failed count
+   (-1), an unreadable record set, and registered synthetics with no memory
+   store to judge their liveness each name one blind class."
+  [{:keys [sources proj-count vis store? registered]}]
+  (cond-> []
+    (and (empty? sources) (pos? proj-count))
+    (conj {:class  :universe
+           :reason (str proj-count " :projects-to edges exist but no "
+                        "synth- source was derived")})
+    (neg? proj-count)
+    (conj {:class :universe :reason "projection-edge count query failed"})
+    (not (:visible? vis))
+    (conj {:class :orphaned-record :reason (:reason vis)})
+    (and (not store?) (seq registered))
+    (conj {:class  :liveness
+           :reason (str "no memory store registered; "
+                        (count registered)
+                        " registered synthetics not classified")})))
+
+(defn- cleanup-base
+  "Pipeline: the part of every cleanup answer that echoes the options and
+   sizes the universe, whatever the call goes on to do."
+  [{:keys [dry-run? action threshold min-live-members limit]}
+   {:keys [sources orphans registered proj-count]}
+   blind]
+  {:dry-run?         (boolean dry-run?)
+   :action           action
+   :threshold        threshold
+   :min-live-members min-live-members
+   :limit            limit
+   :universe         {:sources          (count sources)
+                      :orphans          (count orphans)
+                      :registered       (count registered)
+                      :projection-edges proj-count}
+   :blind            blind})
+
+(m/=> cleanup-blind-spots
+      [:=> [:cat [:map [:sources [:sequential :any]] [:proj-count :int]
+                  [:vis [:maybe :map]] [:store? :boolean] [:registered [:sequential :any]]]]
+       [:vector BlindSpot]])
+(m/=> cleanup-base [:=> [:cat :map :map [:vector BlindSpot]] :map])
+
 (defn cleanup-synthetics!
   "Scan synthetic-pattern nodes and act on those that are dead.
+
+   Stages: the store, source, count and visibility reads (Collect),
+   partition-sources and cleanup-blind-spots (Promote), cleanup-base and the
+   edge-cycle step (Pipeline), and the flushes and retractions (Boundary).
 
    Two selection classes over the EDGE-derived universe (distinct synth-
    :kg-edge/from values, which is the only enumeration that can see a node
@@ -507,32 +557,15 @@
         vis        (record-visibility sources)
         {:keys [registered orphans]} (partition-sources sources vis)
         orphan-set (set orphans)
-        blind      (cond-> []
-                     (and (empty? sources) (pos? proj-count))
-                     (conj {:class  :universe
-                            :reason (str proj-count " :projects-to edges exist but no "
-                                         "synth- source was derived")})
-                     (neg? proj-count)
-                     (conj {:class :universe :reason "projection-edge count query failed"})
-                     (not (:visible? vis))
-                     (conj {:class :orphaned-record :reason (:reason vis)})
-                     (and (nil? store) (seq registered))
-                     (conj {:class  :liveness
-                            :reason (str "no memory store registered; "
-                                         (count registered)
-                                         " registered synthetics not classified")}))
+        blind      (cleanup-blind-spots {:sources sources :proj-count proj-count :vis vis
+                                         :store? (some? store) :registered registered})
         ;; With no store only orphans are decidable.
         candidates (if store sources orphans)
-        base {:dry-run?         (boolean dry-run?)
-              :action           action-kw
-              :threshold        threshold
-              :min-live-members min-live-members
-              :limit            limit
-              :universe         {:sources          (count sources)
-                                 :orphans          (count orphans)
-                                 :registered       (count registered)
-                                 :projection-edges proj-count}
-              :blind            blind}]
+        base (cleanup-base {:dry-run? dry-run? :action action-kw :threshold threshold
+                            :min-live-members min-live-members :limit limit}
+                           {:sources sources :orphans orphans :registered registered
+                            :proj-count proj-count}
+                           blind)]
     (if (and (nil? store) (empty? orphans))
       (do (log/warn "cleanup-synthetics: no memory store registered, refusing to classify")
           (merge base {:scanned 0 :orphaned 0 :pruned 0 :demoted 0 :preserved 0

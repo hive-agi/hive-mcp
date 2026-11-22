@@ -19,7 +19,8 @@
             [hive-mcp.config.core :as config]
             [taoensso.timbre :as log]
             [clojure.set :as set]
-            [malli.core :as m])
+            [malli.core :as m]
+            [clojure.string :as str])
   (:import [java.util.concurrent Executors ScheduledExecutorService TimeUnit]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -91,120 +92,134 @@
 ;; registered-names is any collection (coerced with `set`)
 (m/=> disjoint-sweep-owners? [:=> [:cat [:maybe [:or [:sequential :any] [:set :any]]]] :boolean])
 
+(def ^:private sweep-tasks
+  "The guarded tasks of one sweep, in the order they run: result key, the
+   symbol resolved at call time, and the fallback a throwing task answers.
+
+   1. stale callbacks (30 min threshold)  2. completed multi-async batches
+   3. event journal  4. completed SAA states
+   5. bounded atom GC sweep: evicts TTL-expired and over-capacity entries
+      from every registered bounded atom (no GC death spiral from unbounded
+      atom growth)
+   then the terminal liveness sweep; the ledger cold sweep (retracts terminal
+   tasks and claim-history from the hot DataScript store once past the retain
+   window, durable in the ledger); and the KG GC lane, which ticks every
+   sweep but runs only on its own interval (default 60 min) and reports what
+   it could not see (see the kg-gc ns)."
+  [[:callbacks 'hive-mcp.swarm.callback/cleanup-stale! {:cleaned 0}]
+   [:async-batches 'hive-mcp.tools.multi-async/gc-completed! {:cleaned 0}]
+   [:event-journal 'hive-mcp.tools.swarm.channel/clear-event-journal! {:cleared true}]
+   [:saa-states 'hive-mcp.agent.saa.orchestrator/clear-completed-states! {:cleaned 0}]
+   [:gc-sweep 'hive-mcp.gc.bounded-atom/sweep-all!
+    {:total-evicted 0 :atom-count 0 :duration-ms 0}]
+   [:terminal-liveness 'hive-mcp.swarm.lifecycle.terminal-sweep/sweep-once!
+    {:checked 0 :zombified 0 :alive 0 :errors []}]
+   [:ledger-cold 'hive-mcp.swarm.datascript.coordination.cleanup/sweep-ledger-cold!
+    {:tasks 0 :claim-history 0}]
+   [:kg-gc 'hive-mcp.scheduler.kg-gc/run-lane!
+    {:skipped true :reason "kg-gc lane failed"}]])
+
+(def ^:private pending-reembed-task
+  "Memory entries whose embed failed sit in the durable outbox; each sweep
+   reembeds them once (a failure stays parked). It runs AFTER the sweep's
+   duration is taken, as it always has."
+  ['hive-mcp.tools.memory.crud.reembed/drain-pending!
+   {:total 0 :reembedded 0 :not-found 0 :errors 0}])
+
+(def ^:private SweepTask [:tuple :keyword :symbol :any])
+
+(defn- run-sweep-tasks
+  "Collect: run each task through CALL (sym fallback -> result), in order,
+   into one map keyed by the task's result key. CALL is the port; the sweep
+   passes `resolve-and-call`."
+  [call tasks]
+  (reduce (fn [acc [k sym fallback]] (assoc acc k (call sym fallback))) {} tasks))
+
+(defn- sweep-result
+  "Promote: the sweep's result map from what its stages measured."
+  [task-results {:keys [gc-hint pending-reembed sweep-number duration-ms timestamp]}]
+  (assoc task-results
+         :pending-reembed pending-reembed
+         :gc-hint gc-hint
+         :sweep-number sweep-number
+         :duration-ms duration-ms
+         :timestamp timestamp))
+
+(defn- sweep-log-events
+  "Pipeline: the [level & args] log events a sweep result calls for.
+   An eviction by the bounded-atom sweep and a GC hint that freed over 50 MB
+   are reported at info. A large committed/used gap that survives an
+   explicit GC means committed heap is NOT being returned (the ratchet), so
+   that warns rather than stays silent."
+  [{:keys [gc-sweep gc-hint]}]
+  (cond-> []
+    (pos? (get gc-sweep :total-evicted 0))
+    (conj [:info "Housekeeping: GC sweep evicted"
+           (:total-evicted gc-sweep) "entries from"
+           (:atom-count gc-sweep) "atoms"])
+
+    (> (get gc-hint :freed-mb 0) 50)
+    (conj [:info "Housekeeping: GC hint freed" (:freed-mb gc-hint) "MB"
+           "(before:" (:before-mb gc-hint) "MB)"])
+
+    (and (:gc? gc-hint) (:still-fragmented? gc-hint))
+    (conj [:warn "Housekeeping: committed heap not returning to the OS —"
+           "committed" (:committed-mb gc-hint) "MB vs used"
+           (:used-mb gc-hint) "MB."
+           "Check -XX:-ExplicitGCInvokesConcurrent is set."])))
+
+(defn- emit-log-event!
+  "Boundary: write one [level & args] event through timbre."
+  [[level & args]]
+  (let [msg (str/join " " (map #(if (nil? %) "nil" %) args))]
+    (case level
+      :info (log/info msg)
+      :warn (log/warn msg))))
+
+(m/=> run-sweep-tasks [:=> [:cat [:=> [:cat :symbol :any] :any] [:sequential SweepTask]]
+                       [:map-of :keyword :any]])
+(m/=> sweep-result [:=> [:cat [:map-of :keyword :any] :map] :map])
+(m/=> sweep-log-events [:=> [:cat :map] [:vector [:cat [:enum :info :warn] [:* :any]]]])
+
+(defn- call-sweep-task
+  [sym fallback]
+  (resolve-and-call sym #(%) fallback))
+
 (defn housekeeping-sweep!
   "Run a single housekeeping sweep. Each task is guarded independently.
 
+   Stages: run-sweep-tasks (Collect, over `sweep-tasks`), sweep-result
+   (Promote), sweep-log-events (Pipeline), and this fn, the Boundary: the
+   sweep counter, the clock, the GC hint and the logs live here only.
+
    opts :gc-ports are the injected ports of `gc-gate/gc-hint!` (:probe, :gc!,
-   :thresholds); omitted, the live heap and Runtime.gc are used."
+   :thresholds); omitted, the live heap and Runtime.gc are used.
+
+   JVM GC hint, GATED on real fragmentation (scheduler.gc-gate). An
+   unconditional System/gc here was a stop-the-world Old collection every
+   sweep under -XX:-ExplicitGCInvokesConcurrent (18 in 83 min, 25.5 s total).
+   Below the gate G1PeriodicGCInterval does the uncommit."
   ([] (housekeeping-sweep! {}))
   ([{:keys [gc-ports] :or {gc-ports {}}}]
-  (let [start-ms (System/currentTimeMillis)
-        sweep-num (-> (swap! scheduler-state update :sweep-count inc)
-                      :sweep-count)
-        _ (log/debug "Housekeeping: sweep" sweep-num "starting")
-
-        ;; 1. Stale callbacks (30 min threshold)
-        callback-result
-        (resolve-and-call
-         'hive-mcp.swarm.callback/cleanup-stale!
-         #(%) {:cleaned 0})
-
-        ;; 2. Completed multi-async batches
-        async-result
-        (resolve-and-call
-         'hive-mcp.tools.multi-async/gc-completed!
-         #(%) {:cleaned 0})
-
-        ;; 3. Event journal cleanup
-        journal-result
-        (resolve-and-call
-         'hive-mcp.tools.swarm.channel/clear-event-journal!
-         #(%) {:cleared true})
-
-        ;; 4. Completed SAA states
-        saa-result
-        (resolve-and-call
-         'hive-mcp.agent.saa.orchestrator/clear-completed-states!
-         #(%) {:cleaned 0})
-
-        ;; 5. Bounded atom GC sweep
-        ;; Evicts TTL-expired and over-capacity entries from all registered
-        ;; bounded atoms. Prevents GC death spiral from unbounded atom growth.
-        gc-sweep-result
-        (resolve-and-call
-         'hive-mcp.gc.bounded-atom/sweep-all!
-         #(%) {:total-evicted 0 :atom-count 0 :duration-ms 0})
-
-        terminal-liveness-result
-        (resolve-and-call
-         'hive-mcp.swarm.lifecycle.terminal-sweep/sweep-once!
-         #(%) {:checked 0 :zombified 0 :alive 0 :errors []})
-
-        ;; Ledger cold sweep: retract terminal tasks and claim-history from the
-        ;; hot DataScript store once past the retain window (durable in the ledger).
-        ledger-cold-result
-        (resolve-and-call
-         'hive-mcp.swarm.datascript.coordination.cleanup/sweep-ledger-cold!
-         #(%) {:tasks 0 :claim-history 0})
-
-        ;; KG GC lane. Ticks every sweep but runs only on its own interval
-        ;; (default 60 min) and reports what it could not see; see kg-gc ns.
-        kg-gc-result
-        (resolve-and-call
-         'hive-mcp.scheduler.kg-gc/run-lane!
-         #(%) {:skipped true :reason "kg-gc lane failed"})
-
-        ;; 6. JVM GC hint, GATED on real fragmentation (scheduler.gc-gate).
-        ;; An unconditional System/gc here was a stop-the-world Old collection
-        ;; every sweep under -XX:-ExplicitGCInvokesConcurrent (18 in 83 min,
-        ;; 25.5 s total). Below the gate G1PeriodicGCInterval does the uncommit.
-        gc-hint-result (gc-gate/gc-hint! gc-ports)
-
-        elapsed-ms (- (System/currentTimeMillis) start-ms)
-        result {:callbacks callback-result
-                :async-batches async-result
-                :event-journal journal-result
-                :saa-states saa-result
-                :gc-sweep gc-sweep-result
-                :terminal-liveness terminal-liveness-result
-                :ledger-cold ledger-cold-result
-                :kg-gc kg-gc-result
-                ;; Memory entries whose embed failed sit in the durable outbox;
-                ;; each sweep reembeds them once (a failure stays parked).
-                :pending-reembed (resolve-and-call
-                                  'hive-mcp.tools.memory.crud.reembed/drain-pending!
-                                  #(%) {:total 0 :reembedded 0 :not-found 0 :errors 0})
-                :gc-hint gc-hint-result
-                :sweep-number sweep-num
-                :duration-ms elapsed-ms
-                :timestamp (java.time.Instant/now)}]
-
-    ;; Log GC sweep stats at info level when entries were evicted
-    (when (pos? (get gc-sweep-result :total-evicted 0))
-      (log/info "Housekeeping: GC sweep evicted"
-                (:total-evicted gc-sweep-result) "entries from"
-                (:atom-count gc-sweep-result) "atoms"))
-
-    ;; Log GC hint results when significant memory was freed
-    (when (> (get gc-hint-result :freed-mb 0) 50)
-      (log/info "Housekeeping: GC hint freed" (:freed-mb gc-hint-result) "MB"
-                "(before:" (:before-mb gc-hint-result) "MB)"))
-
-    ;; A large committed/used gap that survives an explicit GC means committed
-    ;; heap is NOT being returned — the ratchet. Warn rather than stay silent.
-    (when (and (:gc? gc-hint-result) (:still-fragmented? gc-hint-result))
-      (log/warn "Housekeeping: committed heap not returning to the OS —"
-                "committed" (:committed-mb gc-hint-result) "MB vs used"
-                (:used-mb gc-hint-result) "MB."
-                "Check -XX:-ExplicitGCInvokesConcurrent is set."))
-
-    ;; Update state
-    (swap! scheduler-state assoc
-           :last-run (java.time.Instant/now)
-           :last-result result)
-
-    (log/info "Housekeeping: sweep" sweep-num "completed in" elapsed-ms "ms")
-    result)))
+   (let [start-ms (System/currentTimeMillis)
+         sweep-num (-> (swap! scheduler-state update :sweep-count inc)
+                       :sweep-count)
+         _ (log/debug "Housekeeping: sweep" sweep-num "starting")
+         task-results (run-sweep-tasks call-sweep-task sweep-tasks)
+         gc-hint-result (gc-gate/gc-hint! gc-ports)
+         elapsed-ms (- (System/currentTimeMillis) start-ms)
+         result (sweep-result task-results
+                              {:pending-reembed (apply call-sweep-task pending-reembed-task)
+                               :gc-hint gc-hint-result
+                               :sweep-number sweep-num
+                               :duration-ms elapsed-ms
+                               :timestamp (java.time.Instant/now)})]
+     (run! emit-log-event! (sweep-log-events result))
+     (swap! scheduler-state assoc
+            :last-run (java.time.Instant/now)
+            :last-result result)
+     (log/info "Housekeeping: sweep" sweep-num "completed in" elapsed-ms "ms")
+     result)))
 
 (def SweepResult
   "One sweep's per-task results. Each task answers its callee's value, its
