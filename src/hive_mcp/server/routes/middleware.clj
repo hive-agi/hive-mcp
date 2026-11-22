@@ -317,6 +317,89 @@
 
 (m/=> wrap-handler-default-async-for-commands [:=> [:cat Handler [:maybe [:or [:set :any] [:sequential :any]]]] Handler])
 
+(defn- report-async-outcome!
+  "Boundary: journal one verdict for an acknowledged async task."
+  [caller-id task-id tool-name outcome]
+  (async-buf/enqueue-result! caller-id (merge {:task-id task-id :tool tool-name} outcome)))
+
+(m/=> report-async-outcome! [:=> [:cat :any :string [:maybe :string] :map] :any])
+
+(defn- throwable->error-text
+  "Pure: `ClassName: message` for a failure that is not an Exception."
+  [^Throwable t]
+  (str (.getName (class t)) ": " (.getMessage t)))
+
+(m/=> throwable->error-text [:=> [:cat :any] :string])
+
+(defn- run-async-work!
+  "The body of an acknowledged async task: run the handler on the args stripped
+   of this wrapper's own params and report whichever verdict it reaches.
+
+   Catches Throwable, not Exception, and rethrows what is not an Exception:
+   the caller already holds `{:queued true}`, so the buffered result is the
+   ONLY report this call will ever make (an AssertionError from a malli check,
+   a StackOverflowError, an OutOfMemoryError must not leave it waiting). The
+   pool still sees the error; nothing here pretends to recover from an OOM."
+  [handler args task-id caller-id tool-name]
+  (let [report! (partial report-async-outcome! caller-id task-id tool-name)]
+    (try
+      (report! {:status :completed
+                :result (handler (dissoc args :async :async-timeout-ms))})
+      (catch InterruptedException _
+        ;; Cancelled on purpose. Say so rather than reporting it as a failure.
+        (log/info "async-result: task cancelled" {:task-id task-id})
+        (report! {:status :cancelled}))
+      (catch Exception e
+        (log/error e "async-result: background execution failed for task" task-id)
+        (report! {:status :error :error (.getMessage e)}))
+      (catch Throwable t
+        ;; Not an Exception, so nothing below would have reported it.
+        (log/error t "async-result: background execution died for task" task-id)
+        (report! {:status :error :error (throwable->error-text t)})
+        (throw t)))))
+
+(defn- async-rejection-response
+  "Pure: the error answer for a call the saturated pool refused."
+  [task-id tool-name]
+  [{:type "text"
+    :isError true
+    :text (pr-str {:queued false :rejected true :task-id task-id
+                   :tool tool-name
+                   :error "async pool saturated: nothing was started, retry shortly"})}])
+
+(m/=> async-rejection-response [:=> [:cat :string [:maybe :string]] [:vector :map]])
+
+(defn- submit-async-task!
+  "Boundary: hand the work to the async pool. Returns the ack content, or the
+   rejection response after closing the journalled submission with the same
+   verdict (a record written a line earlier must not later resurface as an
+   `:interrupted` result for work that never started)."
+  [handler args tool-name]
+  (let [task-id    (str "atask-" (random-uuid))
+        caller-id  (or (:_caller_id args) "coordinator")
+        timeout-ms (:async-timeout-ms args)
+        durable?   (async-buf/record-submission! caller-id task-id tool-name)]
+    (try
+      (async-tasks/submit!
+       {:task-id    task-id
+        :tool       tool-name
+        :caller-id  caller-id
+        :timeout-ms timeout-ms
+        ;; Execution lane (async-task.lane): a short forge verb must not
+        ;; queue behind hours-long work on the default pool.
+        :lane       (async-lane/classify tool-name (:command args))
+        ;; Background work: back to the :batch embedding lane.
+        :f          (in-embed-lane :batch
+                                   #(run-async-work! handler args task-id caller-id tool-name))})
+      [{:type "text"
+        :text (pr-str (async-ack/ack task-id tool-name timeout-ms durable?))}]
+      (catch RejectedExecutionException _
+        (log/warn "async call refused: pool saturated"
+                  {:tool tool-name :task-id task-id :caller-id caller-id})
+        (report-async-outcome! caller-id task-id tool-name
+                               {:status :rejected :error "async pool saturated"})
+        (async-rejection-response task-id tool-name)))))
+
 (defn wrap-handler-async
   "Intercept async:true calls: return an ack, run the work on the async pool.
 
@@ -330,21 +413,15 @@
    `:async` and never reaches the handler, for the same reason `:async` does
    not: it addresses THIS wrapper, not the tool.
 
-   The failure arm catches Throwable, not Exception. The caller has already
-   been acknowledged with `{:queued true}`, so the buffered result is the ONLY
-   report this call will ever make. An AssertionError from a malli check, a
-   StackOverflowError, an OutOfMemoryError: under `catch Exception` each of
-   those enqueued nothing, and the caller waited forever on an ack for work
-   that had already died. Errors are rethrown after being reported, so the
-   pool still sees them and nothing here pretends to recover from an OOM.
+   The failure arm catches Throwable, not Exception (see `run-async-work!`).
 
    THE SUBMISSION IS JOURNALLED BEFORE THE ACK GOES OUT, so the promise is
    backed by something that outlives the process making it. The result is
-   journalled too, by `enqueue-result!`, but that is not sufficient on its
-   own: the case this tool is named for is a task accepted, acknowledged, and
-   then killed BEFORE any result exists. Only the submission record turns
-   that into an `:interrupted` result the caller is eventually handed,
-   instead of silence against an ack it already holds.
+   journalled too, but that is not sufficient on its own: the case this tool
+   is named for is a task accepted, acknowledged, and then killed BEFORE any
+   result exists. Only the submission record turns that into an
+   `:interrupted` result the caller is eventually handed, instead of silence
+   against an ack it already holds.
 
    The ack shape is `async-ack/ack`: it names where the result arrives
    (`:result-via`) and says `:durable false` when the journal cannot be
@@ -353,9 +430,7 @@
    A SATURATED POOL IS ANSWERED, NOT ABSORBED. The pool refuses rather than
    handing the work back to the submitting thread, and the submitting thread
    here is the one serving the request. The refusal becomes an error the
-   caller can act on, and the journalled submission is closed with the same
-   verdict, so a record written a line earlier does not later resurface as an
-   `:interrupted` result for work that never started.
+   caller can act on (`submit-async-task!`).
 
    NOTE for addon authors: a top-level `:async` is consumed here and is gone
    before any handler runs, so a tool must not name a parameter `async` and
@@ -364,62 +439,7 @@
   [handler tool-name]
   (fn [args]
     (if (true? (async-params/async-flag (:async args)))
-      (let [task-id    (str "atask-" (random-uuid))
-            caller-id  (or (:_caller_id args) "coordinator")
-            timeout-ms (:async-timeout-ms args)
-            durable?   (async-buf/record-submission! caller-id task-id tool-name)]
-        (try
-          (async-tasks/submit!
-           {:task-id    task-id
-            :tool       tool-name
-            :caller-id  caller-id
-            :timeout-ms timeout-ms
-            ;; Execution lane (async-task.lane): a short forge verb must not
-            ;; queue behind hours-long work on the default pool.
-            :lane       (async-lane/classify tool-name (:command args))
-            ;; Background work: back to the :batch embedding lane.
-            :f          (in-embed-lane :batch (fn []
-                          (try
-                            (let [clean-args (dissoc args :async :async-timeout-ms)
-                                  result (handler clean-args)]
-                              (async-buf/enqueue-result! caller-id
-                                                         {:task-id task-id :tool tool-name
-                                                          :status :completed :result result}))
-                            (catch InterruptedException _
-                              ;; Cancelled on purpose. Say so rather than
-                              ;; reporting it as a failure of the work.
-                              (log/info "async-result: task cancelled" {:task-id task-id})
-                              (async-buf/enqueue-result! caller-id
-                                                         {:task-id task-id :tool tool-name
-                                                          :status :cancelled}))
-                            (catch Exception e
-                              (log/error e "async-result: background execution failed for task" task-id)
-                              (async-buf/enqueue-result! caller-id
-                                                         {:task-id task-id :tool tool-name
-                                                          :status :error :error (.getMessage e)}))
-                            (catch Throwable t
-                              ;; Not an Exception, so nothing below would have
-                              ;; reported it and the ack would never be answered.
-                              (log/error t "async-result: background execution died for task" task-id)
-                              (async-buf/enqueue-result! caller-id
-                                                         {:task-id task-id :tool tool-name
-                                                          :status :error
-                                                          :error (str (.getName (class t)) ": " (.getMessage t))})
-                              (throw t)))))})
-          [{:type "text"
-            :text (pr-str (async-ack/ack task-id tool-name timeout-ms durable?))}]
-          (catch RejectedExecutionException _
-            (log/warn "async call refused: pool saturated"
-                      {:tool tool-name :task-id task-id :caller-id caller-id})
-            (async-buf/enqueue-result! caller-id
-                                       {:task-id task-id :tool tool-name
-                                        :status :rejected
-                                        :error "async pool saturated"})
-            [{:type "text"
-              :isError true
-              :text (pr-str {:queued false :rejected true :task-id task-id
-                             :tool tool-name
-                             :error "async pool saturated: nothing was started, retry shortly"})}])))
+      (submit-async-task! handler args tool-name)
       (handler args))))
 
 (m/=> wrap-handler-async [:=> [:cat Handler ToolName] Handler])
@@ -587,6 +607,46 @@
 (defonce ^{:private true :doc "Provider blocks already drained but not yet fitted to a response, per caller."}
   pending-catchup (atom {}))
 
+(defn- catchup-wire-size
+  "Pure: chars the delimited wire representation of one provider block costs."
+  [tag body]
+  (let [text (if (string? body) body (pr-str body))
+        tag-name (str/upper-case (name tag))]
+    (count (str "\n\n---" tag-name "---\n" text "\n---/" tag-name "---"))))
+
+(m/=> catchup-wire-size [:=> [:cat :any :any] :int])
+
+(defn- fit-catchup-blocks
+  "Pure: split provider blocks `pairs` into `[deliver defer]` at `budget` chars
+   of wire cost. Blocks go in order; the first one that does not fit, and all
+   after it, are deferred (`defer` is nil when everything fits)."
+  [pairs budget]
+  (loop [pairs (seq pairs) out {} used 0]
+    (if-let [[tag body] (first pairs)]
+      (let [size (catchup-wire-size tag body)]
+        (if (<= (+ used size) budget)
+          (recur (next pairs) (assoc out tag body) (+ used size))
+          [out (into {} pairs)]))
+      [out nil])))
+
+(m/=> fit-catchup-blocks [:=> [:cat [:maybe [:sequential :any]] :int] [:tuple :map [:maybe :map]]])
+
+(defn- call-catchup-provider
+  "Boundary: call the `:cu/piggyback-drain` provider. A ctx-aware provider gets
+   `request-ctx`; one that still takes the caller alone is called that way."
+  [caller-id request-ctx]
+  (when-let [drain-fn (ext/get-extension :cu/piggyback-drain)]
+    (try (drain-fn caller-id request-ctx)
+         (catch clojure.lang.ArityException _
+           (drain-fn caller-id)))))
+
+(defn- retain-deferred-catchup!
+  "Boundary: keep `defer` blocks buffered for `caller-id`, or clear the buffer."
+  [caller-id defer]
+  (swap! pending-catchup (fn [m]
+                           (if (seq defer) (assoc m caller-id defer)
+                               (dissoc m caller-id)))))
+
 (defn- drain-catchup-piggyback
   "Drain the `:cu/piggyback-drain` enrichment channel for this response.
 
@@ -604,27 +664,10 @@
     (when (pos? budget)
       (try
         (let [prior (get @pending-catchup caller-id)
-              incoming (when (and (empty? prior)
-                                  (ext/get-extension :cu/piggyback-drain))
-                         (let [drain-fn (ext/get-extension :cu/piggyback-drain)]
-                           (try (drain-fn caller-id request-ctx)
-                                (catch clojure.lang.ArityException _
-                                  (drain-fn caller-id)))))
-              all (or prior (seq incoming))
-              [deliver defer]
-              (loop [pairs (seq all) out {} used 0]
-                (if-let [[tag body] (first pairs)]
-                  (let [text (if (string? body) body (pr-str body))
-                        wire (str "\n\n---" (str/upper-case (name tag)) "---\n"
-                                  text "\n---/" (str/upper-case (name tag)) "---")
-                        size (count wire)]
-                    (if (<= (+ used size) budget)
-                      (recur (next pairs) (assoc out tag body) (+ used size))
-                      [out (into {} pairs)]))
-                  [out nil]))]
-          (swap! pending-catchup (fn [m]
-                                   (if (seq defer) (assoc m caller-id defer)
-                                       (dissoc m caller-id))))
+              all (or (seq prior)
+                      (seq (call-catchup-provider caller-id request-ctx)))
+              [deliver defer] (fit-catchup-blocks all budget)]
+          (retain-deferred-catchup! caller-id defer)
           (when (seq deliver) deliver))
         (catch Exception e
           (log/debug "catchup-piggyback drain failed:" (.getMessage e))

@@ -10,7 +10,8 @@
                                    first-write-wins"
   (:require [taoensso.timbre :as log]
             [malli.core :as m]
-            [hive-mcp.saa.types :as types]))
+            [hive-mcp.saa.types :as types]
+            [hive-mcp.saa.registry.core :as registry-core]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -72,7 +73,7 @@
 (defn lookup
   "Return the registered entry for a planner-id, or nil."
   [planner-id]
-  (get-in @state [:by-id planner-id]))
+  (registry-core/lookup state planner-id))
 
 (m/=> lookup [:=> [:cat :any] [:maybe types/RegistryRecord]])
 

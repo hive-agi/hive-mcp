@@ -35,8 +35,11 @@
         "the universe is exactly the seventeen batch namespaces")
     ;; 138 = 135 + composite/loaded-var, current-at, stale-response (fix/friction-hot)
     ;; 139 = 138 + composite/fold-subdomain-props (AF-05, #711)
-    (is (= 139 (count (:universe report))) "every public defn of the batch")
-    (is (= 139 (count (:covered report))))))
+    ;; 144 = 139 + memory-kanban create* stages (validate-create-params!,
+    ;; resolve-create-priority, create-extra-tags, create-card-content,
+    ;; create-card-tags)
+    (is (= 144 (count (:universe report))) "every public defn of the batch")
+    (is (= 144 (count (:covered report))))))
 
 (deftest every-m24-contract-generates-both-sides
   (doseq [ns-sym batch-nss

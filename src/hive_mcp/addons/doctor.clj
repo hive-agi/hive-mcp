@@ -287,6 +287,46 @@
           (update :errors conj
                   (str "source file limit exceeded: " max-source-files)))))))
 
+(defn- read-deps-file
+  "Boundary: read DEPS-FILE as EDN (never evaluating it). `{:value form}` when
+   it parses, `{:error msg}` when it is missing or unreadable."
+  [^java.io.File deps-file]
+  (if (.isFile deps-file)
+    (try
+      {:value (binding [*read-eval* false]
+                (edn/read-string (slurp deps-file)))}
+      (catch Throwable t
+        {:error (str "deps.edn: " (throwable-message t))}))
+    {:error "deps.edn not found"}))
+
+(defn- project-boundary-evidence
+  "Pure: the stage fragment for a scanned project. FAIL when any forbidden
+   dependency or source namespace was found, or any scan step errored."
+  [root deps-file deps-read dependency-findings source-scan]
+  (let [scan-errors (cond-> (vec (:errors source-scan))
+                      (:error deps-read) (conj (:error deps-read)))
+        fail? (or (seq dependency-findings)
+                  (seq (:findings source-scan))
+                  (seq scan-errors))]
+    {:status (if fail? :fail :pass)
+     :evidence {:directory (.getPath ^java.io.File root)
+                :deps-file (.getPath ^java.io.File deps-file)
+                :source-file-count (:source-file-count source-scan)
+                :forbidden-dependencies dependency-findings
+                :forbidden-source-namespaces (vec (:findings source-scan))
+                :scan-errors scan-errors}}))
+
+(defn- scan-project-root
+  "Boundary: scan the existing directory ROOT (deps.edn + src/ ns forms)."
+  [^java.io.File root]
+  (let [deps-file (io/file root "deps.edn")
+        deps-read (read-deps-file deps-file)
+        dependency-findings (if-let [deps (:value deps-read)]
+                              (coordinate-findings deps)
+                              [])]
+    (project-boundary-evidence root deps-file deps-read dependency-findings
+                               (scan-source-boundaries root))))
+
 (defn scan-project-boundary
   "Read-only scan of a Clojure addon project.
 
@@ -299,34 +339,11 @@
      :evidence {:reason "directory was not supplied"}}
     (try
       (let [root (.getCanonicalFile (io/file directory))]
-        (if-not (.isDirectory root)
+        (if (.isDirectory root)
+          (scan-project-root root)
           {:status :fail
            :evidence {:directory (.getPath root)
-                      :scan-errors ["directory does not exist"]}}
-          (let [deps-file (io/file root "deps.edn")
-                deps-read (if (.isFile deps-file)
-                            (try
-                              {:value (binding [*read-eval* false]
-                                        (edn/read-string (slurp deps-file)))}
-                              (catch Throwable t
-                                {:error (str "deps.edn: " (throwable-message t))}))
-                            {:error "deps.edn not found"})
-                dependency-findings (if-let [deps (:value deps-read)]
-                                      (coordinate-findings deps)
-                                      [])
-                source-scan (scan-source-boundaries root)
-                scan-errors (cond-> (vec (:errors source-scan))
-                              (:error deps-read) (conj (:error deps-read)))
-                fail? (or (seq dependency-findings)
-                          (seq (:findings source-scan))
-                          (seq scan-errors))]
-            {:status (if fail? :fail :pass)
-             :evidence {:directory (.getPath root)
-                        :deps-file (.getPath deps-file)
-                        :source-file-count (:source-file-count source-scan)
-                        :forbidden-dependencies dependency-findings
-                        :forbidden-source-namespaces (vec (:findings source-scan))
-                        :scan-errors scan-errors}})))
+                      :scan-errors ["directory does not exist"]}}))
       (catch Throwable t
         {:status :fail
          :evidence {:directory directory
