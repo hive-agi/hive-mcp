@@ -1,0 +1,76 @@
+{:addons-root
+ {:error :config/set-refused,
+  :key "addons",
+  :rule :ancestor-of-protected,
+  :matched [:addons :hive.guard],
+  :message
+  "config set refused for key addons (ancestor-of-protected): key addons is an ancestor of the protected path addons.hive.guard; writing it would replace that subtree",
+  :fix
+  "Edit addons in ~/.config/hive-mcp/config.edn by hand, then run `config reload`."},
+ :allowed {:allowed "models.default-model"},
+ :non-canonical
+ {:error :config/set-refused,
+  :key "SERVICES.seal",
+  :rule :non-canonical,
+  :matched nil,
+  :message
+  "config set refused for key SERVICES.seal (non-canonical): key \"SERVICES.seal\" is not canonical: lower-case dotted segments, none empty",
+  :fix
+  "Edit SERVICES.seal in ~/.config/hive-mcp/config.edn by hand, then run `config reload`."},
+ :not-allowlisted
+ {:error :config/set-refused,
+  :key "foo.bar",
+  :rule :not-allowlisted,
+  :matched nil,
+  :message
+  "config set refused for key foo.bar (not-allowlisted): key foo.bar is not on the config set allowlist",
+  :fix
+  "Edit foo.bar in ~/.config/hive-mcp/config.edn by hand, then run `config reload`."},
+ :provider-api-url
+ {:error :config/set-refused,
+  :key "llm-providers.openrouter.api-url",
+  :rule :floor,
+  :matched
+  [:llm-providers
+   :*
+   #{:api-url :secret-key :dispatch :cache-control :key-probe}],
+  :message
+  "config set refused for key llm-providers.openrouter.api-url (floor): key llm-providers.openrouter.api-url is under the protected path llm-providers.*.{api-url|cache-control|dispatch|key-probe|secret-key}",
+  :fix
+  "Edit llm-providers.openrouter.api-url in ~/.config/hive-mcp/config.edn by hand, then run `config reload`."},
+ :seal-gpg-bin
+ {:error :config/set-refused,
+  :key "services.seal.gpg-bin",
+  :rule :floor,
+  :matched [:services :seal],
+  :message
+  "config set refused for key services.seal.gpg-bin (floor): key services.seal.gpg-bin is under the protected path services.seal",
+  :fix
+  "Edit services.seal.gpg-bin in ~/.config/hive-mcp/config.edn by hand, then run `config reload`."},
+ :secret
+ {:error :config/set-refused,
+  :key "secrets.x",
+  :rule :floor,
+  :matched [:secrets],
+  :message
+  "config set refused for key secrets.x (floor): key secrets.x has segment secrets, which names a secret or a command",
+  :fix
+  "Edit secrets.x in ~/.config/hive-mcp/config.edn by hand, then run `config reload`."},
+ :services-root
+ {:error :config/set-refused,
+  :key "services",
+  :rule :ancestor-of-protected,
+  :matched [:services :seal],
+  :message
+  "config set refused for key services (ancestor-of-protected): key services is an ancestor of the protected path services.seal; writing it would replace that subtree",
+  :fix
+  "Edit services in ~/.config/hive-mcp/config.edn by hand, then run `config reload`."},
+ :unknown-provider
+ {:error :config/set-refused,
+  :key "agent-defaults.ling.provider",
+  :rule :bad-value,
+  :matched [:agent-defaults :* :provider],
+  :message
+  "config set refused for key agent-defaults.ling.provider (bad-value): value for agent-defaults.ling.provider refused: provider :evil is not configured under llm-providers",
+  :fix
+  "Edit agent-defaults.ling.provider in ~/.config/hive-mcp/config.edn by hand, then run `config reload`."}}
