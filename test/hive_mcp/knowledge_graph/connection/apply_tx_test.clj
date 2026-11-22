@@ -67,21 +67,19 @@
     (strategy/apply-tx! (strategy/->SyncWriter (proto/get-store)) (mapv edge ids))
     (= (set ids) (stored-ids))))
 
-;; An EMPTY tx-data vector is enqueued but never flushed (flush-batch! skips an
-;; empty batch, so in-flight is not decremented): flush-pending! then reports
-;; :weave/timeout. Characterised below, not fixed here; the property therefore
-;; draws non-empty data.
-(deftest coalescing-writer-leaves-an-empty-tx-in-flight
+(deftest coalescing-writer-drains-an-empty-tx
   (strategy/apply-tx! (strategy/->CoalescingWriter (proto/get-store)) [])
-  (try (is (= :weave/timeout (writer/flush-pending! 150)))
-       (finally (reset! writer/in-flight 0))))
+  (is (= :ok (writer/flush-pending! 1000)))
+  (is (zero? @writer/in-flight)))
 
 (defspec coalescing-writer-lands-every-edge 50
-  (prop/for-all [ids (gen/such-that seq gen-ids)]
+  (prop/for-all [txs (gen/vector gen-ids 1 4)]
     (conn/reset-conn!)
-    (strategy/apply-tx! (strategy/->CoalescingWriter (proto/get-store)) (mapv edge ids))
+    (doseq [ids txs]
+      (strategy/apply-tx! (strategy/->CoalescingWriter (proto/get-store)) (mapv edge ids)))
     (and (= :ok (writer/flush-pending!))
-         (= (set ids) (stored-ids)))))
+         (zero? @writer/in-flight)
+         (= (into (sorted-set) cat txs) (stored-ids)))))
 
 (deftest sync-writer-swallows-a-store-failure-into-nil
   (let [bad (reify kg-proto/IKGStore
