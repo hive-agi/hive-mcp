@@ -149,7 +149,9 @@
 
 (deftest three-messages-are-three-lines-in-order-acked-after-the-write
   (let [{:keys [send! source acked*]} (broker)]
-    (is/configure! {:source source :wait-ms 20 :write-timeout-ms 2000})
+    ;; a long write timeout: while the test is not reading, the idle
+    ;; heartbeat waits instead of ending the stream under a slow runner
+    (is/configure! {:source source :wait-ms 20 :write-timeout-ms 30000})
     (doseq [i [1 2 3]] (send! i {:n i}))
     (let [tok  (is/issue-token! "pedro")
           resp (is/handler (req "pedro" tok))
