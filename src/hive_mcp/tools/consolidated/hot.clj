@@ -1310,3 +1310,6 @@
 (def tools [tool-def])
 
 (malli.core/=> bridge-available? [:=> #:provenance{:kind :inferred-static, :source "hive-carto.candidate.mallify.static"} [:cat] :boolean])
+
+(m/=> soft [:=> [:cat :qualified-symbol]
+            [:maybe [:fn {:gen/elements [#'clojure.core/inc]} var?]]])

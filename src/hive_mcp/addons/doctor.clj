@@ -638,3 +638,5 @@
        [:=> [:cat :any Ports] DoctorResult]])
 
 (malli.core/=> forbidden-host-lib? [:=> #:provenance{:kind :inferred-static, :source "hive-carto.candidate.mallify.static"} [:cat :any] :boolean])
+
+(m/=> stage [:=> [:cat StageName [:enum :pass :fail :skip] :string [:maybe :map]] Stage])
