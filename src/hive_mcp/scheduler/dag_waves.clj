@@ -14,7 +14,8 @@
             [hive.events :as ev]
             [hive-mcp.scheduler.dag-eligibility :as elig]
             [hive-mcp.scheduler.task-dispatch :as task-dispatch]
-            [malli.core :as m]))
+            [malli.core :as m]
+            [hive-mcp.extensions.soft :as ext-soft]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -315,10 +316,7 @@
    uncapped — the pre-existing behaviour, now the exception rather than the
    rule."
   []
-  (try
-    (some-> (requiring-resolve 'hive-mcp.agent.hooks.budget/default-max-budget-usd)
-            deref)
-    (catch Throwable _ nil)))
+  (some-> (ext-soft/resolve-soft 'hive-mcp.agent.hooks.budget/default-max-budget-usd) deref))
 
 (defn- task-prompt
   "The text a dispatched agent starts from: the plan rules, the card pointer

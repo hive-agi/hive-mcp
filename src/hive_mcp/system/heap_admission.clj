@@ -16,7 +16,8 @@
    story: it returns committed-but-empty heap to the OS."
   (:require [hive-mcp.config.core :as config]
             [malli.core :as m]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [hive-mcp.extensions.soft :as ext-soft]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -51,9 +52,7 @@
   "The var `hive-cache.mem-guard/<sym>`, or nil when hive-cache (or that var,
    on an older hive-cache) is not on the classpath."
   [sym]
-  (try
-    (requiring-resolve (symbol "hive-cache.mem-guard" (name sym)))
-    (catch Exception _no-hive-cache-on-classpath nil)))
+  (ext-soft/resolve-soft (symbol "hive-cache.mem-guard" (name sym))))
 
 (defn- disabled?
   "Kill switch. hive-mcp.config.resolve/get-service-value uses (or val default),

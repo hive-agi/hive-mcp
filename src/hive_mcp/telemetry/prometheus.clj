@@ -26,7 +26,8 @@
             [iapetos.collector.jvm :as jvm]
             [iapetos.export :as export]
             [malli.core :as m]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [hive-mcp.extensions.soft :as ext-soft]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -372,8 +373,7 @@
   "A metrics-port sink (hive-ttracking.metrics/IMetricsSink) feeding
    hive_mcp_op_seconds; snapshot is {}. nil when the port is absent."
   []
-  (when-let [pv (try (requiring-resolve 'hive-ttracking.metrics/IMetricsSink)
-                     (catch Throwable _ nil))]
+  (when-let [pv (ext-soft/resolve-soft 'hive-ttracking.metrics/IMetricsSink)]
     (let [proto @pv]
       (when-not (extends? proto OpSecondsSink)
         (extend OpSecondsSink proto

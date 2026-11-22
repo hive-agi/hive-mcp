@@ -7,7 +7,8 @@
    Pattern: follows protocols/editor.clj (active atom + NoopBackbone fallback).
    Headless mode is a first-class citizen — NoopBackbone degrades gracefully."
   (:require [hive-mcp.protocols.registry :as reg]
-            [malli.core :as m]))
+            [malli.core :as m]
+            [hive-mcp.resilience.swallow :as swallow]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -131,10 +132,10 @@
   (let [bb   (get-backbone)
         id   (backbone-id bb)
         inst (and (backbone-set?) (not= :noop id))
-        up?  (boolean (try (connected? bb) (catch Exception _ false)))
+        up?  (boolean (swallow/attempt-ex (connected? bb)))
         ok?  (and inst up?)
         view (when (and inst (satisfies? IChainStatus bb))
-               (try (chain-status bb) (catch Exception _ nil)))
+               (swallow/attempt-ex (chain-status bb)))
         deg? (boolean (:degraded? view))]
     (cond-> {:backbone-id id
              :installed?  (boolean inst)

@@ -13,7 +13,9 @@
    Result — the probe is inert, not fatal."
   (:require [hive-spi.diag.ports :as p]
             [hive-dsl.result :as r]
-            [malli.core :as m]))
+            [malli.core :as m]
+            [hive-mcp.extensions.soft :as ext-soft]
+            [hive-mcp.resilience.swallow :as swallow]))
 
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
@@ -23,19 +25,15 @@
 (defn- caches-map
   "The datalevin.db/caches ConcurrentHashMap, or nil when datalevin is absent."
   []
-  (try
-    (some-> (requiring-resolve 'datalevin.db/caches) deref)
-    (catch Throwable _ nil)))
+  (some-> (ext-soft/resolve-soft 'datalevin.db/caches) deref))
 
 (defn- lru-field
   "Read a private field `nm` off an `datalevin.utl.LRUCache` instance (reflective;
    never realizes cached values)."
   [lru nm]
-  (try
-    (let [f (.getDeclaredField (class lru) nm)]
+  (swallow/attempt (let [f (.getDeclaredField (class lru) nm)]
       (.setAccessible f true)
-      (.get f lru))
-    (catch Throwable _ nil)))
+      (.get f lru))))
 
 (defn- store-key->str [k]
   ;; datalevin keys the cache by (dir store); the first element is the dir path.

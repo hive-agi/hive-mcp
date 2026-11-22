@@ -6,7 +6,8 @@
             [taoensso.timbre :as log]
             [hive-mcp.vectordb.kanban-facade :as kanban]
             [clojure.data.json :as json]
-            [malli.core :as m]))
+            [malli.core :as m]
+            [hive-mcp.resilience.swallow :as swallow]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -70,8 +71,7 @@
   [entry]
   (if (nil? entry)
     :missing
-    (try
-      (let [raw (:content entry)
+    (or (swallow/attempt-ex (let [raw (:content entry)
             content (if (string? raw) (json/read-str raw :key-fn keyword) raw)
             status (or (:status content) (get content "status"))
             status (if (keyword? status) (name status) status)]
@@ -79,8 +79,7 @@
           (not= "kanban" (or (:task-type content) (get content "task-type"))) :invalid
           (= "done" status) :done
           (#{"todo" "doing" "review" "inprogress" "inreview"} status) :open
-          :else :invalid))
-      (catch Exception _ :invalid))))
+          :else :invalid))) :invalid)))
 
 ;; any value: a non-map or malformed :content classifies :invalid
 (m/=> entry-state [:=> [:cat :any] [:enum :done :open :missing :invalid]])
@@ -88,9 +87,7 @@
 (defn task-state
   "Read completion from the configured kanban store; lookup failures remain explicit and blocked."
   [task-id]
-  (try
-    (entry-state (kanban/get-entry-by-id task-id))
-    (catch Exception _ :lookup-error)))
+  (or (swallow/attempt-ex (entry-state (kanban/get-entry-by-id task-id))) :lookup-error))
 
 (m/=> task-state [:=> [:cat :any] EntryState])
 
@@ -99,14 +96,12 @@
   [dep-id completed-ids state-fn]
   (if (contains? completed-ids dep-id)
     :done
-    (try
-      (let [state (state-fn dep-id)]
+    (or (swallow/attempt-ex (let [state (state-fn dep-id)]
         (cond
           (true? state) :open
           (or (false? state) (nil? state)) :missing
           (#{:done :open :missing :invalid :lookup-error} state) state
-          :else :invalid))
-      (catch Exception _ :lookup-error))))
+          :else :invalid))) :lookup-error)))
 
 (m/=> dependency-state [:=> [:cat :any Completed StateFn] EntryState])
 

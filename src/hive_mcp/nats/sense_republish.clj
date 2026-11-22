@@ -29,7 +29,8 @@
             [hive-mcp.channel.audience :as audience]
             [hive-mcp.nats.inbox :as inbox]
             [taoensso.timbre :as log]
-            [malli.core :as m]))
+            [malli.core :as m]
+            [hive-mcp.resilience.swallow :as swallow]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -307,7 +308,7 @@
   [{:keys [publisher resolve-inbox state*] :as r} sense]
   (let [ok? (republishable? sense)
         to  (when ok?
-              (try (resolve-inbox (:sense/parent sense)) (catch Throwable _ nil)))]
+              (swallow/attempt (resolve-inbox (:sense/parent sense))))]
     (cond
       (not ok?)
       (do (count! r :skipped) {:outcome :skipped :reason :class})
@@ -318,7 +319,7 @@
       (contains? (get-in @state* [:seen :ids]) (msg-id sense))
       (do (count! r :duplicate) {:outcome :duplicate :to to :id (msg-id sense)})
 
-      (not (try (publisher-available? publisher) (catch Throwable _ false)))
+      (not (swallow/attempt (publisher-available? publisher)))
       (do (degrade! r "no connected event bus") {:outcome :degraded :to to})
 
       :else
@@ -342,7 +343,7 @@
    the feed's thread only enqueues. A rejected hand-off is counted :dropped."
   [{:keys [execute] :as r}]
   (fn [sense]
-    (when-not (try (execute #(republish! r sense)) (catch Throwable _ false))
+    (when-not (swallow/attempt (execute #(republish! r sense)))
       (count! r :dropped))
     nil))
 
@@ -367,7 +368,7 @@
                                   false)))
         [old]     (reset-vals! current* (when attached? r))]
     (when (and old (not attached?))
-      (try (unsubscribe! (:feed old) listener-key) (catch Throwable _ nil)))
+      (swallow/attempt (unsubscribe! (:feed old) listener-key)))
     {:installed? attached? :feed (feed-id feed)}))
 
 (m/=> install! [:=> [:cat Republisher] [:map [:installed? :boolean] [:feed :any]]])
@@ -383,7 +384,7 @@
   "Unsubscribe the process republisher. Idempotent. Returns nil."
   []
   (when-let [{:keys [feed]} (first (reset-vals! current* nil))]
-    (try (unsubscribe! feed listener-key) (catch Throwable _ nil)))
+    (swallow/attempt (unsubscribe! feed listener-key)))
   nil)
 
 (m/=> uninstall! [:=> [:cat] :nil])

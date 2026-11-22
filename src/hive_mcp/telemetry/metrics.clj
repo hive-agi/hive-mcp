@@ -15,7 +15,8 @@
   (:refer-clojure :exclude [reset!])
   (:require [hive-mcp.telemetry.prometheus :as prom]
             [malli.core :as m]
-            [taoensso.timbre :as log])
+            [taoensso.timbre :as log]
+            [hive-mcp.extensions.soft :as ext-soft])
   (:import [java.util.concurrent.atomic LongAdder]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -71,8 +72,7 @@
 (defn- port-var
   "The var `hive-ttracking.metrics/<sym>`, or nil when the port is absent."
   [sym]
-  (try (requiring-resolve (symbol "hive-ttracking.metrics" (name sym)))
-       (catch Throwable _ nil)))
+  (ext-soft/resolve-soft (symbol "hive-ttracking.metrics" (name sym))))
 
 (defn port-available?
   "True when the metrics port namespace resolves on this classpath."

@@ -18,7 +18,8 @@
   ;; SPDX-License-Identifier: AGPL-3.0-or-later
   (:require [hive-mcp.protocols.lifecycle :as lifecycle]
             [hive-mcp.system.registry :as reg]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [hive-mcp.extensions.soft :as ext-soft]))
 
 ;; =============================================================================
 ;; Liveness probe
@@ -28,8 +29,7 @@
   "Return hive-mcp.agent.ling.spawn/find-ling if resolvable, else nil.
    Caller treats nil as 'assume alive' — see ns docstring."
   []
-  (try (requiring-resolve 'hive-mcp.agent.ling.spawn/find-ling)
-       (catch Throwable _ nil)))
+  (ext-soft/resolve-soft 'hive-mcp.agent.ling.spawn/find-ling))
 
 (defn- orphan?
   "Return true iff `id` fails to resolve through find-ling.

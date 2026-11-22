@@ -1,3 +1,8 @@
 [{:ns hive-mcp.kernel.census,
   :file "src/hive_mcp/kernel/census.clj",
-  :requires (clojure.edn clojure.java.io clojure.string malli.core)}]
+  :requires
+  (clojure.edn
+   clojure.java.io
+   clojure.string
+   hive-mcp.resilience.swallow
+   malli.core)}]

@@ -15,7 +15,8 @@
   (:require [clojure.data.json :as json]
             [taoensso.timbre :as log]
             [malli.core :as m]
-            [clojure.string :as str])
+            [clojure.string :as str]
+            [hive-mcp.resilience.swallow :as swallow])
   (:import [io.nats.client Nats Options$Builder Connection$Status
             MessageHandler ErrorListener JetStreamSubscription]
            [io.nats.client.impl ErrorListenerLoggerImpl]
@@ -120,7 +121,7 @@
     (connectionEvent [_ conn ev]
       (if (not= epoch @epoch-counter)
         (when (not= "CLOSED" (.name ev))
-          (future (try (.close conn) (catch Exception _))))
+          (future (swallow/attempt-ex (.close conn))))
         (case (.name ev)
           ("CONNECTED" "RECONNECTED")
           (do (adopt-connection! conn)
@@ -141,7 +142,7 @@
   []
   (swap! epoch-counter inc)
   (when-let [conn @connection]
-    (try (.close conn) (catch Exception _)))
+    (swallow/attempt-ex (.close conn)))
   (reset! connection nil)
   (reset! dispatcher nil)
   (reset! subscriptions {}))
@@ -216,8 +217,7 @@
       (pullStatusError [_ conn sub status] (.pullStatusError base conn sub status))
       (socketWriteTimeout [_ conn] (.socketWriteTimeout base conn))
       (heartbeatAlarm [_ _conn sub last-stream-seq last-consumer-seq]
-        (let [consumer (try (some-> ^JetStreamSubscription sub (.getConsumerName))
-                            (catch Throwable _ nil))
+        (let [consumer (swallow/attempt (some-> ^JetStreamSubscription sub (.getConsumerName)))
               {:keys [log? suppressed]} (heartbeat-alarm-log! consumer
                                                               (System/currentTimeMillis))]
           (when log?

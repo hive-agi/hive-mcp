@@ -19,7 +19,8 @@
   (:require [hive-mcp.protocols.lifecycle :as lifecycle]
             [hive-mcp.system.registry :as reg]
             [malli.core :as m]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [hive-mcp.extensions.soft :as ext-soft]))
 
 ;; =============================================================================
 ;; Cache evictor registry
@@ -70,8 +71,7 @@
   []
   (let [own (into []
                   (keep (fn [sym]
-                          (try (requiring-resolve sym)
-                               (catch Throwable _ nil))))
+                          (ext-soft/resolve-soft sym)))
                   own-cache-evict-syms)
         registered @*cache-evictors]
     (vec (distinct (concat own registered)))))

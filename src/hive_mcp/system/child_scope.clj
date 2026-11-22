@@ -39,7 +39,8 @@
    doc. `*probe*` / `*prefix*` are the call-time seams for callers and tests."
   (:require [clojure.string :as str]
             [malli.core :as m]
-            [taoensso.timbre :as log])
+            [taoensso.timbre :as log]
+            [hive-mcp.resilience.swallow :as swallow])
   (:import [java.util.concurrent TimeUnit]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
@@ -234,16 +235,14 @@
   []
   (if (= "off" (some-> (System/getenv "HIVE_MCP_CHILD_SCOPE") str/trim str/lower-case))
     false
-    (try
-      (let [p (-> (ProcessBuilder. ^java.util.List probe-argv)
+    (boolean (swallow/attempt (let [p (-> (ProcessBuilder. ^java.util.List probe-argv)
                   (.redirectErrorStream true)
                   (.redirectOutput java.lang.ProcessBuilder$Redirect/DISCARD)
                   (.start))]
         (.close (.getOutputStream p))
         (if (.waitFor p probe-timeout-ms TimeUnit/MILLISECONDS)
           (zero? (.exitValue p))
-          (do (.destroyForcibly p) false)))
-      (catch Throwable _ false))))
+          (do (.destroyForcibly p) false)))))))
 
 (m/=> systemd-probe [:=> [:cat] :boolean])
 
@@ -251,7 +250,7 @@
   "Wrap a probe so it runs at most once; later calls return the first answer.
    A probe that throws caches false."
   [probe]
-  (let [answer (delay (try (true? (probe)) (catch Throwable _ false)))]
+  (let [answer (delay (true? (swallow/attempt (probe))))]
     (fn [] @answer)))
 
 (m/=> caching-probe [:=> [:cat Probe] Probe])
@@ -277,7 +276,7 @@
         (let [{:keys [answer at]} @state]
           (if (and (some? at) (< (- (long (clock)) (long at)) (long ttl-ms)))
             answer
-            (let [a (try (true? (probe)) (catch Throwable _ false))]
+            (let [a (true? (swallow/attempt (probe)))]
               (reset! state {:answer a :at (clock)})
               a))))
        ([answer]
@@ -327,7 +326,7 @@
   ([argv] (child-argv (or *probe* default-probe) argv))
   ([probe argv] (argv-for probe argv))
   ([probe argv opts]
-   (let [available? (try (true? (probe)) (catch Throwable _ false))]
+   (let [available? (true? (swallow/attempt (probe)))]
      (plan-argv available? argv opts))))
 
 (m/=> child-argv
@@ -360,10 +359,8 @@
    Read through java.nio: slurp's InputStream.available() answers EINVAL on
    procfs."
   [pid]
-  (try
-    (let [path (java.nio.file.Paths/get (str "/proc/" pid "/comm") (make-array String 0))]
-      (some-> (java.nio.file.Files/readAllLines path) first str/trim))
-    (catch Throwable _ nil)))
+  (swallow/attempt (let [path (java.nio.file.Paths/get (str "/proc/" pid "/comm") (make-array String 0))]
+      (some-> (java.nio.file.Files/readAllLines path) first str/trim))))
 
 (defn- await-exec-or-exit
   "Watch a just-started scoped process until it has exec'd the command (its
