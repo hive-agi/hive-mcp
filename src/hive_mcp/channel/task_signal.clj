@@ -110,6 +110,8 @@
                (not (credential-shaped? s)))
       s)))
 
+(m/=> safe-token [:=> [:cat :any] [:maybe :string]])
+
 (defn- split-tokens
   "Split a string into candidate tokens, expanding -/_/. compounds."
   [s]
@@ -117,6 +119,8 @@
     (into []
           (mapcat (fn [w] (cons w (remove str/blank? (str/split w #"[-_.]+")))))
           words)))
+
+(m/=> split-tokens [:=> [:cat :any] [:vector :string]])
 
 (defn- argv0
   "First shell word of a command string, assignment- and path-stripped."

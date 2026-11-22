@@ -27,6 +27,8 @@
                 (subs t (count "scope:project:"))))
             (:tags entry))))
 
+(m/=> project-of [:=> [:cat [:maybe :map]] :any])
+
 (defrecord SeqBoardSource [entries]
   IBoardSource
   (scoped-board [_ {:keys [project-id scope]} {:keys [required-tags window]}]

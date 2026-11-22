@@ -48,6 +48,9 @@
              "Access-Control-Allow-Headers" "Content-Type"}
    :body (json/write-str data)})
 
+(m/=> json-response [:=> [:cat :int :any]
+                      [:map [:status :int] [:headers [:map-of :string :string]] [:body :string]]])
+
 (def ^:private content-types
   "MIME types for static file serving."
   {"html" "text/html; charset=utf-8"

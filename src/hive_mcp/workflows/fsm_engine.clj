@@ -41,6 +41,8 @@
   [start-nanos]
   (quot (- (System/nanoTime) start-nanos) 1000000))
 
+(m/=> elapsed-ms [:=> [:cat :int] :int])
+
 (defn- update-status!
   "Update tracking status for a workflow instance."
   [workflow-id status-map]

@@ -357,6 +357,11 @@
    [:phase-started-at {:optional true} :int]
    [:error {:optional true} [:maybe :string]]])
 
+(m/=> get-agent-state [:=> [:cat AgentId] [:maybe SaaState]])
+
+;; nil when :shout? is off; otherwise whatever the hivemind shout answers
+(m/=> maybe-shout! [:=> [:cat [:maybe :map] AgentId SaaPhase :string] :any])
+
 (def OrchestratorValue
   "An orchestrator: a record whose :config carries the three injected ports
    and the turn budgets, caller overrides merged over the defaults."

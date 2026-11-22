@@ -178,6 +178,12 @@
     (prune-seen {:order (conj (:order seen) id)
                  :set*  (conj (:set* seen) id)})))
 
+(def ^:private Seen
+  "The seen-id ring: insertion order plus a set for lookup."
+  [:map [:order [:vector :any]] [:set* [:set :any]]])
+
+(m/=> mark-seen [:=> [:cat Seen :any] Seen])
+
 (def ^:private empty-seen {:order [] :set* #{}})
 
 ;; =============================================================================

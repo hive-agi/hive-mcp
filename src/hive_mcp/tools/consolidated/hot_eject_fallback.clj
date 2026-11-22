@@ -33,6 +33,9 @@
 (defn- soft [sym]
   (swallow/attempt (requiring-resolve sym)))
 
+(m/=> soft [:=> [:cat :qualified-symbol]
+            [:maybe [:fn {:gen/elements [#'clojure.core/inc]} var?]]])
+
 ;; =============================================================================
 ;; Pure
 ;; =============================================================================

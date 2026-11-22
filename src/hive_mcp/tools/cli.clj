@@ -174,6 +174,8 @@
     (when (and (coll? v) (seq v))
       (into #{} (map #(str/lower-case (if (keyword? %) (name %) (str %)))) v))))
 
+(m/=> verb-set [:=> [:cat :any] [:maybe [:set :string]]])
+
 (defn declared-verbs
   "The verbs opaque root K of HANDLERS says it routes, as a set of lower-cased
    strings, or nil when it says nothing. Asked in order:

@@ -29,6 +29,8 @@
 
 (defn- blank->nil [s] (when-not (str/blank? (str s)) (str s)))
 
+(m/=> blank->nil [:=> [:cat :any] [:maybe :string]])
+
 (defn resolve-inbox-id
   "Pure over its inputs: the inbox a call addresses. `inbox`, then `id`, then
    the HIVE_INBOX_ID default."

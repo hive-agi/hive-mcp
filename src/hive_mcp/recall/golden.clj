@@ -71,6 +71,10 @@
   [id type tags content]
   {:id id :type type :tags tags :content content :project-id "hive"})
 
+(m/=> e [:=> [:cat :string :string [:vector :string] :string]
+         [:map [:id :string] [:type :string] [:tags [:vector :string]]
+          [:content :string] [:project-id [:= "hive"]]]])
+
 (def golden-corpus
   "A small populated store. Exactly one entry carries the anchor's rare literal
    tokens (sigsegv / jdk / 25 / 21). The distractors deliberately share the

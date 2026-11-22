@@ -69,6 +69,8 @@
 (defn- soft [sym]
   (ext-soft/resolve-cached sym))
 
+(m/=> soft [:=> [:cat :qualified-symbol] [:maybe ifn?]])
+
 (defn domain
   "The credential domain fns, or nil when the hive-agent addon is absent."
   []
@@ -132,6 +134,8 @@
   [^bytes public]
   (let [d (.digest (java.security.MessageDigest/getInstance "SHA-256") public)]
     (subs (apply str (map #(format "%02x" (bit-and (long %) 0xff)) d)) 0 16)))
+
+(m/=> key-id [:=> [:cat bytes?] [:string {:min 16 :max 16}]])
 
 (defn- write-key-file!
   "Write `content` to `f` atomically, created 0600 in a 0700 directory."

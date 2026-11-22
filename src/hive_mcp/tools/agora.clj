@@ -40,6 +40,9 @@
       (log/error e (str (name category) " failed"))
       (result/err category {:message (.getMessage e)}))))
 
+(m/=> try-result [:=> [:cat :keyword ifn?]
+                  [:or [:map [:ok :any]] [:map [:error :keyword] [:message [:maybe :string]]]]])
+
 (defn- result->mcp
   "Convert Result to MCP response.
    {:ok data} -> (mcp-json data), {:error ...} -> (mcp-error message)."
@@ -47,6 +50,8 @@
   (if (result/ok? r)
     (mcp-json (:ok r))
     (mcp-error (or (:message r) (str (:error r))))))
+
+(m/=> result->mcp [:=> [:cat [:or [:map [:ok :any]] [:map [:error :keyword]]]] core/McpResponse])
 
 ;; ============================================================
 ;; Validation Helpers (return Results)

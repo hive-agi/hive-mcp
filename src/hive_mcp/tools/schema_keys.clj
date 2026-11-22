@@ -32,6 +32,8 @@
         (string? k)  k
         :else        (str k)))
 
+(m/=> key-name [:=> [:cat :any] :string])
+
 (defn legal-key?
   "True when property key `k` (keyword or string) is provider-legal."
   [k]

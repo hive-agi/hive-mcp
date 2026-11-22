@@ -34,6 +34,8 @@
                        [:map [:name :string]]]}
    #(try (m/schema %) true (catch Exception _ false))])
 
+(m/=> map-schema? [:=> [:cat MapSchema] :boolean])
+
 (def StructName
   "The elisp struct name an emitter is given under :name."
   [:or [:string {:min 1}] :symbol])

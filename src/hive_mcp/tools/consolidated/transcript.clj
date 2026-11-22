@@ -60,6 +60,8 @@
   [res]
   (or (:message res) (pr-str res)))
 
+(m/=> err-message [:=> [:cat [:map [:message {:optional true} [:maybe :string]]]] :string])
+
 ;; =============================================================================
 ;; Response Formatting
 ;; =============================================================================

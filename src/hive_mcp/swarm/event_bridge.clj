@@ -73,6 +73,8 @@
     (string? v) (keyword v)
     :else (keyword (str v))))
 
+(m/=> ->keyword [:=> [:cat :any] [:maybe :keyword]])
+
 (defn- republish-from-nats!
   "Handler invoked when a message arrives on `hive.v1.slave.>`.
    Re-emits the message into the local channel.core event bus so the

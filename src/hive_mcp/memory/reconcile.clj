@@ -69,6 +69,8 @@
     (let [s (str id)]
       (when-not (= "" (.trim ^String s)) s))))
 
+(m/=> id-string [:=> [:cat :any] [:maybe :string]])
+
 (defn- id-set
   "The set of real ids in COLL."
   [coll]
@@ -78,6 +80,8 @@
   "An id listing: any collection of values, compared as strings; nil and
    blank ones are not ids."
   [:maybe [:or [:sequential :any] [:set :any]]])
+
+(m/=> id-set [:=> [:cat IdColl] [:set :string]])
 
 (def DiffReport
   "What `diff-ids` and `report` answer."

@@ -56,6 +56,8 @@
          (log/error e (str (name category) " failed"))
          (mcp-error (.getMessage e)))))
 
+(m/=> safe-call [:=> [:cat :keyword ifn?] core/McpResponse])
+
 ;; ============================================================
 ;; Movement tracking — used by create + delete paths
 ;; (move uses the event-driven path which handles tracking itself)

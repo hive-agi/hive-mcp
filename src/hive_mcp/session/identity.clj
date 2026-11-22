@@ -188,6 +188,8 @@
 (defn- blank->nil [s]
   (when (and (string? s) (not (str/blank? s))) s))
 
+(m/=> blank->nil [:=> [:cat :any] [:maybe :string]])
+
 (defn session-ref
   "Build a normalized SessionRef. Blank strings become nil, an unknown kind
    falls back to :adhoc, and a coordinator never keeps a parent."

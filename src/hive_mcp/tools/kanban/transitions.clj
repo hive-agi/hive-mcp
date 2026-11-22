@@ -181,6 +181,8 @@
   [content k v]
   (-> content (dissoc (name k)) (assoc k v)))
 
+(m/=> put-field [:=> [:cat :map :keyword :any] :map])
+
 (defn append-description
   "Pure: `current` description with the non-blank `addition` appended after a
    blank line. A blank/nil `addition` leaves `current` standing; a blank/nil

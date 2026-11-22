@@ -95,6 +95,8 @@
   [xs]
   (->> xs (sort-by str) vec))
 
+(m/=> ordered [:=> [:cat [:maybe [:or [:sequential :any] [:set :any]]]] [:vector :any]])
+
 (defn- manifest-evidence
   "Select non-secret manifest fields. :addon/config is intentionally omitted."
   [spec]
@@ -108,6 +110,12 @@
 (defn- throwable-message
   [^Throwable t]
   (or (ex-message t) (.getName (class t))))
+
+(def ^:private AThrowable
+  [:fn {:gen/fmap (fn [_] (ex-info "boom" {})) :gen/schema :nil}
+   #(instance? Throwable %)])
+
+(m/=> throwable-message [:=> [:cat AThrowable] :string])
 
 (defn- stage
   [stage-name status summary evidence]

@@ -48,6 +48,9 @@
   [sym]
   (result/rescue nil (requiring-resolve sym)))
 
+(m/=> resolve-fn [:=> [:cat :qualified-symbol]
+                   [:maybe [:fn {:gen/elements [#'clojure.core/inc]} var?]]])
+
 (defn- populated?
   "True when the store demonstrably holds entries. The premise every recall
    assertion rests on — asserted, never assumed."

@@ -35,6 +35,8 @@
         nil)
     (name event-type)))
 
+(m/=> event-name [:=> [:cat [:maybe [:or :keyword :string :symbol]] :any [:maybe :map]] [:maybe :string]])
+
 (defrecord WebSocketChannel []
   dc/IDeliveryChannel
   (channel-id [_this] :websocket)
