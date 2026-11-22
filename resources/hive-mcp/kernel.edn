@@ -67,6 +67,7 @@
   hive-mcp.tools.consolidated.multi
   hive-mcp.tools.consolidated.hot
   hive-mcp.tools.consolidated.hot-eject-fallback
+  hive-mcp.tools.consolidated.hot-memory-gate
   hive-mcp.tools.consolidated.inbox
   hive-mcp.tools.consolidated.await
   hive-mcp.tools.consolidated.addon
