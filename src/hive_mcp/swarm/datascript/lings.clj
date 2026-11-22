@@ -18,10 +18,9 @@
   (delegate/resolve-var "hive-datascript.swarm.lings" sym))
 
 (defn- impl!
-  "impl, after the host adapters fill the swarm port slots (resolved late:
-   a static require would close a load cycle)."
+  "impl, after the host adapters are installed (see delegate/ensure-adapters!)."
   [sym]
-  (swallow/attempt ((requiring-resolve 'hive-mcp.swarm.adapters.boot/ensure!)))
+  (delegate/ensure-adapters!)
   (impl sym))
 
 (defn add-slave! {:arglists '([slave-id {:keys [name status depth parent presets cwd project-id kanban-task-id], :or {status :idle, depth 1}}])} [& args] (apply (impl! 'add-slave!) args))

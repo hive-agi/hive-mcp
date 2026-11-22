@@ -32,6 +32,7 @@
             [hive-mcp.config.headless-defaults :as headless-defaults]
             [malli.core :as m]
             [hive-mcp.agent.ling.strategy :as strategy]
+            [hive-mcp.protocols.registry :as reg-core]
             [hive-mcp.resilience.swallow :as swallow]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
@@ -157,7 +158,7 @@
   "Get the registered metadata map for a headless-id, or nil.
    Shape: {:provides #{providers} :priority N}."
   [headless-id]
-  (get @metadata headless-id))
+  (reg-core/atom-get metadata headless-id))
 
 (m/=> headless-metadata [:=> [:cat :any] [:maybe BackendMetadata]])
 

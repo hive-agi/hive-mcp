@@ -9,8 +9,7 @@
   (:require [hive-mcp.swarm.delegate :as delegate]
             [hive-mcp.swarm.datascript.schema :as s]
             [malli.core :as m]
-            [hive-mcp.extensions.record-hooks :as record-hooks]
-            [hive-mcp.resilience.swallow :as swallow]))
+            [hive-mcp.extensions.record-hooks :as record-hooks]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -19,9 +18,9 @@
   (delegate/resolve-var "hive-datascript.swarm.coordination.session-registry" sym))
 
 (defn- impl!
-  "impl, after the host adapters (and so the :scope-rows hook) are installed."
+  "impl, after the host adapters are installed (see delegate/ensure-adapters!)."
   [sym]
-  (swallow/attempt ((requiring-resolve 'hive-mcp.swarm.adapters.boot/ensure!)))
+  (delegate/ensure-adapters!)
   (impl sym))
 
 (defn clear-completed-tasks! {:arglists '([task-ids] [])} [& args] (apply (impl! 'clear-completed-tasks!) args))

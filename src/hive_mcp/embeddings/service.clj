@@ -518,46 +518,62 @@
         (recur (inc k) (if (= (f (.charAt s (dec k))) (f (.charAt s k))) acc (inc acc)))
         acc))))
 
+(defn- whitespace-step
+  "Token step over the whitespace run at `i`: `[next-index cost]`. A
+   multi-character run (indentation, blank lines) costs one plus its
+   transitions, a single space before a digit costs one, any other is free."
+  [^String s ^long i]
+  (let [n   (.length s)
+        j   (run-end s i #(Character/isWhitespace (int %)))
+        len (- j i)]
+    [j (cond
+         (> len 1) (inc (transitions (subs s i j) identity))
+         (and (< j n) (ascii-digit? (.codePointAt s j))) 1
+         :else 0)]))
+
+(defn- ascii-word-step
+  "Token step over the ASCII letter run at `i`: `[next-index cost]`. A word
+   costs ceil(len / `word-cpt`) plus one per case change."
+  [^String s ^long i ^double word-cpt]
+  (let [j (run-end s i ascii-letter?)
+        w (subs s i j)]
+    [j (+ (long (Math/ceil (/ (- j i) word-cpt)))
+          (transitions w #(Character/isUpperCase (char %))))]))
+
+(defn- wide-letter-step
+  "Token step over the non-ASCII letter run at `i`: `[next-index cost]`, one
+   token per two letters."
+  [^String s ^long i]
+  (let [j (run-end s i wide-letter?)]
+    [j (long (Math/ceil (/ (.codePointCount s i j) 2.0)))]))
+
+(defn- token-step
+  "Pure: cost the token starting at code point `cp` (at index `i` of `s`).
+   Returns `[next-index cost]`."
+  [^String s ^long i ^long cp ^double word-cpt]
+  (cond
+    (Character/isWhitespace (int cp)) (whitespace-step s i)
+    (ascii-letter? cp)                (ascii-word-step s i word-cpt)
+    (< cp 128)                        [(inc i) 1]
+    (wide-letter? cp)                 (wide-letter-step s i)
+    :else                             [(+ i (Character/charCount (int cp)))
+                                       (if (> cp 0xFFFF) 2 1)]))
+
 (defn- script-aware-tokens
   "Conservative token count of `s` with no tokenizer: ASCII words cost
    ceil(len / `word-cpt`) plus one per case change, every ASCII digit and
    punctuation mark costs one, non-ASCII letter runs cost one per two
    letters, every other code point (CJK, kana, hangul, symbols) costs one,
    or two above the BMP. Whitespace is free except a multi-character run
-   (indentation, blank lines) or a space before a digit. Plus one."
+   (indentation, blank lines) or a space before a digit. Plus one.
+   Each class is costed by `token-step`."
   ^long [^String s ^double word-cpt]
   (let [n (.length s)]
     (loop [i 0 acc 1]
       (if (>= i n)
         acc
-        (let [cp (.codePointAt s i)]
-          (cond
-            (Character/isWhitespace (int cp))
-            (let [j   (run-end s i #(Character/isWhitespace (int %)))
-                  len (- j i)
-                  add (cond
-                        (> len 1) (inc (transitions (subs s i j) identity))
-                        (and (< j n) (ascii-digit? (.codePointAt s j))) 1
-                        :else 0)]
-              (recur j (+ acc add)))
-
-            (ascii-letter? cp)
-            (let [j (run-end s i ascii-letter?)
-                  w (subs s i j)]
-              (recur j (+ acc
-                          (long (Math/ceil (/ (- j i) word-cpt)))
-                          (transitions w #(Character/isUpperCase (char %))))))
-
-            (< cp 128)
-            (recur (inc i) (inc acc))
-
-            (wide-letter? cp)
-            (let [j (run-end s i wide-letter?)]
-              (recur j (+ acc (long (Math/ceil (/ (.codePointCount s i j) 2.0))))))
-
-            :else
-            (recur (+ i (Character/charCount cp))
-                   (+ acc (if (> cp 0xFFFF) 2 1)))))))))
+        (let [[j add] (token-step s i (.codePointAt s i) word-cpt)]
+          (recur (long j) (+ acc (long add))))))))
 
 (defn estimate-tokens
   "Conservative, tokenizer-free token estimate of `content`, script-aware
