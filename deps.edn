@@ -580,7 +580,7 @@
   ;; There is NO `uber` task; the server runs from source everywhere,
   ;; including the container (see Dockerfile and bin/docker-entrypoint.sh).
   :build
-  {:deps {io.github.hive-agi/hive-build {:mvn/version "0.3.1"}}
+  {:deps {io.github.hive-agi/hive-build {:mvn/version "0.3.3"}}
    :ns-default hive-build.api}
   :aot-boot {:extra-paths ["target/boot-classes"]
              :exec-fn hive-mcp.scripts.aot-boot/compile-boot-closure!
