@@ -127,6 +127,8 @@
                    (str/starts-with? c o)
                    (re-matches successor-suffix (subs c (count o)))))))))
 
+(m/=> same-ling? [:=> [:cat [:maybe :any] [:maybe :any]] :boolean])
+
 (defn classify
   "The Action a delivered shout `event` asks for, or nil. Pure.
 
