@@ -12,7 +12,8 @@
    register-memory-type! / register-memory-types! before tool handlers run."
   (:require [malli.core :as m]
             [clojure.string :as str]
-            [hive-mcp.schema.type-token :as token]))
+            [hive-mcp.schema.type-token :as token]
+            [hive-mcp.resilience.swallow :as swallow]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -178,16 +179,12 @@
   "memory.type-registry.extensions")
 
 (defn- config-get-value []
-  (try
-    (when-let [f (requiring-resolve 'hive-mcp.config.core/get-config-value)]
-      (f persist-key))
-    (catch Throwable _ nil)))
+  (swallow/attempt (when-let [f (requiring-resolve 'hive-mcp.config.core/get-config-value)]
+      (f persist-key))))
 
 (defn- config-set-value! [v]
-  (try
-    (when-let [f (requiring-resolve 'hive-mcp.config.core/set-config-value!)]
-      (f persist-key v))
-    (catch Throwable _ nil)))
+  (swallow/attempt (when-let [f (requiring-resolve 'hive-mcp.config.core/set-config-value!)]
+      (f persist-key v))))
 
 (defn- persist-extensions!
   "Best-effort write of the current extension map to config. Failures are
@@ -204,16 +201,14 @@
    registry. Best-effort: any failure leaves the registry as-is."
   []
   (when (compare-and-set! persisted-loaded? false true)
-    (try
-      (when-let [persisted (config-get-value)]
+    (swallow/attempt (when-let [persisted (config-get-value)]
         (let [safe (into {}
                          (keep (fn [[k v]]
                                  (when (and (map? v) (safe-type? k))
                                    [(keyword (sanitize-type k)) v])))
                          persisted)]
           (when (seq safe)
-            (swap! registry-extensions merge safe))))
-      (catch Throwable _ nil))))
+            (swap! registry-extensions merge safe)))))))
 
 (m/=> load-persisted! [:=> [:cat] :any])
 

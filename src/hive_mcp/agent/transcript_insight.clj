@@ -16,7 +16,8 @@
                        commands, commits, test outcomes, errors, idle gap"
   (:require [clojure.data.json :as json]
             [clojure.string :as str]
-            [malli.core :as m]))
+            [malli.core :as m]
+            [hive-mcp.resilience.swallow :as swallow]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -165,7 +166,7 @@
       :else
       (if-let [[_ n u] (re-matches #"(\d+)\s*([smhdw])" s)]
         (- (long now-ms) (* (Long/parseLong n) (long (unit-ms u))))
-        (or (some (fn [parse] (try (parse s) (catch Exception _ nil)))
+        (or (some (fn [parse] (swallow/attempt-ex (parse s)))
                   [#(.toEpochMilli (java.time.Instant/parse %))
                    #(.toEpochMilli (.toInstant (java.time.OffsetDateTime/parse %)))
                    #(.toEpochMilli (.toInstant (.atStartOfDay (java.time.LocalDate/parse %)

@@ -29,7 +29,8 @@
             [hive-mcp.context.request :as request-ctx]
             [hive-mcp.agent.ling.spawn :as spawn-impl]
             [hive-mcp.system.heap-admission :as heap-admission]
-            [hive-mcp.extensions.registry :as ext]))
+            [hive-mcp.extensions.registry :as ext]
+            [hive-mcp.resilience.swallow :as swallow]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -203,8 +204,7 @@
    core requires no addon statically and grows no namespace under the frozen
    hive-agent extraction. nil when hive-agent is not on the classpath."
   []
-  (try (some-> (requiring-resolve 'hive-agent.swarm.wave-params/normalize-turn-budget) deref)
-       (catch Throwable _ nil)))
+  (swallow/attempt (some-> (requiring-resolve 'hive-agent.swarm.wave-params/normalize-turn-budget) deref)))
 
 (defn turn-budget-opt
   "Pure: the lease spec for a raw turn_budget V through NORMALIZE (the port).

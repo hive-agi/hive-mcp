@@ -13,7 +13,8 @@
             [clojure.java.io :as io]
             [clojure.string :as str]
             [hive-dsl.result :as r]
-            [malli.core :as m]))
+            [malli.core :as m]
+            [hive-mcp.resilience.swallow :as swallow]))
 
 (defprotocol TranscriptSource
   (list-transcripts [this] "Result<[{:agent-id :source ...}]>.")
@@ -108,8 +109,7 @@
   "Read one hive-agent Datalevin store dir through hive-agent's own store.
    Result<[entry]>; an err when hive-agent is not on the classpath."
   [dir agent-id]
-  (if-let [make (try (requiring-resolve 'hive-agent.loop.transcript.datalevin-store/make-store)
-                     (catch Throwable _ nil))]
+  (if-let [make (swallow/attempt (requiring-resolve 'hive-agent.loop.transcript.datalevin-store/make-store))]
     (let [query (requiring-resolve 'hive-agent.loop.transcript.store/query-by-agent)
           close (requiring-resolve 'hive-agent.loop.transcript.store/close!)
           opened (make {:agent-id agent-id :dir dir})]
@@ -124,9 +124,8 @@
 (defn hive-agent-datalevin-root
   "hive-agent's configured transcript root, or its documented default."
   []
-  (or (try (some-> (requiring-resolve 'hive-agent.config/resolve-transcript-datalevin-root)
-                   (apply []))
-           (catch Throwable _ nil))
+  (or (swallow/attempt (some-> (requiring-resolve 'hive-agent.config/resolve-transcript-datalevin-root)
+                   (apply [])))
       (str (System/getProperty "user.home") "/.local/share/hive-agent/transcripts")))
 
 ;; =============================================================================
@@ -182,10 +181,8 @@
   []
   (reify ParentIndex
     (parent-of [_ agent-id]
-      (try
-        (when-let [get-slave (requiring-resolve 'hive-mcp.swarm.datascript.queries/get-slave)]
-          (row-parent (get-slave agent-id)))
-        (catch Throwable _ nil)))))
+      (swallow/attempt (when-let [get-slave (requiring-resolve 'hive-mcp.swarm.datascript.queries/get-slave)]
+          (row-parent (get-slave agent-id)))))))
 
 ;; Defaults to 0, so never nil.
 (m/=> entry-turn [:=> [:cat [:maybe [:map-of :any :any]]] :some])

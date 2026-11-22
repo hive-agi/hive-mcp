@@ -13,7 +13,8 @@
    The router (`core.clj`) wraps these with `mcp-json` for the MCP boundary."
   (:require [clojure.string  :as str]
             [hive-dsl.result :as r]
-            [malli.core :as m]))
+            [malli.core :as m]
+            [hive-mcp.resilience.swallow :as swallow]))
 
 ;; =============================================================================
 ;; Helpers
@@ -32,8 +33,7 @@
   [sym-str]
   (let [sym (cond
               (symbol? sym-str)  sym-str
-              (string? sym-str)  (try (symbol sym-str)
-                                   (catch Exception _ nil))
+              (string? sym-str)  (swallow/attempt-ex (symbol sym-str))
               :else nil)]
     (when (or (nil? sym) (nil? (namespace sym)))
       (throw (ex-info "Symbol must be fully-qualified ns/name" {:symbol sym-str})))
@@ -153,9 +153,7 @@
 
 (defn- handler-registered?-fn
   []
-  (try
-    (requiring-resolve 'hive.events/handler-registered?)
-    (catch Throwable _ nil)))
+  (swallow/attempt (requiring-resolve 'hive.events/handler-registered?)))
 
 (defn- observed-events-set
   []

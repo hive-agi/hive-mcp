@@ -21,7 +21,8 @@
             [hive-mcp.channel.context-store :as ctx]
             [hive-mcp.dns.result :as result]
             [taoensso.timbre :as log]
-            [malli.core :as m]))
+            [malli.core :as m]
+            [hive-mcp.resilience.swallow :as swallow]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -268,10 +269,7 @@
    - :timeout-ms — maximum wait in ms (default: 30000)"
   [batch-id & {:keys [timeout-ms] :or {timeout-ms default-await-timeout-ms}}]
   (when-let [fut (:future (bget batches batch-id))]
-    (try
-      (deref fut timeout-ms ::timeout)
-      ;; Cancelled/interrupted futures settle their status before throwing.
-      (catch Exception _ nil)))
+    (swallow/attempt-ex (deref fut timeout-ms ::timeout)))
   (collect-async-result batch-id))
 
 ;; =============================================================================

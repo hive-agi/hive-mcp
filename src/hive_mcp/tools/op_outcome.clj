@@ -24,7 +24,8 @@
    SPDX-License-Identifier: AGPL-3.0-or-later"
   (:require [clojure.data.json :as json]
             [clojure.string :as str]
-            [malli.core :as m]))
+            [malli.core :as m]
+            [hive-mcp.resilience.swallow :as swallow]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -36,7 +37,7 @@
   [result]
   (let [t (when (map? result) (:text result))]
     (when (and (string? t) (str/starts-with? (str/triml t) "{"))
-      (let [body (try (json/read-str t :key-fn keyword) (catch Exception _ nil))]
+      (let [body (swallow/attempt-ex (json/read-str t :key-fn keyword))]
         (when (and (map? body) (false? (:success body)))
           body)))))
 

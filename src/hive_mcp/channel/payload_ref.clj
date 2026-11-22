@@ -16,7 +16,8 @@
    entry point (`elide!`) takes the store as an argument, so a test drives it
    with a plain atom and nothing reaches the live context store."
   (:require [clojure.string :as str]
-            [malli.core :as m]))
+            [malli.core :as m]
+            [hive-mcp.resilience.swallow :as swallow]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -87,7 +88,7 @@
    (if-not (needs-ref? s cap)
      {:text s}
      (let [head (preview s (max 1 (- cap ref-marker-cost)))
-           id (try (put! s) (catch Exception _ nil))]
+           id (swallow/attempt-ex (put! s))]
        (if id
          {:text (render head id) :ref (str id)}
          {:text (str head "…")})))))

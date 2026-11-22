@@ -28,7 +28,8 @@
    :no-host ...}; catchup: nil)."
   (:require [hive-spi.swarm.ports.ling-host :as spi]
             [hive-mcp.extensions.soft :as soft]
-            [malli.core :as m]))
+            [malli.core :as m]
+            [hive-mcp.resilience.swallow :as swallow]))
 
 (def ^:private wait-for-ling-ready-sym
   'hive-mcp.tools.consolidated.workflow.readiness/wait-for-ling-ready)
@@ -46,11 +47,9 @@
           {:ready? false :phase :host-error :elapsed-ms 0 :attempts 0})))
     spi/ILingCatchup
     (ling-catchup [_this opts]
-      (try
-        (soft/host-or 'hive-mcp.workflows.catchup-ling/ling-catchup
+      (swallow/attempt (soft/host-or 'hive-mcp.workflows.catchup-ling/ling-catchup
                       #(spi/ling-catchup spi/noop opts)
-                      opts)
-        (catch Throwable _ nil)))))
+                      opts)))))
 
 (def Adapter
   "Something that fills the ling-host port: readiness and catchup."

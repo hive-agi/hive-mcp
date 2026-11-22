@@ -24,14 +24,15 @@
             [clojure.string :as str]
             [hive-mcp.tools.core :refer [mcp-error]]
             [malli.core :as m]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [hive-mcp.resilience.swallow :as swallow]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
 
 (defn- soft [sym]
-  (try (requiring-resolve sym) (catch Throwable _absent nil)))
+  (swallow/attempt (requiring-resolve sym)))
 
 (defn hive-git-checker
   "The checker port backed by the hive-git addon, or nil when hive-git is not

@@ -13,7 +13,8 @@
             [hive-mcp.tools.kanban.catchup-block :as catchup-block]
             [hive-mcp.tools.kanban.port :as port]
             [hive-mcp.tools.memory-kanban :as mem-kanban]
-            [hive-mcp.plan.tool :as plan-tool])
+            [hive-mcp.plan.tool :as plan-tool]
+            [hive-mcp.resilience.swallow :as swallow])
   (:import [java.time Instant]))
 
 (port/register!)
@@ -109,7 +110,7 @@
 (defn- extension
   "The registered extension fn under `k`, or nil."
   [k]
-  (try (ext/get-extension k) (catch Throwable _ nil)))
+  (swallow/attempt (ext/get-extension k)))
 
 (defn- iso
   "Epoch ms -> ISO-8601 UTC, or nil."

@@ -8,7 +8,8 @@
   (:require [hive-mcp.swarm.delegate :as delegate]
             [taoensso.timbre :as log]
             [hive-mcp.swarm.datascript.schema :as s]
-            [malli.core :as m]))
+            [malli.core :as m]
+            [hive-mcp.resilience.swallow :as swallow]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -99,8 +100,7 @@
    (`claim.registry/key-stale?`). Resolved late (the registry requires this
    namespace); when it is unavailable the creation-age rule stands."
   [file-path]
-  (if-let [f (try (requiring-resolve 'hive-mcp.swarm.claim.registry/key-stale?)
-                  (catch Throwable _registry-absent-creation-age-stands nil))]
+  (if-let [f (swallow/attempt (requiring-resolve 'hive-mcp.swarm.claim.registry/key-stale?))]
     (boolean (f file-path))
     (boolean ((impl! 'claim-stale?) file-path))))
 
@@ -123,8 +123,7 @@
    `claim.registry/acquire!` hold), resolved late: a static require would
    close a load cycle. Reentrant, so taking it under either of those is free."
   []
-  (if-let [f (try (requiring-resolve 'hive-mcp.swarm.logic/get-logic-db-atom)
-                  (catch Throwable _ nil))]
+  (if-let [f (swallow/attempt (requiring-resolve 'hive-mcp.swarm.logic/get-logic-db-atom))]
     (f)
     ::no-logic-lock))
 

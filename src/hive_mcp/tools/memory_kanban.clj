@@ -37,7 +37,8 @@
             [malli.core :as m]
             [hive-mcp.tools.kanban.update :as kanban-update]
             [hive-mcp.tools.kanban.children :as children]
-            [hive-mcp.tools.kanban.create-scope :as create-scope]))
+            [hive-mcp.tools.kanban.create-scope :as create-scope]
+            [hive-mcp.resilience.swallow :as swallow]))
 
 (declare query-kanban-entries resolve-project-ids-with-descendants effective-dir stats* filter-kanban-by-tags list-slim*)
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
@@ -69,8 +70,7 @@
   (try
     (ds/register-kanban-movement!
      {:task-id task-id :title title :from from :to to :project-id project-id
-      :session-id (try (session/session-id {:project-id project-id})
-                       (catch Throwable _ nil))})
+      :session-id (swallow/attempt (session/session-id {:project-id project-id}))})
     (catch Exception e
       (log/debug "track-movement! failed (non-fatal):" (.getMessage e)))))
 
@@ -278,8 +278,8 @@
   {:edges-from kg-edges/get-edges-from
    :edges-to   kg-edges/get-edges-to
    :get-entry  (fn [id]
-                 (or (try (kanban-facade/get-entry-by-id id) (catch Throwable _ nil))
-                     (try (proto/get-entry (proto/get-store) id) (catch Throwable _ nil))))})
+                 (or (swallow/attempt (kanban-facade/get-entry-by-id id))
+                     (swallow/attempt (proto/get-entry (proto/get-store) id))))})
 
 (defn with-open-children
   "When `new-status` is done, attach the card's open KG children to the slim
@@ -314,7 +314,7 @@
    `coordinator:<session>`); `steal_claim` true takes a card a live foreign
    owner holds. See hive-mcp.tools.kanban.claim."
   [params]
-  {:owner        (try (ctx/current-session-agent-id params) (catch Throwable _ nil))
+  {:owner        (swallow/attempt (ctx/current-session-agent-id params))
    :steal-claim? (contains? #{true "true"} (:steal_claim params))})
 
 (m/=> claim-params [:=> [:cat [:maybe :map]] [:map [:owner [:maybe :string]] [:steal-claim? :boolean]]])
@@ -354,7 +354,7 @@
                     :description        description
                     :append-description append_description
                     :priority           priority
-                    :agent-id           (or agent_id (try (ctx/current-agent-id) (catch Throwable _ nil)))
+                    :agent-id           (or agent_id (swallow/attempt (ctx/current-agent-id)))
                     :directory          directory}
         result     (if new-status
                      (kanban-update/dispatch-update! (merge (assoc payload :new-status new-status)
@@ -452,7 +452,7 @@
   "Best-effort store read; nil on any failure (unregistered slot, transport
    blip, missing entry). Keeps the cross-store probe non-throwing."
   [thunk]
-  (try (thunk) (catch Throwable _ nil)))
+  (swallow/attempt (thunk)))
 
 (defn- fetch-entry-any-store
   "Resolve a single entry by id across the kanban store and the default
@@ -491,12 +491,10 @@
    data. Non-fatal — nil on any failure or blank query."
   [q directory]
   (when (and (string? q) (not (str/blank? q)))
-    (try
-      (let [res (mem-search/handle-search-semantic
+    (swallow/attempt (let [res (mem-search/handle-search-semantic
                  {:query q :limit 5 :directory directory})
             txt (:text res)]
-        (when txt (json/read-str txt :key-fn keyword)))
-      (catch Throwable _ nil))))
+        (when txt (json/read-str txt :key-fn keyword))))))
 
 (defn- get*
   "Unified get-by-id across the kanban store and the default memory store.

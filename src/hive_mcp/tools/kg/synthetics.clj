@@ -37,7 +37,8 @@
             [hive-mcp.tools.core :as core :refer [mcp-json mcp-error]]
             [taoensso.timbre :as log]
             [malli.core :as m]
-            [hive-mcp.tools.kg.schema :as ks]))
+            [hive-mcp.tools.kg.schema :as ks]
+            [hive-mcp.resilience.swallow :as swallow]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -202,10 +203,9 @@
   "Retract the :kg-synthetic node record for synth-id, if one exists, so a
    collected synthetic does not leave the inverse ghost (record, no edges)."
   [synth-id]
-  (when-let [eid (try (conn/query '[:find ?e . :in $ ?id
+  (when-let [eid (swallow/attempt-ex (conn/query '[:find ?e . :in $ ?id
                                     :where [?e :kg-synthetic/id ?id]]
-                                  synth-id)
-                      (catch Exception _ nil))]
+                                  synth-id))]
     (conn/transact! [[:db/retractEntity eid]])
     true))
 
@@ -306,9 +306,8 @@
       (nil? store)  #{}
       (empty? ids)  #{}
       (mem-proto/batch-store? store)
-      (or (try (into #{} (keep #(or (:id %) (get % "id")))
-                     (mem-proto/get-entries-projected store ids {:output-fields ["id"]}))
-               (catch Exception _ nil))
+      (or (swallow/attempt-ex (into #{} (keep #(or (:id %) (get % "id")))
+                     (mem-proto/get-entries-projected store ids {:output-fields ["id"]})))
           (into #{} (filter #(memory-entry-live? store %)) ids))
       :else
       (into #{} (filter #(memory-entry-live? store %)) ids))))
@@ -501,7 +500,7 @@
   ;; Drain any pending write-coalesced edges so the scan sees the
   ;; authoritative state. No-op if writer isn't running.
   (conn/flush-pending!)
-  (let [store      (try (mem-proto/get-store) (catch Exception _ nil))
+  (let [store      (swallow/attempt-ex (mem-proto/get-store))
         action-kw  (keyword action)
         sources    (list-synthetic-source-nodes)
         proj-count (try (count-projection-edges) (catch Exception _ -1))

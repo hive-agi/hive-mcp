@@ -8,7 +8,8 @@
    is skipped when absent."
   (:require [taoensso.timbre :as log]
             [hive-mcp.session.identity :as sid]
-            [malli.core :as m]))
+            [malli.core :as m]
+            [hive-mcp.resilience.swallow :as swallow]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -16,13 +17,13 @@
 (defn- resolve-soft
   "The var SYM when its namespace loads, else nil."
   [sym]
-  (try (requiring-resolve sym) (catch Throwable _ nil)))
+  (swallow/attempt (requiring-resolve sym)))
 
 (defn- stale-threshold-ms
   "config.edn swarm.stale-threshold-ms, or nil."
   []
   (when-let [get-value (resolve-soft 'hive-mcp.config.core/get-config-value)]
-    (try (get-value "swarm.stale-threshold-ms") (catch Throwable _ nil))))
+    (swallow/attempt (get-value "swarm.stale-threshold-ms"))))
 
 (defn scope-rows
   "Keep only the ROWS the :session-ref in OPTS owns, per

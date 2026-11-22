@@ -2,7 +2,8 @@
   "JSON formatting utilities for memory entries."
   (:require [clojure.data.json :as json]
             [malli.core :as m]
-            [hive-mcp.tools.memory.schema :as ms]))
+            [hive-mcp.tools.memory.schema :as ms]
+            [hive-mcp.resilience.swallow :as swallow]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -24,12 +25,10 @@
     content
 
     (and (string? content) (seq content) (= \{ (first content)))
-    (try
-      (let [parsed (json/read-str content :key-fn keyword)
+    (swallow/attempt-ex (let [parsed (json/read-str content :key-fn keyword)
             tt    (or (:task-type parsed) (get parsed "task-type"))]
         (when (= "kanban" (some-> tt name))
-          parsed))
-      (catch Exception _ nil))
+          parsed)))
 
     :else nil))
 

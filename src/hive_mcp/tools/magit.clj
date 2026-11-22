@@ -15,7 +15,8 @@
             [clojure.string :as str]
             [hive-spi.editor.services :as svc]
             [clojure.data.json :as json]
-            [malli.core :as m]))
+            [malli.core :as m]
+            [hive-mcp.resilience.swallow :as swallow]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -791,9 +792,7 @@
         listed (str/join " " paths)]
     (if-let [entry (find r :ok)]
       (let [raw (str (val entry))
-            out (try (json/read-str raw :key-fn keyword)
-                     ;; An unparseable verdict falls through to :magit/stage-failed below.
-                     (catch Exception _unparseable-verdict nil))
+            out (swallow/attempt-ex (json/read-str raw :key-fn keyword))
             status (when (map? out) (:status out))]
         (case status
           "missing" (result/err :magit/path-not-found
