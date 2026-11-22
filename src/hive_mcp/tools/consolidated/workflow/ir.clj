@@ -111,4 +111,4 @@
 
 (m/=> handle-describe-vocabulary [:=> [:cat [:maybe :map]] tc/McpResponse])
 
-(malli.core/=> ->mcp [:=> #:provenance{:kind :inferred-static, :source "hive-carto.candidate.mallify.static"} [:cat :any] [:or McpErrorResponse McpJsonResponse]])
+(malli.core/=> ->mcp [:=> #:provenance{:kind :inferred-static, :source "hive-carto.candidate.mallify.static"} [:cat :any] :map])
