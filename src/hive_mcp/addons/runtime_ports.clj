@@ -29,6 +29,29 @@
     (addon-metrics/timed-call [:addon/invoke (addon-metrics/label tool-name)]
                               #((:handler spec) arguments))))
 
+(defn host-catalog
+  "Pure. The tools a :tools/invoke caller can reach: `advertised` (the MCP
+   surface) first, then each `roster` row ([name handler-sym], the
+   consolidated leaf tools) the surface does not advertise. `hivemind` is such
+   a leaf: reached through multi and swarm, never advertised, so an addon's
+   (invoke \"hivemind\" {:command \"shout\" ...}) found no tool and its shout
+   went nowhere. A roster handler is resolved through `resolve-fn` only when
+   called, so building the catalog loads no tool namespace; one that does not
+   resolve refuses like an unknown tool."
+  [advertised roster resolve-fn]
+  (let [seen (into #{} (map :name) advertised)]
+    (into (vec advertised)
+          (keep (fn [[tool-name sym]]
+                  (when-not (contains? seen tool-name)
+                    {:name    tool-name
+                     :handler (fn [arguments]
+                                (if-let [h (resolve-fn sym)]
+                                  (h arguments)
+                                  (throw (ex-info "Host tool unavailable."
+                                                  {:error :addon/tool-unavailable
+                                                   :tool tool-name}))))})))
+          roster)))
+
 (defn shared-jvm?
   "True when an Integrant system is up in THIS JVM: the process that serves
    every agent. An addon must not run code under analysis here (instrumenting a
@@ -117,8 +140,12 @@
    (fn [] (call 'hive-workflows.mcp/engine))
 
    :tools/invoke
+   ;; The advertised surface plus the unadvertised consolidated leaves
+   ;; (hivemind): hive-emacs's cider reaper shouts through this port.
    (partial invoke-registered-tool!
-            #(call 'hive-mcp.tools.registry/get-advertised-tools))
+            #(host-catalog (call 'hive-mcp.tools.registry/get-advertised-tools)
+                           @(resolve! 'hive-mcp.tools.consolidated.roster/consolidated-tools)
+                           requiring-resolve))
 
    :memory/store
    (fn [slot]
@@ -193,6 +220,11 @@
   [:map-of :keyword schema/Invokable])
 
 (m/=> invoke-registered-tool! [:=> [:cat schema/Invokable :any :any] :any])
+
+(m/=> host-catalog [:=> [:cat [:maybe [:sequential :map]]
+                         [:maybe [:sequential [:tuple :string :symbol]]]
+                         schema/Invokable]
+                    [:vector [:map [:name :string]]]])
 
 (m/=> shared-jvm?
       [:function
