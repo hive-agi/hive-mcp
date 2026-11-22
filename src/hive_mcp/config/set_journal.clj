@@ -7,7 +7,12 @@
    The value is redacted before it is written, by the `redact` fn the caller
    passes: `(redact path value)`, which is the config tool's `redact-config`.
    It is a parameter so this namespace never requires the tool namespace
-   that will require it.
+   that will require it. A key that did not parse has no path to redact at,
+   so its value is never written (`non-canonical-placeholder`). A value is
+   bounded to `max-value-chars` printed characters.
+
+   Appends are serialised by one process-wide lock, and the file is rotated
+   to `<path>.1` once it passes `max-journal-bytes`.
 
    `append!` never throws. A failed redaction or write is logged and answered
    with false, so a journal fault cannot block the write it records."
@@ -85,9 +90,37 @@
 
 (m/=> request-identity [:=> [:cat] Identity])
 
+(def max-value-chars
+  "Longest printed value a line keeps; a longer one is replaced by a
+   truncated prefix and its length."
+  2048)
+
+(def max-journal-bytes
+  "Size past which the journal is rotated to `<path>.1` before an append."
+  (* 16 1024 1024))
+
+(def non-canonical-placeholder
+  "What a line carries instead of the value when the key did not parse: with
+   no path, no redactor can know which part of the value is secret."
+  {:redacted :non-canonical-key})
+
+(defn bound-value
+  "`v` when it prints within `max-value-chars`, else {:truncated true :chars n
+   :prefix s} with the first `max-value-chars` printed characters."
+  [v]
+  (let [s (pr-str v)]
+    (if (<= (count s) max-value-chars)
+      v
+      {:truncated true :chars (count s) :prefix (subs s 0 max-value-chars)})))
+
+(m/=> bound-value [:=> [:cat :any] :any])
+
 (defn record
-  "The journal line for one `attempt`, with its value passed through
-   `redact`. Pure apart from `redact` and the clock when :at is absent."
+  "The journal line for one `attempt`. The value goes through `redact` at the
+   decision's path, then `bound-value`. When the decision has no path (the
+   key was not canonical), the value is `non-canonical-placeholder` and
+   `redact` is not called. Pure apart from `redact` and the clock when :at is
+   absent."
   [redact {:keys [decision value agent-id identity at]}]
   (let [{:keys [key path rule mode matched]} decision]
     {:at                 (or at (java.util.Date.))
@@ -102,21 +135,39 @@
      :verified?          (boolean (:verified? identity))
      :session-id         (:session-id identity)
      :agent-id           agent-id
-     :value              (redact path value)}))
+     :value              (if (vector? path)
+                           (bound-value (redact path value))
+                           non-canonical-placeholder)}))
 
 (m/=> record [:=> [:cat Redact Attempt] Line])
 
+(defonce ^:private write-lock
+  ;; One lock per process for every journal path: an append is one write of
+  ;; one line, never interleaved with another thread's.
+  (Object.))
+
+(defn- rotate-if-full!
+  [^java.io.File f]
+  (when (> (.length f) max-journal-bytes)
+    (let [old (io/file (str (.getPath f) ".1"))]
+      (.delete old)
+      (.renameTo f old))))
+
 (defn append!
   "Append the line for `attempt` to the journal at `path` (default
-   `default-path`). True when the line reached the file; false, after a log
-   line, when redaction or the write failed. Never throws."
+   `default-path`), under one process-wide lock, rotating the file to
+   `<path>.1` first when it is past `max-journal-bytes`. True when the line
+   reached the file; false, after a log line, when redaction or the write
+   failed. Never throws."
   ([redact attempt] (append! (default-path) redact attempt))
   ([path redact attempt]
    (try
-     (let [line (record redact attempt)
+     (let [line (str (pr-str (record redact attempt)) "\n")
            f    (io/file path)]
-       (io/make-parents f)
-       (spit f (str (pr-str line) "\n") :append true)
+       (locking write-lock
+         (io/make-parents f)
+         (rotate-if-full! f)
+         (spit f line :append true))
        true)
      (catch Throwable t
        (log/error t "config-set journal: append failed; this attempt is not journalled"

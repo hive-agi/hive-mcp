@@ -11,7 +11,8 @@
             [hive-mcp.config.test-support :as support]
             [hive-mcp.config.write-policy :as wp]
             [hive-mcp.context.request :as request]
-            [hive-mcp.tools.consolidated.config :as config-tool]))
+            [hive-mcp.tools.consolidated.config :as config-tool]
+            [hive-mcp.config.path :as config-path]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -96,4 +97,56 @@
                               (attempt "models.default-model" "a/b")))))))
 
 (deftest default-path-sits-beside-the-process-config
-  (is (str/ends-with? (sj/default-path) (str "/" sj/journal-file-name))))
+  (is (= (io/file (.getParentFile (io/file config-path/config-path)) sj/journal-file-name)
+         (io/file (sj/default-path))))
+  (testing "a test JVM runs from its own config, so it never names the operator's journal"
+    (when (config-path/test-jvm?)
+      (is (not= (io/file (.getParentFile (io/file config-path/operator-config-path))
+                         sj/journal-file-name)
+                (io/file (sj/default-path)))))))
+
+(deftest a-non-canonical-key-never-journals-its-value
+  (let [path     (temp-path)
+        calls    (atom 0)
+        counting (fn [p v] (swap! calls inc) (redact p v))]
+    (doseq [k ["Secrets.openrouter" ":secrets.x" "SECRETS.openrouter-api-key" "secrets..x"]]
+      (is (true? (sj/append! path counting (attempt k "sk-live-789")))))
+    (let [lines (read-lines path)]
+      (is (= 4 (count lines)))
+      (is (every? #(= :non-canonical (:rule %)) lines))
+      (is (every? #(= sj/non-canonical-placeholder (:value %)) lines))
+      (is (not (str/includes? (slurp path) "sk-live")))
+      (is (zero? @calls) "the redactor is never asked to guess a path"))))
+
+(deftest a-long-value-is-truncated
+  (let [path (temp-path)
+        big  (apply str (repeat (* 4 sj/max-value-chars) "x"))]
+    (sj/append! path redact (attempt "models.default-model" big))
+    (let [{:keys [value]} (first (read-lines path))]
+      (is (true? (:truncated value)))
+      (is (= (count (pr-str big)) (:chars value)))
+      (is (= sj/max-value-chars (count (:prefix value))))))
+  (is (= "short" (sj/bound-value "short"))))
+
+(deftest concurrent-appends-never-interleave
+  (let [path (temp-path)
+        n    64
+        big  (apply str (repeat 1500 "y"))
+        futs (doall (for [i (range n)]
+                      (future (sj/append! path redact
+                                          (attempt "models.default-model" (str i "-" big))))))]
+    (is (every? true? (map deref futs)))
+    (let [lines (read-lines path)]
+      (is (= n (count lines)) "one whole, readable line per append")
+      (is (= (set (map str (range n)))
+             (set (map #(first (str/split (:value %) #"-")) lines)))))))
+
+(deftest a-full-journal-is-rotated
+  (let [path (temp-path)
+        f    (io/file path)]
+    (io/make-parents f)
+    (with-open [raf (java.io.RandomAccessFile. f "rw")]
+      (.setLength raf (inc sj/max-journal-bytes)))
+    (is (true? (sj/append! path redact (attempt "models.default-model" "a/b"))))
+    (is (= 1 (count (read-lines path))) "the new journal starts with this line")
+    (is (= (inc sj/max-journal-bytes) (.length (io/file (str path ".1")))))))
