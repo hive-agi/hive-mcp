@@ -1307,3 +1307,5 @@
    :handler #'handle-hot})
 
 (def tools [tool-def])
+
+(malli.core/=> bridge-available? [:=> #:provenance{:kind :inferred-static, :source "hive-carto.candidate.mallify.static"} [:cat] :boolean])

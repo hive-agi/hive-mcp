@@ -529,3 +529,5 @@
 (m/=> spark! [:function
               [:=> [:cat [:maybe :map]] SparkReport]
               [:=> [:cat [:maybe :map] [:maybe :map]] SparkReport]])
+
+(malli.core/=> dispatch-to-ling! [:=> #:provenance{:kind :inferred-static, :source "hive-carto.candidate.mallify.static"} [:cat :map] [:or :map :nil]])

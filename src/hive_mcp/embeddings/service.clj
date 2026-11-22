@@ -946,3 +946,5 @@
             (list-configured-collections)))
 
 (m/=> configure-defaults! [:=> [:cat] :nil])
+
+(malli.core/=> whitespace-step [:=> #:provenance{:kind :inferred-static, :source "hive-carto.candidate.mallify.static"} [:cat :string :int] [:vector :any]])

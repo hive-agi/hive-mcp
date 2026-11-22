@@ -6,7 +6,8 @@
    Handler params are MCP boundary input: permissive in. A field the body
    reads through a `case`/`cond` with a default branch is `Loose` (any value,
    generated from the documented shape), never a closed enum."
-  (:require [hive-mcp.tools.core :as core]))
+  (:require [hive-mcp.tools.core :as core]
+            [malli.core]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -291,3 +292,5 @@
    [:limit {:optional true} (loose [:maybe [:or [:int {:min -2 :max 5}] :string]])]
    [:dry_run {:optional true} (loose [:maybe :boolean])]
    [:min_live_members {:optional true} (loose [:maybe [:or [:int {:min -1 :max 4}] :string]])]])
+
+(malli.core/=> loose [:=> #:provenance{:kind :inferred-static, :source "hive-carto.candidate.mallify.static"} [:cat :any] [:vector :any]])

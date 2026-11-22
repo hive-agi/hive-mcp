@@ -305,3 +305,5 @@
 
 (def RunOpts
   [:maybe [:map [:dry-run? {:optional true} [:maybe :boolean]]]])
+
+(malli.core/=> loose [:=> #:provenance{:kind :inferred-static, :source "hive-carto.candidate.mallify.static"} [:cat :any] [:vector :any]])

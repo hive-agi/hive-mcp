@@ -608,3 +608,5 @@
                   [:project-name {:optional true} [:maybe :string]]
                   [:stale-files {:optional true} StaleFiles]]]
        :string])
+
+(malli.core/=> make-block [:=> #:provenance{:kind :inferred-static, :source "hive-carto.candidate.mallify.static"} [:cat :any :any] :map])

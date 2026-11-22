@@ -618,3 +618,5 @@
                                          :description "cleanup-synthetics: preview without mutating (default: false)"}}
                  :required ["command"]}
    :handler #'handle-kg})
+
+(malli.core/=> result->mcp [:=> #:provenance{:kind :inferred-static, :source "hive-carto.candidate.mallify.static"} [:cat :any] :map])
