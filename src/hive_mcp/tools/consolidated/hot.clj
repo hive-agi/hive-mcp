@@ -370,6 +370,8 @@
      :min-swap-free-ratio (:min-swap-free-ratio cfg)
      :ling?               (boolean ling?)}))
 
+(m/=> memory-gate-opts [:=> [:cat [:maybe :map]] memory-gate/RefusalOpts])
+
 (defn- memory-refusal
   "The heavy-reload refusal for this call, or nil."
   [command params]

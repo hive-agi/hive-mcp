@@ -13,7 +13,8 @@
    override is ignored and the refusal says so.
 
    Pure except `read-meminfo`, which callers may replace."
-  (:require [clojure.string :as str]))
+  (:require [clojure.string :as str]
+            [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -32,6 +33,37 @@
    "SwapFree"     :swap-free-kb
    "SwapTotal"    :swap-total-kb})
 
+(def Meminfo
+  "The /proc/meminfo figures the gate reads, in kB; a figure the host lacks is absent."
+  [:map
+   [:mem-available-kb {:optional true} :int]
+   [:swap-free-kb {:optional true} :int]
+   [:swap-total-kb {:optional true} :int]])
+
+(def GateConfig
+  "Verdict tuning. Invalid or absent values fall back to the defaults."
+  [:map
+   [:floor-gb {:optional true} :any]
+   [:min-swap-free-ratio {:optional true} :any]])
+
+(def Refusal
+  "A heavy-reload refusal: the numbers, the reason and the override."
+  [:map
+   [:ok? false?]
+   [:refused? true?]
+   [:reason :keyword]
+   [:message :string]
+   [:floor-gb number?]
+   [:min-swap-free-ratio number?]])
+
+(def RefusalOpts
+  "`refusal` options: the reader, the verdict tuning and whether a ling calls."
+  [:map
+   [:read-mem {:optional true} ifn?]
+   [:ling? {:optional true} :boolean]
+   [:floor-gb {:optional true} :any]
+   [:min-swap-free-ratio {:optional true} :any]])
+
 (defn- line-entry
   "One /proc/meminfo line, \"Key:   1234 kB\", to [k kb], or nil."
   [line]
@@ -47,12 +79,16 @@
   [text]
   (into {} (keep line-entry) (str/split-lines (str text))))
 
+(m/=> parse-meminfo [:=> [:cat :any] Meminfo])
+
 (defn read-meminfo
   "The host's memory figures, or nil where /proc/meminfo cannot be read
    (not Linux): an unreadable host is not refused."
   []
   (try (parse-meminfo (slurp "/proc/meminfo"))
        (catch java.io.IOException _no-proc-meminfo-on-this-host nil)))
+
+(m/=> read-meminfo [:=> [:cat] [:maybe Meminfo]])
 
 (defn- valid-floor [x] (when (and (number? x) (not (neg? x))) x))
 (defn- valid-ratio [x] (when (and (number? x) (<= 0 x 1)) x))
@@ -89,12 +125,18 @@
                       "). A plain reload of one changed addon is still allowed. "
                       "Operator override: force_memory=true.")}))))
 
+(m/=> verdict [:function
+               [:=> [:cat Meminfo] [:maybe Refusal]]
+               [:=> [:cat Meminfo GateConfig] [:maybe Refusal]]])
+
 (defn heavy?
   "Pure. Whether a reload call is the heavy kind the gate guards: reload-all,
    or a reload with force."
   [command params]
   (or (= command :reload-all)
       (contains? #{true "true"} (:force params))))
+
+(m/=> heavy? [:=> [:cat :keyword [:maybe :map]] :boolean])
 
 (defn- override? [params] (contains? #{true "true"} (:force_memory params)))
 
@@ -112,3 +154,7 @@
          (assoc :override-ignored :ling-caller
                 :message (str (:message r)
                               " force_memory was ignored: the override is for the operator, not a ling.")))))))
+
+(m/=> refusal [:function
+               [:=> [:cat :keyword [:maybe :map]] [:maybe Refusal]]
+               [:=> [:cat :keyword [:maybe :map] RefusalOpts] [:maybe Refusal]]])
