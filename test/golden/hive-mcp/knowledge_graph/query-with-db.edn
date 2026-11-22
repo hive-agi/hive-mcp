@@ -1,0 +1,4 @@
+{:pre-tx #{["a"]},
+ :post-tx #{["b"] ["a"]},
+ :with-input #{["b"]},
+ :nil-db-falls-back-to-live #{["live-1"]}}

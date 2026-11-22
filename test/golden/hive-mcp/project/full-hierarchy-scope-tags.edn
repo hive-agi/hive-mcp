@@ -1,0 +1,21 @@
+{"\"\"" ["scope:global"],
+ "\"a\""
+ ["scope:global"
+  "scope:project:a"
+  "scope:project:a1"
+  "scope:project:ws"],
+ "\"a1\""
+ ["scope:global"
+  "scope:project:a"
+  "scope:project:a1"
+  "scope:project:ws"],
+ "\"b\"" ["scope:global" "scope:project:b" "scope:project:ws"],
+ "\"far\"" ["scope:global" "scope:project:far"],
+ "\"global\"" ["scope:global"],
+ "\"ws\""
+ ["scope:global"
+  "scope:project:a"
+  "scope:project:a1"
+  "scope:project:b"
+  "scope:project:ws"],
+ "nil" ["scope:global"]}
