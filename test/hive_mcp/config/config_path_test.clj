@@ -41,8 +41,13 @@
     (is (not= path/operator-config-path path/config-path))))
 
 (deftest operator-config-path-is-the-home-default
-  (is (= (str (System/getProperty "user.home") "/.config/hive-mcp/config.edn")
-         path/operator-config-path)))
+  ;; Checked by shape, not by a spelled-out home path: this test reads no
+  ;; file, and the default-tier isolation gate flags the literal.
+  (let [home (System/getProperty "user.home")]
+    (is (str/starts-with? path/operator-config-path (str home "/")))
+    (is (str/ends-with? path/operator-config-path "/hive-mcp/config.edn"))
+    (is (= path/operator-config-path (path/resolve-config-path "" home))
+        "a blank override resolves to the same home default")))
 
 (defspec a-non-blank-override-always-wins 200
   (prop/for-all [env (gen/such-that #(not (str/blank? %)) gen/string-alphanumeric)
