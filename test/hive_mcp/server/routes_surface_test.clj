@@ -26,7 +26,7 @@
   [_ _]
   (throw (ex-info "transport down" {})))
 
-(def ^:private test-ids [::a ::b ::faulty ::atom-backed ::no-context])
+(def ^:private test-ids [::a ::b ::faulty ::atom-backed ::no-context ::unknown-kind])
 
 (defn- isolate [f]
   (let [before (routes/registered-surfaces)]
@@ -73,6 +73,19 @@
   (routes/register-surface! ::no-context {:surface/kind :context-atom
                                           :surface/context-atom (atom nil)})
   (is (not-any? #{::no-context} (:surfaces (routes/refresh-surfaces!)))))
+
+(deftest a-surface-of-an-unknown-kind-installs-nothing
+  (testing "the :default method answers nil, the contract's nowhere-to-install"
+    (is (contains? (methods routes/install-table!) :default))
+    (is (nil? (routes/install-table! {:surface/kind ::never-defined} {}))))
+  (testing "a refresh skips it without failing it, and the others still install"
+    (routes/register-surface! ::unknown-kind {:surface/kind ::never-defined})
+    (routes/register-surface! ::a {:surface/kind ::recording ::id ::a})
+    (let [out (routes/refresh-surfaces!)]
+      (is (not-any? #{::unknown-kind} (:surfaces out)))
+      (is (not-any? #{::unknown-kind} (:failed out)))
+      (is (some #{::a} (:surfaces out)))
+      (is (= 1 (count @installs))))))
 
 (deftest changed-names-are-the-diff-of-two-tables
   (is (= #{"added" "changed" "removed"}

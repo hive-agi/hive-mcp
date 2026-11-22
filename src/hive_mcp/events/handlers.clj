@@ -61,7 +61,8 @@
             [clojure.set :as set]
             [hive-mcp.events.handlers.resilience :as resilience]
             [hive-mcp.events.contributions :as contrib]
-            [malli.core :as m]))
+            [malli.core :as m]
+            [hive-spi.log.ports :as log-ports]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -113,11 +114,9 @@
         missing    (set/difference expected registered)
         extra      (set/difference registered expected)]
     (when (seq missing)
-      (binding [*out* *err*]
-        (println "[hive-events] WARNING: missing handlers:" (sort missing))))
+      (log-ports/warn "[hive-events] missing handlers:" (sort missing)))
     (when (seq extra)
-      (binding [*out* *err*]
-        (println "[hive-events] Extra handlers registered (not declared):" (sort extra))))
+      (log-ports/info "[hive-events] Extra handlers registered (not declared):" (sort extra)))
     {:registered registered :missing missing :extra extra}))
 
 (m/=> verify-handlers!
@@ -173,14 +172,12 @@
     (contrib/load-manifest!)
     (let [{:keys [failed]} (contrib/register-all! :handlers)]
       (when (seq failed)
-        (binding [*out* *err*]
-          (println "[hive-events] handler contributions failed:" (sort (keys failed))))))
+        (log-ports/warn "[hive-events] handler contributions failed:" (sort (keys failed)))))
 
     (verify-handlers!)
     (reset! *registered true)
     (when first?
-      (binding [*out* *err*]
-        (println "[hive-events] Handlers registered:" (sort (expected-events)))))
+      (log-ports/info "[hive-events] Handlers registered:" (sort (expected-events))))
     true))
 
 (m/=> register-handlers! [:=> [:cat] [:= true]])

@@ -246,6 +246,15 @@
     (reset! tools-atom table)
     true))
 
+(defmethod install-table! :default
+  [surface _table]
+  ;; A surface of a kind no method knows: install nothing and say so. nil is
+  ;; the contract's "nowhere to install", so `install-everywhere!` leaves it
+  ;; out of :surfaces and keeps going with the others.
+  (log/warn "tool surface kind has no install-table! method, skipped"
+            {:surface/kind (:surface/kind surface)})
+  nil)
+
 (defn register-surface!
   "Register SURFACE (a ToolSurface) under ID, replacing any previous one of
    that id. Idempotent. Returns ID."
