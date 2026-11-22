@@ -10,7 +10,8 @@
             [hive-dsl.result :as result]
             [taoensso.timbre :as log]
             [hive-mcp.config.source :as src]
-            [malli.core :as m]))
+            [malli.core :as m]
+            [hive-mcp.config.sensitive :as sensitive]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -306,7 +307,7 @@
            (if (result/ok? on-disk)
              (config-io/write-config! (assoc-in (or (:ok on-disk) {}) kp value) path)
              (log/warn "Config file unreadable, not persisting" key-str on-disk))
-           (log/info "Config updated:" key-str "=" value)
+           (log/info "Config updated:" key-str (sensitive/value-shape value))
            updated))))))
 
 ;; =============================================================================

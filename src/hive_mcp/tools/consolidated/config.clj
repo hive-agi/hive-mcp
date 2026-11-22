@@ -205,7 +205,9 @@
           shown   (redact-config kp coerced)
           secret? (not= shown coerced)]
       (config/set-config-value! key coerced)
-      (log/info "Config set:" key (if secret? "(value redacted)" (str "= " coerced)))
+      ;; The key and the value's shape only: a value under a key that names
+      ;; no secret can still carry one (a URL with a token in its query).
+      (log/info "Config set:" key (sensitive/value-shape coerced))
       (result/ok {:key key
                   :value shown
                   :raw-input (if secret? shown value)
