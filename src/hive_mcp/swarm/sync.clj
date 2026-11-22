@@ -757,3 +757,7 @@
   ;; Debug utilities - not in ISwarmRegistry
   (queries/dump-db)
   (stop-sync!))
+
+(m/=> get-field [:function
+                  [:=> [:cat [:maybe :map] :keyword] :any]
+                  [:=> [:cat [:maybe :map] :keyword :any] :any]])

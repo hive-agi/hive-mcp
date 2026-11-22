@@ -219,3 +219,5 @@
   (delegate-or-noop :fb/cont noop-result [resources]))
 
 (m/=> run-continuous-belt [:=> [:cat wfs/Resources] BeltResult])
+
+(m/=> delegate-or-noop [:=> [:cat :keyword :any [:sequential :any]] :any])

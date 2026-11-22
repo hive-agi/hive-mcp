@@ -274,3 +274,7 @@
 (def tools
   "REMOVED: Flat agora tools no longer exposed. Use consolidated `agora` tool."
   [])
+
+(m/=> safe-name [:function
+                  [:=> [:cat :any] :string]
+                  [:=> [:cat :any [:maybe :string]] [:maybe :string]]])

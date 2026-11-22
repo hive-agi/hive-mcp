@@ -1315,3 +1315,18 @@
   [])
 
 (malli.core/=> invoke-with-handshake-retry [:=> #:provenance{:kind :inferred-static, :source "hive-carto.candidate.mallify.static"} [:cat :any :any] :map])
+
+(def ^:private GitRun
+  "One git run: its exit code and its combined output."
+  [:map [:exit :int] [:out :string]])
+
+(def ^:private GitArgs [:sequential :string])
+
+(m/=> git! [:function
+            [:=> [:cat :string GitArgs] GitRun]
+            [:=> [:cat :string GitArgs [:maybe :string]] GitRun]
+            [:=> [:cat :string GitArgs [:maybe :string] [:maybe :int]] GitRun]])
+
+(m/=> git-out [:=> [:cat :string GitArgs] [:maybe :string]])
+
+(m/=> git-lines [:=> [:cat :string GitArgs] [:vector :string]])

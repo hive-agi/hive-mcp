@@ -214,3 +214,5 @@
       [:function
        [:=> [:cat] Ports]
        [:=> [:cat schema/Invokable] Ports]])
+
+(m/=> call [:=> [:cat :qualified-symbol [:* :any]] :any])
