@@ -219,8 +219,8 @@
 
 (deftest saa-registry-gate-is-not-vacuous
   (let [report (coverage/coverage {:paths ["src/hive_mcp/saa/registry"]})]
-    (is (= 43 (count (:universe report))) "every public defn of the tree")
-    (is (= 43 (count (:covered report))))))
+    (is (= 44 (count (:universe report))) "every public defn of the tree")
+    (is (= 44 (count (:covered report))))))
 
 (deftest every-saa-registry-contract-generates-both-sides
   (doseq [ns-sym '[hive-mcp.saa.registry.dispatch-modes hive-mcp.saa.registry.phase-providers

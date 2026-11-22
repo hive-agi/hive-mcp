@@ -9,7 +9,8 @@
 
   (:require [clojure.walk :as walk]
             [malli.core :as m]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [hive-mcp.protocols.registry :as reg-core]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -67,7 +68,7 @@
 
    Returns adapter or nil."
   [id]
-  (get @adapter-registry id))
+  (reg-core/atom-get adapter-registry id))
 
 (defn list-adapters
   "List all registered adapters.

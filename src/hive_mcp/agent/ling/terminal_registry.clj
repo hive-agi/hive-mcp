@@ -14,7 +14,8 @@
             [hive-mcp.agent.ling.terminal-addon-strategy :as terminal-strat]
             [taoensso.timbre :as log]
             [malli.core :as m]
-            [hive-mcp.agent.ling.strategy :as strategy]))
+            [hive-mcp.agent.ling.strategy :as strategy]
+            [hive-mcp.protocols.registry :as reg-core]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -78,7 +79,7 @@
 (defn get-terminal-addon
   "Get the raw ITerminalAddon instance for a terminal-id, or nil."
   [terminal-id]
-  (get @registry terminal-id))
+  (reg-core/atom-get registry terminal-id))
 
 (m/=> get-terminal-addon [:=> [:cat :any] [:maybe terminal-strat/TerminalAddon]])
 

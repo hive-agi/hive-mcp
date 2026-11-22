@@ -15,7 +15,8 @@
                                    first-write-wins"
   (:require [taoensso.timbre :as log]
             [malli.core :as m]
-            [hive-mcp.saa.types :as types]))
+            [hive-mcp.saa.types :as types]
+            [hive-mcp.saa.registry.core :as registry-core]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -76,7 +77,7 @@
 (defn lookup
   "Return the registered entry for a mode, or nil."
   [mode]
-  (get-in @state [:by-id mode]))
+  (registry-core/lookup state mode))
 
 (m/=> lookup [:=> [:cat :any] [:maybe types/RegistryRecord]])
 
