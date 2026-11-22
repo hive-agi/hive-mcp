@@ -26,7 +26,8 @@
             [hive-mcp.plan.parser :as parser]
             [clojure.string :as str]
             [taoensso.timbre :as log]
-            [malli.core :as m]))
+            [malli.core :as m]
+            [hive-dsl.result :as r]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -128,11 +129,137 @@
 ;; Validation Gate
 ;; =============================================================================
 
+(def ^:private Validation
+  "The :validation map draft->validated reports for a failed plan."
+  [:maybe [:map-of :keyword :any]])
+
+(def ^:private Failures
+  [:map [:errors [:vector :string]]
+   [:phase [:enum :schema :dependencies :cycles :fields :unknown]]])
+
+(def ^:private GateVerdict
+  [:map [:valid? :boolean]])
+
+(defn- validation-failures
+  "Promote: read the failed checks of a :validation map into human-readable
+   errors and the phase that names the first failing check."
+  [validation]
+  (let [schema-errors (when-not (get-in validation [:schema :valid])
+                        (get-in validation [:schema :errors]))
+        dep-errors (when-not (get-in validation [:dependencies :valid])
+                     (get-in validation [:dependencies :invalid-refs]))
+        cycle-errors (when-not (get-in validation [:cycles :valid])
+                       [(get-in validation [:cycles :cycle])])
+        field-errors (when-not (get-in validation [:fields :valid])
+                       (get-in validation [:fields :errors]))
+        all-errors (cond-> []
+                     schema-errors
+                     (conj (str "Schema: " (pr-str schema-errors)))
+                     dep-errors
+                     (conj (str "Dependencies: steps reference non-existent IDs: "
+                                (str/join ", " (map #(str (:step-id %) " -> " (:missing-dep %))
+                                                    dep-errors))))
+                     cycle-errors
+                     (conj (str "Cycles: " (str/join ", " (remove nil? cycle-errors))))
+                     (seq field-errors)
+                     (into (map #(str "Field " (:key %) "=" (pr-str (:value %))
+                                      ": " (pr-str (:error %)))
+                                field-errors)))
+        phase (cond
+                schema-errors :schema
+                dep-errors :dependencies
+                cycle-errors :cycles
+                (seq field-errors) :fields
+                :else :unknown)]
+    {:errors all-errors :phase phase}))
+
+(defn- validated-verdict
+  "Pipeline: turn draft->validated's data map into the gate verdict.
+
+   A plan whose FSM checks passed is still refused when it has no steps:
+   empty steps pass the Malli schema but fail plan-to-kanban (the has-tasks?
+   guard is only checked at :approved->:executing)."
+  [result]
+  (if (:valid? result)
+    (let [plan (:plan result)
+          steps (:steps plan)]
+      (if (empty? steps)
+        {:valid? false
+         :errors ["Plan has no steps. At least one step is required for plan-to-kanban."]
+         :phase :empty-steps
+         :hint (build-hint :schema ["Plan :steps vector is empty"])
+         :raw-error "Empty steps vector"}
+        {:valid? true
+         :plan plan
+         :metadata {:steps-count (count steps)
+                    :decision-id (:decision-id plan)
+                    :has-dependencies? (boolean (some #(seq (:depends-on %)) steps))
+                    :source-format (:source-format plan)}}))
+    (let [validation (:validation result)
+          {:keys [errors phase]} (validation-failures validation)]
+      {:valid? false
+       :errors errors
+       :phase phase
+       :hint (build-hint phase errors)
+       :raw-error (pr-str validation)})))
+
+(defn- thrown-verdict
+  "Pipeline: the verdict for a validation that threw. `outcome` is the err
+   the collect stage produced: :plan-gate/rejected carries the ExceptionInfo
+   message and data, :plan-gate/unexpected any other exception's message."
+  [{:keys [error message data]}]
+  (if (= :plan-gate/rejected error)
+    (let [phase (or (:phase data) :parse)]
+      {:valid? false
+       :errors [(str (name phase) " failed: " message)]
+       :phase phase
+       :hint (build-hint phase [(str message)])
+       :raw-error message})
+    {:valid? false
+     :errors [(str "Unexpected error: " message)]
+     :phase :unexpected
+     :hint "The plan content caused an unexpected error. Check the format."
+     :raw-error message}))
+
+(defn- collect-verdict
+  "Collect: run content through draft->validated (parse + schema + deps +
+   cycles, no execution) and classify it. A throw anywhere in that becomes an
+   err on the railway, never escapes."
+  [content]
+  (try
+    (r/ok (validated-verdict (plan-fsm/draft->validated {:content content})))
+    (catch clojure.lang.ExceptionInfo e
+      (r/err :plan-gate/rejected {:message (.getMessage e) :data (ex-data e)}))
+    (catch Exception e
+      (r/err :plan-gate/unexpected {:message (.getMessage e) :cause e}))))
+
+(defn- log-verdict!
+  "Boundary: the one log line each outcome has always produced."
+  [outcome verdict]
+  (if (r/ok? outcome)
+    (cond
+      (:valid? verdict)
+      (log/info "[plan-gate] Plan validated successfully"
+                {:steps (get-in verdict [:metadata :steps-count])
+                 :format (get-in verdict [:metadata :source-format])
+                 :has-deps? (get-in verdict [:metadata :has-dependencies?])})
+      (not= :empty-steps (:phase verdict))
+      (log/warn "[plan-gate] Plan validation failed"
+                {:phase (:phase verdict) :errors (:errors verdict)}))
+    (if (= :plan-gate/rejected (:error outcome))
+      (log/warn "[plan-gate] Plan parse/validation failed"
+                {:error (:message outcome) :phase (:phase verdict) :data (:data outcome)})
+      (log/error (:cause outcome) "[plan-gate] Unexpected error during plan validation"))))
+
 (defn validate-for-storage
   "FSM gate: validate plan content before storage.
 
    Runs the plan through draft->validated (parse + schema + deps + cycles)
    without executing. Returns a result map indicating validity.
+
+   Stages: collect-verdict (Collect, the FSM run on the Result railway),
+   validation-failures (Promote), validated-verdict / thrown-verdict
+   (Pipeline), log-verdict! (Boundary).
 
    Args:
      content - Raw plan content string (EDN or markdown)
@@ -153,93 +280,10 @@
   [content]
   (log/debug "[plan-gate] Validating plan content for storage"
              {:content-length (count (str content))})
-  (try
-    (let [result (plan-fsm/draft->validated {:content content})]
-      ;; draft->validated returns the data map on ::end
-      ;; Check the validation results
-      (if (:valid? result)
-        ;; FSM schema+deps+cycles passed — additional gate checks
-        (let [plan (:plan result)
-              steps (:steps plan)]
-          ;; Gate: empty steps pass Malli schema but will fail plan-to-kanban
-          ;; (has-tasks? guard is only checked at :approved→:executing)
-          (if (empty? steps)
-            {:valid? false
-             :errors ["Plan has no steps. At least one step is required for plan-to-kanban."]
-             :phase :empty-steps
-             :hint (build-hint :schema ["Plan :steps vector is empty"])
-             :raw-error "Empty steps vector"}
-
-            ;; Plan is fully valid — extract metadata for enriched storage
-            (let [has-deps? (boolean (some #(seq (:depends-on %)) steps))]
-              (log/info "[plan-gate] Plan validated successfully"
-                        {:steps (count steps)
-                         :format (:source-format plan)
-                         :has-deps? has-deps?})
-              {:valid? true
-               :plan plan
-               :metadata {:steps-count (count steps)
-                          :decision-id (:decision-id plan)
-                          :has-dependencies? has-deps?
-                          :source-format (:source-format plan)}})))
-
-        ;; Validation failed — extract structured errors
-        (let [validation (:validation result)
-              schema-errors (when-not (get-in validation [:schema :valid])
-                              (get-in validation [:schema :errors]))
-              dep-errors (when-not (get-in validation [:dependencies :valid])
-                           (get-in validation [:dependencies :invalid-refs]))
-              cycle-errors (when-not (get-in validation [:cycles :valid])
-                             [(get-in validation [:cycles :cycle])])
-              field-errors (when-not (get-in validation [:fields :valid])
-                             (get-in validation [:fields :errors]))
-              all-errors (cond-> []
-                           schema-errors
-                           (conj (str "Schema: " (pr-str schema-errors)))
-                           dep-errors
-                           (conj (str "Dependencies: steps reference non-existent IDs: "
-                                      (str/join ", " (map #(str (:step-id %) " -> " (:missing-dep %))
-                                                          dep-errors))))
-                           cycle-errors
-                           (conj (str "Cycles: " (str/join ", " (remove nil? cycle-errors))))
-                           (seq field-errors)
-                           (into (map #(str "Field " (:key %) "=" (pr-str (:value %))
-                                            ": " (pr-str (:error %)))
-                                      field-errors)))
-              phase (cond
-                      schema-errors :schema
-                      dep-errors :dependencies
-                      cycle-errors :cycles
-                      (seq field-errors) :fields
-                      :else :unknown)]
-          (log/warn "[plan-gate] Plan validation failed"
-                    {:phase phase :errors all-errors})
-          {:valid? false
-           :errors all-errors
-           :phase phase
-           :hint (build-hint phase all-errors)
-           :raw-error (pr-str validation)})))
-
-    ;; Parse/validation failure — content couldn't be parsed or validated
-    (catch clojure.lang.ExceptionInfo e
-      (let [msg (.getMessage e)
-            data (ex-data e)
-            phase (or (:phase data) :parse)]
-        (log/warn "[plan-gate] Plan parse/validation failed"
-                  {:error msg :phase phase :data data})
-        {:valid? false
-         :errors [(str (name phase) " failed: " msg)]
-         :phase phase
-         :hint (build-hint phase [(str msg)])
-         :raw-error msg}))
-
-    (catch Exception e
-      (log/error e "[plan-gate] Unexpected error during plan validation")
-      {:valid? false
-       :errors [(str "Unexpected error: " (.getMessage e))]
-       :phase :unexpected
-       :hint "The plan content caused an unexpected error. Check the format."
-       :raw-error (.getMessage e)})))
+  (let [outcome (collect-verdict content)
+        verdict (if (r/ok? outcome) (:ok outcome) (thrown-verdict outcome))]
+    (log-verdict! outcome verdict)
+    verdict))
 
 ;; =============================================================================
 ;; Function Contracts (m16 coverage batch)
@@ -256,3 +300,8 @@
 (m/=> validate-for-storage
       [:=> [:cat :any]
        [:map [:valid? :boolean]]])
+
+(m/=> validation-failures [:=> [:cat Validation] Failures])
+(m/=> validated-verdict [:=> [:cat [:maybe :map]] GateVerdict])
+(m/=> thrown-verdict [:=> [:cat [:map [:error :keyword]]] GateVerdict])
+(m/=> collect-verdict [:=> [:cat :any] [:map-of :keyword :any]])
