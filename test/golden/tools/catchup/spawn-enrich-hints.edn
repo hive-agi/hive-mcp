@@ -1,0 +1,8 @@
+{:all-levels
+ {:memory-hints
+  {:read-ids ["a" "b"],
+   :queries ["q" "r"],
+   :kg-seeds ["s1" "s2"],
+   :kg-depth 3}},
+ :empty-levels {:memory-hints {}},
+ :no-task {:memory-hints {:read-ids ["a"]}}}

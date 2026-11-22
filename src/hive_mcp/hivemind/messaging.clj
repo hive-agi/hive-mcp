@@ -357,162 +357,215 @@
        [:=> [:cat [:maybe [:sequential RingMessage]] RingMessage pos-int?]
         [:vector RingMessage]]])
 
+(defn- shout-addressing
+  "Routing half of the collect stage. Routing is DECIDED, not taken from
+   whoever set the flag: a broadcast without an admissible argument is
+   downgraded to its ordinary route rather than dropped
+   (hive-mcp.channel.broadcast-policy).
+
+   Whether the sender is METERED is decided here, not in the policy: identity
+   lives at the call site. A coordinator lane addressing its own swarm is above
+   the readers rather than beside them, and its directives drive a wave, so
+   metering it would let a busy wave silence its own scheduler. Peers are
+   metered, because peers are what the budget exists to keep from repeating an
+   admissible reason.
+
+   A `to` nobody answers to is the ONE way directed addressing can lose a
+   message outright. Routing is deliberately NOT changed on that evidence: the
+   roster is authoritative about slaves and silent about coordinator lanes and
+   peers registered elsewhere, so downgrading on it would break valid delivery
+   to catch a typo. The verdict reports it instead (:to-unresolved), in the
+   same tool result the sender reads."
+  [agent-id data project-id now]
+  (let [metered? (not (audience/coordinator-reader? agent-id))
+        routed   (bpolicy/apply-policy
+                  (select-keys data [:broadcast? :broadcast-reason :to])
+                  (when metered?
+                    {:recent-broadcasts (bledger/spent-recently project-id now)}))
+        to       (some-> (:to routed) str)]
+    {:metered?          metered?
+     :to                to
+     :broadcast?        (boolean (:broadcast? routed))
+     :broadcast-reason  (:broadcast-reason routed)
+     :broadcast-refused (:broadcast-refused routed)
+     :to-unresolved?    (boolean
+                         (when to
+                           (and (nil? (queries/get-slave-by-name-or-id to))
+                                (not (audience/coordinator-reader? to)))))
+     ;; A2A contextId. A directed message with no context gets one, so the two
+     ;; peers have a handle to continue the exchange under. Telemetry and
+     ;; broadcasts get none: nothing will ever be threaded to them.
+     :context-id        (or (some-> (:context-id data) str)
+                            (when to (a2a/new-context-id)))}))
+
+(defn- shout-payload
+  "Payload half of the collect stage: bound what one shout costs a reader.
+   One bad shout can otherwise pollute the per-agent ring AND every backbone
+   subscriber. The message keeps its tail under a context id; the task, being a
+   label rather than a body, is still truncated."
+  [data]
+  (let [elided (elide-message (:message data))]
+    {:capped-message (:text elided)
+     :payload-ref    (:ref elided)
+     :capped-task    (cap-message (:task data))
+     :payload-data   (dissoc data :task :message :directory :project-id
+                             :parent-id :broadcast? :broadcast-reason
+                             :deliberate? :to :context-id :status-neutral?)}))
+
+(defn- collect-shout-context
+  "Collect stage of a shout: every ambient read (slave row, IVessel context,
+   broadcast ledger, context store) resolved once into a ShoutContext map."
+  [agent-id data now]
+  (let [slave      (queries/get-slave-by-name-or-id agent-id)
+        slave-id   (or (:slave/id slave) agent-id)
+        ;; IVessel resolution: the formal answer to the project-id coupling
+        ;; bug (vessel owns context). Priority: explicit > vessel > slave row
+        ;; > directory > global.
+        vessel-ctx (vessel/resolve-agent-context slave-id)
+        project-id (resolve-shout-project-id
+                    (:project-id data)
+                    (:project-id vessel-ctx)
+                    (:slave/project-id slave)
+                    (:directory data))]
+    (merge
+     {:slave       slave
+      :slave-id    slave-id
+      :project-id  project-id
+      ;; Spawner identity — the reader whose context this shout enters when
+      ;; nothing more specific addresses it (hive-mcp.channel.audience routes
+      ;; on it). Explicit wins so a caller with no DataScript row can still
+      ;; address its reader.
+      :parent-id   (or (:parent-id data) (:slave/parent slave))
+      ;; A shout the agent CHOSE to make, as opposed to runtime telemetry
+      ;; emitted on its behalf; the piggyback digest never collapses it.
+      :deliberate? (boolean (:deliberate? data))}
+     (shout-addressing agent-id data project-id now)
+     (shout-payload data))))
+
+(defn shout-routing-extras
+  "Pure: the optional routing keys a shout message carries, identical on the
+   ring row and the backbone payload. Only set keys appear."
+  [{:keys [parent-id broadcast? broadcast-reason to context-id payload-ref deliberate?]}]
+  (cond-> {}
+    parent-id        (assoc :parent-id parent-id)
+    broadcast?       (assoc :broadcast? true)
+    broadcast-reason (assoc :broadcast-reason broadcast-reason)
+    to               (assoc :to to)
+    context-id       (assoc :context-id context-id)
+    payload-ref      (assoc :ref payload-ref)
+    deliberate?      (assoc :deliberate? true)))
+
+(m/=> shout-routing-extras [:=> [:cat :map] :map])
+
+(defn shout-ring-message
+  "Pure: the row appended to the sender's local piggyback ring."
+  [{:keys [project-id capped-task capped-message payload-data] :as sctx}
+   event-type shout-id now]
+  (cond-> (merge {:event-type event-type
+                  :timestamp  now
+                  :project-id project-id
+                  :shout-id   shout-id
+                  :data       payload-data}
+                 (shout-routing-extras sctx))
+    capped-task    (assoc :task capped-task)
+    capped-message (assoc :message capped-message)))
+
+(m/=> shout-ring-message [:=> [:cat :map :any :string :int] RingMessage])
+
+(defn shout-backbone-payload
+  "Pure: the flat, self-contained payload fanned out to channels and the
+   backbone. No internal references; :shout-id enables cross-path dedup (the
+   ring and the backbone deliver the same shout)."
+  [{:keys [project-id capped-task capped-message payload-data] :as sctx}
+   agent-id event-type shout-id now]
+  (merge {:agent-id   agent-id
+          :event-type event-type
+          :timestamp  now
+          :project-id project-id
+          :shout-id   shout-id
+          :message    capped-message
+          :task       capped-task
+          :data       payload-data}
+         (shout-routing-extras sctx)))
+
+(m/=> shout-backbone-payload [:=> [:cat :map :string :any :string :int] :map])
+
+(defn shout-verdict
+  "Pure: the routing verdict a delivered shout answers with."
+  [{:keys [to broadcast? context-id payload-ref broadcast-refused to-unresolved?]} shout-id]
+  (cond-> {:delivered true
+           :shout-id  shout-id
+           :routing   (cond to :direct broadcast? :broadcast :else :spawner)}
+    context-id        (assoc :context-id context-id)
+    to                (assoc :to to)
+    payload-ref       (assoc :ref payload-ref)
+    broadcast-refused (assoc :broadcast-refused broadcast-refused)
+    to-unresolved?    (assoc :to-unresolved to)))
+
+(m/=> shout-verdict [:=> [:cat :map :string] [:map [:delivered [:= true]]]])
+
+(defn- charge-broadcast!
+  "Charge the budget — only for a broadcast the policy ADMITTED. A refused one
+   costs the readers nothing, so charging for it would let a rejected request
+   push a later legitimate one over the edge."
+  [{:keys [metered? broadcast? project-id]} now]
+  (when (and metered? broadcast?)
+    (bledger/record-broadcast! project-id now)))
+
+(defn- append-to-ring!
+  "Local state, always (bounded-atom for piggyback reads). ONE swap, not a read
+   then a put: two shouts from the same sender in flight together (a release
+   waking two waiters, both sent as the releaser) would each read the old ring
+   and the second put would drop the first message. The ring is resolved per
+   call, never captured at load, so a reloaded hive-agent is written to rather
+   than a stale atom."
+  [agent-id message now]
+  (when-let [ring (state/current-agent-registry)]
+    (bounded-swap! ring
+                   (fn [entries]
+                     (let [messages (or (get-in entries [agent-id :data :messages]) [])]
+                       (assoc entries agent-id
+                              {:data {:messages (ring-append messages message)
+                                      :last-seen now}
+                               :created-at (or (get-in entries [agent-id :created-at]) now)
+                               :last-accessed now}))))))
+
+(defn- write-slave-status!
+  "DataScript slave status — unless the shout is status-neutral, or the slave
+   already carries that status (every write is a datascript tx that also
+   notifies slave-index subscribers; a progress shout stream would otherwise
+   rewrite :working on every shout)."
+  [{:keys [slave slave-id]} event-type data]
+  (when-let [status (status-write-needed slave
+                                         (and slave (shout-slave-status event-type data)))]
+    (proto/update-slave! registry/default-registry slave-id {:slave/status status})))
+
+(defn- log-shout!
+  [agent-id event-type {:keys [project-id to broadcast? to-unresolved?]}]
+  (log/info "Hivemind shout:" agent-id event-type "project:" project-id
+            (cond to (str "-> " to) broadcast? "-> ALL" :else ""))
+  (when to-unresolved?
+    (log/warn "Hivemind shout addressed to an unknown recipient:" to
+              "- no reader may match it")))
+
 (defn- shout!*
   "Internal shout implementation — assumes payload has been validated
-   non-empty by `shout!`. Returns the routing verdict map."
+   non-empty by `shout!`. Returns the routing verdict map.
+
+   Pipeline: collect context -> pure message/payload/verdict stages -> ordered
+   boundary writes (budget, ring, slave status, fanout, log)."
   [agent-id event-type data]
-  (let [now (System/currentTimeMillis)
+  (let [now      (System/currentTimeMillis)
         shout-id (str (random-uuid))
-        resolved-slave (queries/get-slave-by-name-or-id agent-id)
-        resolved-slave-id (or (:slave/id resolved-slave) agent-id)
-        explicit-project-id (:project-id data)
-        directory (:directory data)
-        ;; IVessel resolution: query all registered vessels for agent context.
-        ;; Vessel delegates to DataScript (slave/cwd, slave/project-id) — the
-        ;; formal answer to the project-id coupling bug (vessel owns context).
-        vessel-ctx (vessel/resolve-agent-context resolved-slave-id)
-        ;; Priority: explicit > vessel > slave row > directory > global
-        project-id (resolve-shout-project-id
-                    explicit-project-id
-                    (:project-id vessel-ctx)
-                    (:slave/project-id resolved-slave)
-                    directory)
-        ;; Spawner identity — the reader whose context this shout enters when
-        ;; nothing more specific addresses it. hive-mcp.channel.audience routes
-        ;; on it; absent it, the shout is root-level and reaches coordinator
-        ;; readers only. Explicit wins so a caller with no DataScript row can
-        ;; still address its reader.
-        parent-id (or (:parent-id data) (:slave/parent resolved-slave))
-        ;; Routing is DECIDED, not taken from whoever set the flag. A broadcast
-        ;; without an admissible argument is downgraded to its ordinary route
-        ;; rather than dropped — hive-mcp.channel.broadcast-policy.
-        ;; Whether this sender is METERED is decided here, not in the policy:
-        ;; identity lives at the call site. A coordinator lane addressing its
-        ;; own swarm is above the readers rather than beside them, and its
-        ;; directives are how a wave is driven, so metering it would let a busy
-        ;; wave silence its own scheduler. Peers are metered, because peers are
-        ;; what the budget exists to keep from repeating an admissible reason.
-        metered? (not (audience/coordinator-reader? agent-id))
-        routed (bpolicy/apply-policy
-                (select-keys data [:broadcast? :broadcast-reason :to])
-                (when metered?
-                  {:recent-broadcasts (bledger/spent-recently project-id now)}))
-        to (some-> (:to routed) str)
-        broadcast? (boolean (:broadcast? routed))
-        broadcast-reason (:broadcast-reason routed)
-        broadcast-refused (:broadcast-refused routed)
-        ;; A `to` nobody answers to is the ONE way directed addressing can lose
-        ;; a message outright: no reader matches it, so it reaches nobody, where
-        ;; the old spawner route would at least have reached the coordinator.
-        ;;
-        ;; Routing is deliberately NOT changed on this evidence. The roster is
-        ;; authoritative about slaves and silent about coordinator lanes and
-        ;; peers registered elsewhere, so downgrading on it would break valid
-        ;; delivery in order to catch a typo. The verdict reports it instead, in
-        ;; the same tool result the sender reads, which is feedback it can act
-        ;; on in its very next turn.
-        to-unresolved? (boolean
-                        (when to
-                          (and (nil? (queries/get-slave-by-name-or-id to))
-                               (not (audience/coordinator-reader? to)))))
-        ;; A2A contextId. A directed message with no context gets one, so the
-        ;; two peers have a handle to continue the exchange under and a reader
-        ;; can fetch the whole exchange by id. Telemetry and broadcasts get
-        ;; none: nothing will ever be threaded to them, so the id would be
-        ;; tokens for nothing.
-        context-id (or (some-> (:context-id data) str)
-                       (when to (a2a/new-context-id)))
-        ;; A shout the agent CHOSE to make (the hivemind tool path), as opposed
-        ;; to runtime telemetry emitted on its behalf. Carried on the message
-        ;; so the piggyback digest never collapses it away.
-        deliberate? (boolean (:deliberate? data))
-        ;; Bound what one shout costs a reader. One bad shout can otherwise
-        ;; pollute the per-agent 10-message ring AND every backbone subscriber.
-        ;; The message keeps its tail under a context id; the task, being a
-        ;; label rather than a body, is still truncated.
-        elided (elide-message (:message data))
-        capped-message (:text elided)
-        payload-ref (:ref elided)
-        capped-task (cap-message (:task data))
-        payload-data (dissoc data :task :message :directory :project-id
-                             :parent-id :broadcast? :broadcast-reason
-                             :deliberate? :to :context-id :status-neutral?)
-        message (cond-> {:event-type event-type
-                         :timestamp now
-                         :project-id project-id
-                         :shout-id shout-id
-                         :data payload-data}
-                  capped-task (assoc :task capped-task)
-                  capped-message (assoc :message capped-message)
-                  parent-id (assoc :parent-id parent-id)
-                  broadcast? (assoc :broadcast? true)
-                  broadcast-reason (assoc :broadcast-reason broadcast-reason)
-                  to (assoc :to to)
-                  context-id (assoc :context-id context-id)
-                  payload-ref (assoc :ref payload-ref)
-                  deliberate? (assoc :deliberate? true))
-        ;; Backbone payload — flat, self-contained, no internal references
-        ;; shout-id enables cross-path dedup (atom + backbone deliver same shout)
-        backbone-payload (cond-> {:agent-id agent-id
-                                  :event-type event-type
-                                  :timestamp now
-                                  :project-id project-id
-                                  :shout-id shout-id
-                                  :message capped-message
-                                  :task capped-task
-                                  :data payload-data}
-                           parent-id (assoc :parent-id parent-id)
-                           broadcast? (assoc :broadcast? true)
-                           broadcast-reason (assoc :broadcast-reason broadcast-reason)
-                           to (assoc :to to)
-                           context-id (assoc :context-id context-id)
-                           payload-ref (assoc :ref payload-ref)
-                           deliberate? (assoc :deliberate? true))]
-    ;; 0. Charge the budget — only for a broadcast the policy ADMITTED. A
-    ;; refused one costs the readers nothing, so charging for it would let a
-    ;; rejected request push a later legitimate one over the edge.
-    (when (and metered? broadcast?)
-      (bledger/record-broadcast! project-id now))
-    ;; 1. Local state — always (bounded-atom for piggyback reads)
-    ;; ONE swap, not a read then a put: two shouts from the same sender in
-    ;; flight together (a release waking two waiters, both sent as the
-    ;; releaser) would each read the old ring and the second put would drop
-    ;; the first message. The ring is resolved per call, never captured at
-    ;; load, so a reloaded hive-agent is written to rather than a stale atom.
-    (when-let [ring (state/current-agent-registry)]
-      (bounded-swap! ring
-                     (fn [entries]
-                       (let [messages (or (get-in entries [agent-id :data :messages]) [])]
-                         (assoc entries agent-id
-                                {:data {:messages (ring-append messages message)
-                                        :last-seen now}
-                                 :created-at (or (get-in entries [agent-id :created-at]) now)
-                                 :last-accessed now})))))
-    ;; 2. DataScript slave status — unless the shout is status-neutral, or
-    ;; the slave already carries that status (every write is a datascript tx
-    ;; that also notifies slave-index subscribers; a progress shout stream
-    ;; would otherwise rewrite :working on every shout).
-    (when-let [status (status-write-needed resolved-slave
-                                           (and resolved-slave
-                                                (shout-slave-status event-type data)))]
-      (proto/update-slave! registry/default-registry resolved-slave-id
-                           {:slave/status status}))
-    ;; 3. Local fanout always, backbone publish when connected
-    (route-shout! (eb/get-backbone) backbone-payload)
-    ;; 4. Log
-    (log/info "Hivemind shout:" agent-id event-type "project:" project-id
-              (cond to (str "-> " to) broadcast? "-> ALL" :else ""))
-    (when to-unresolved?
-      (log/warn "Hivemind shout addressed to an unknown recipient:" to
-                "- no reader may match it"))
-    (cond-> {:delivered true
-             :shout-id shout-id
-             :routing (cond to :direct broadcast? :broadcast :else :spawner)}
-      context-id (assoc :context-id context-id)
-      to (assoc :to to)
-      payload-ref (assoc :ref payload-ref)
-      broadcast-refused (assoc :broadcast-refused broadcast-refused)
-      to-unresolved? (assoc :to-unresolved to))))
+        sctx     (collect-shout-context agent-id data now)]
+    (charge-broadcast! sctx now)
+    (append-to-ring! agent-id (shout-ring-message sctx event-type shout-id now) now)
+    (write-slave-status! sctx event-type data)
+    ;; Local fanout always, backbone publish when connected.
+    (route-shout! (eb/get-backbone)
+                  (shout-backbone-payload sctx agent-id event-type shout-id now))
+    (log-shout! agent-id event-type sctx)
+    (shout-verdict sctx shout-id)))
 
 (defn shout-with-verdict!
   "Send a hivemind message and report HOW it was routed.

@@ -84,114 +84,153 @@
 
     (str/join "\n" @sections)))
 
+;; -----------------------------------------------------------------------------
+;; spawn-context stages (CPPB): pure promote/pipeline fns, one collector per mode
+;; -----------------------------------------------------------------------------
+
+(def ^:private GitInfo
+  [:maybe [:map
+           [:branch {:optional true} [:maybe :string]]
+           [:uncommitted {:optional true} :any]
+           [:last-commit {:optional true} [:maybe :string]]]])
+
+(def ^:private SpawnScope
+  "What every mode collector needs: where, which project, and its label."
+  [:map
+   [:directory [:maybe :string]]
+   [:project-id [:maybe :string]]
+   [:label :string]])
+
+(defn- git-status-md
+  "Pipeline (pure): the Git Status block appended to a reconstructed context,
+   or nil without git info."
+  [git-info]
+  (when git-info
+    (str "\n\n### Git Status\n"
+         "- **Branch**: " (or (:branch git-info) "unknown") "\n"
+         (when (:uncommitted git-info) "- **Uncommitted changes**: yes\n")
+         "- **Last commit**: " (or (:last-commit git-info) "unknown") "\n")))
+
+(m/=> git-status-md [:=> [:cat GitInfo] [:maybe :string]])
+
+(defn- enrich-hints
+  "Promote (pure): fold task-scoped hints (L1 read ids, L2 queries, L3 KG
+   seeds) into the project hint data's :memory-hints. No task hints, no change."
+  [hint-data task-hints]
+  (if-not task-hints
+    hint-data
+    (update hint-data :memory-hints
+            (fn [mh]
+              (cond-> mh
+                (seq (:l1-ids task-hints))
+                (update :read-ids (fnil into []) (:l1-ids task-hints))
+                (seq (:l2-queries task-hints))
+                (update :queries (fnil into []) (:l2-queries task-hints))
+                (seq (:l3-seeds task-hints))
+                (assoc :kg-seeds (mapv :id (:l3-seeds task-hints))
+                       :kg-depth (get (first (:l3-seeds task-hints)) :depth 2)))))))
+
+(m/=> enrich-hints [:=> [:cat :map [:maybe :map]] :map])
+
+(defn- full-context-payload
+  "Pipeline (pure): serialize the :full payload, dropping decisions and stale
+   files when it would exceed `fmt/max-spawn-context-chars`."
+  [payload]
+  (let [context-str (fmt/serialize-spawn-context payload)]
+    (if (> (count context-str) fmt/max-spawn-context-chars)
+      (do (log/warn "spawn-context exceeds token budget:"
+                    (count context-str) "chars, truncating decisions + stale-files")
+          (fmt/serialize-spawn-context (assoc payload :decisions [] :stale-files [])))
+      context-str)))
+
+(m/=> full-context-payload [:=> [:cat :map] :string])
+
+(defn- full-mode-context
+  "Collect + render :full: axioms, priority conventions, decisions, stale
+   files and git status for the project."
+  [{:keys [directory project-id label]}]
+  (let [axioms (catchup-scope/query-axioms project-id)
+        priority-conventions (catchup-scope/query-scoped-entries
+                              "convention" ["catchup-priority"] project-id 50)
+        decisions (catchup-scope/query-scoped-entries "decision" nil project-id 50)]
+    (full-context-payload
+     {:axioms (mapv fmt/entry->axiom-meta axioms)
+      :priority-conventions (mapv fmt/entry->priority-meta priority-conventions)
+      :decisions (mapv #(fmt/entry->catchup-meta % 80) decisions)
+      :stale-files (rescue [] (disc-port/top-stale-files {:n 5, :project-id project-id}))
+      :git-info (catchup-git/gather-git-info directory)
+      :project-name label})))
+
+(m/=> full-mode-context [:=> [:cat SpawnScope] :string])
+
+(defn- decision-kg-seeds
+  "Collect: up to five entry ids from the cached decisions ref, the KG seeds
+   for reconstruction. [] when the ref is missing or unreadable."
+  [refs]
+  (or (when-let [dec-ref (:decisions refs)]
+        (rescue []
+                (when-let [entry (context-store/context-get dec-ref)]
+                  (->> (:data entry) (take 5) (keep :id) vec))))
+      []))
+
+(m/=> decision-kg-seeds [:=> [:cat [:maybe :map]] [:vector :any]])
+
+(defn- ref-mode-context
+  "Collect + render :ref from cached context-store refs: the reconstruction
+   extension's output with git status, else the self-describing ref table.
+   nil when the project has no cached refs (the caller falls back to :full)."
+  [{:keys [directory project-id label]}]
+  (when-let [refs (lookup-context-refs project-id)]
+    (let [git-info (catchup-git/gather-git-info directory)
+          reconstructed (rescue nil (reconstruction/reconstruct-context
+                                     refs (decision-kg-seeds refs) project-id))]
+      (log/info "spawn-context :ref mode, found" (count refs) "refs"
+                {:categories (keys refs) :reconstructed? (boolean (seq reconstructed))})
+      (if (seq reconstructed)
+        (str reconstructed (git-status-md git-info))
+        (serialize-ref-context refs {:project-name label :git-info git-info})))))
+
+(m/=> ref-mode-context [:=> [:cat SpawnScope] [:maybe :string]])
+
+(defn- hints-mode-context
+  "Collect + render :hints through the agent domain's hint generator. nil when
+   that domain is absent (the caller falls back to :full)."
+  [{:keys [directory project-id label]} task task-id]
+  (when-let [generate (soft/resolve-soft 'hive-mcp.agent.hints/generate-hints)]
+    (let [task-hints (when task-id
+                       (rescue nil
+                               (when-let [gen-task (soft/resolve-soft 'hive-mcp.agent.hints/generate-task-hints)]
+                                 (gen-task {:task-id task-id :depth 2}))))
+          serialize (soft/resolve-soft 'hive-mcp.agent.hints/serialize-hints)]
+      (serialize (enrich-hints (generate project-id {:task task}) task-hints)
+                 :project-name label
+                 :git-info (catchup-git/gather-git-info directory)))))
+
+(m/=> hints-mode-context [:=> [:cat SpawnScope [:maybe :string] [:maybe :string]] [:maybe :string]])
+
 (defn spawn-context
-  "Generate a compact context payload for ling spawn injection."
+  "Generate a compact context payload for ling spawn injection.
+
+   :ref and :hints answer through their own collector; either one falling
+   through (no cached refs, no agent domain) answers the :full context
+   instead, as does any other mode."
   ([directory] (spawn-context directory {}))
   ([directory {:keys [mode task task-id] :or {mode :full}}]
    (when (mem-proto/store-set?)
      (rescue nil
              (let [project-id (project-scope/get-current-project-id directory)
-                   project-name (catchup-scope/get-current-project-name directory)]
-
-               (case mode
-                 :ref
-                 (let [refs (lookup-context-refs project-id)]
-                   (if refs
-                     (let [git-info (catchup-git/gather-git-info directory)
-                           kg-node-ids (when-let [dec-ref (:decisions refs)]
-                                         (rescue []
-                                                 (when-let [entry (context-store/context-get dec-ref)]
-                                                   (->> (:data entry)
-                                                        (take 5)
-                                                        (keep :id)
-                                                        vec))))
-                           reconstructed (rescue nil
-                                                 (reconstruction/reconstruct-context
-                                                  refs
-                                                  (or kg-node-ids [])
-                                                  project-id))]
-                       (log/info "spawn-context :ref mode, found" (count refs) "refs"
-                                 {:categories (keys refs) :reconstructed? (boolean (seq reconstructed))})
-                       (if (seq reconstructed)
-                         (str reconstructed
-                              (when git-info
-                                (str "\n\n### Git Status\n"
-                                     "- **Branch**: " (or (:branch git-info) "unknown") "\n"
-                                     (when (:uncommitted git-info) "- **Uncommitted changes**: yes\n")
-                                     "- **Last commit**: " (or (:last-commit git-info) "unknown") "\n")))
-                         (serialize-ref-context refs
-                                                {:project-name (or project-name project-id "global")
-                                                 :git-info git-info})))
-                     (do
-                       (log/info "spawn-context :ref mode, no cached refs found, falling back to :full")
-                       (spawn-context directory {:mode :full :task task :task-id task-id}))))
-
-                 :hints
-                 (if-let [generate (soft/resolve-soft 'hive-mcp.agent.hints/generate-hints)]
-                   (let [hint-data (generate project-id {:task task})
-                         task-hints (when task-id
-                                      (rescue nil
-                                              (when-let [gen-task (soft/resolve-soft 'hive-mcp.agent.hints/generate-task-hints)]
-                                                (gen-task {:task-id task-id :depth 2}))))
-                         enriched-hints (if task-hints
-                                          (update hint-data :memory-hints
-                                                  (fn [mh]
-                                                    (cond-> mh
-                                                      (seq (:l1-ids task-hints))
-                                                      (update :read-ids (fnil into []) (:l1-ids task-hints))
-                                                      (seq (:l2-queries task-hints))
-                                                      (update :queries (fnil into []) (:l2-queries task-hints))
-                                                      (seq (:l3-seeds task-hints))
-                                                      (assoc :kg-seeds (mapv :id (:l3-seeds task-hints))
-                                                             :kg-depth (get (first (:l3-seeds task-hints)) :depth 2)))))
-                                          hint-data)
-                         git-info (catchup-git/gather-git-info directory)
-                         serialize (soft/resolve-soft 'hive-mcp.agent.hints/serialize-hints)]
-                     (serialize enriched-hints
-                                :project-name (or project-name project-id "global")
-                                :git-info git-info))
-                   ;; The hint generator is agent domain (hive-agent). Without
-                   ;; it there are no hints to serialize, so answer the fuller
-                   ;; context rather than an empty hint block, exactly as the
-                   ;; :ref branch above falls back when its cache is cold.
-                   (do
-                     (log/info "spawn-context :hints mode needs the agent domain, falling back to :full")
-                     (spawn-context directory {:mode :full :task task :task-id task-id})))
-
-           ;; :full and default case
-                 (let [axioms (catchup-scope/query-axioms project-id)
-                       priority-conventions (catchup-scope/query-scoped-entries "convention" ["catchup-priority"]
-                                                                                project-id 50)
-                       decisions (catchup-scope/query-scoped-entries "decision" nil project-id 50)
-                       git-info (catchup-git/gather-git-info directory)
-
-                       stale-files (rescue []
-                                           (disc-port/top-stale-files {:n 5, :project-id project-id}))
-
-                       axioms-meta (mapv fmt/entry->axiom-meta axioms)
-                       priority-meta (mapv fmt/entry->priority-meta priority-conventions)
-                       decisions-meta (mapv #(fmt/entry->catchup-meta % 80) decisions)
-
-                       context-str (fmt/serialize-spawn-context
-                                    {:axioms axioms-meta
-                                     :priority-conventions priority-meta
-                                     :decisions decisions-meta
-                                     :stale-files stale-files
-                                     :git-info git-info
-                                     :project-name (or project-name project-id "global")})]
-
-                   (if (> (count context-str) fmt/max-spawn-context-chars)
-                     (do
-                       (log/warn "spawn-context exceeds token budget:"
-                                 (count context-str) "chars, truncating decisions + stale-files")
-                       (fmt/serialize-spawn-context
-                        {:axioms axioms-meta
-                         :priority-conventions priority-meta
-                         :decisions []
-                         :stale-files []
-                         :git-info git-info
-                         :project-name (or project-name project-id "global")}))
-                     context-str))))))))
+                   scope {:directory directory
+                          :project-id project-id
+                          :label (or (catchup-scope/get-current-project-name directory)
+                                     project-id "global")}
+                   ctx (case mode
+                         :ref (ref-mode-context scope)
+                         :hints (hints-mode-context scope task task-id)
+                         nil)]
+               (or ctx
+                   (do (when (#{:ref :hints} mode)
+                         (log/info "spawn-context" mode "mode unavailable, falling back to :full"))
+                       (full-mode-context scope))))))))
 
 ;; =============================================================================
 ;; Contracts

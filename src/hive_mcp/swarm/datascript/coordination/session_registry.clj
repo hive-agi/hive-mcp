@@ -18,10 +18,9 @@
   (delegate/resolve-var "hive-datascript.swarm.coordination.session-registry" sym))
 
 (defn- impl!
-  "impl, after the host adapters (and so the :scope-rows hook) are installed."
+  "impl, after the host adapters are installed (see delegate/ensure-adapters!)."
   [sym]
-  (try ((requiring-resolve 'hive-mcp.swarm.adapters.boot/ensure!))
-       (catch Throwable _ nil))
+  (delegate/ensure-adapters!)
   (impl sym))
 
 (defn clear-completed-tasks! {:arglists '([task-ids] [])} [& args] (apply (impl! 'clear-completed-tasks!) args))

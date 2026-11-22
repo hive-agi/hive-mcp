@@ -56,14 +56,9 @@
   (delegate/resolve-var "hive-agent.swarm.hivemind.conversation" sym))
 
 (defn- impl!
-  "impl, after making sure the host adapters fill the swarm port slots.
-   The adapters are resolved late: a static require would close a load
-   cycle through the events adapter. A failure here (for instance a call
-   made while that cycle is still loading) leaves the ports on their
-   noops until a later call installs them."
+  "impl, after the host adapters are installed (see delegate/ensure-adapters!)."
   [sym]
-  (try ((requiring-resolve 'hive-mcp.swarm.adapters.boot/ensure!))
-       (catch Throwable _ nil))
+  (delegate/ensure-adapters!)
   (impl sym))
 
 (defn ask-envelope

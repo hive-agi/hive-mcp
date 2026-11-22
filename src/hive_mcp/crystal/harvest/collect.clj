@@ -631,6 +631,146 @@
 ;; Harvest Orchestrator
 ;; =============================================================================
 
+(defn- harvest-failure-fallback
+  "The harvest returned when collection itself blows up: every source empty,
+   one :harvest-failed error. A function, not a def, so :session is read at the
+   moment of failure."
+  []
+  {:progress-notes []
+   :completed-tasks []
+   :git-commits []
+   :recalls {}
+   :hivemind-messages []
+   :kanban-activity {:tasks-completed [] :completed-count 0}
+   :kg-edges-created {:edges [] :count 0 :by-relation {}}
+   :kanban-movements {:movements [] :count 0 :transitions {}}
+   :session-temporal {:session-start nil :session-end nil :duration-minutes 0}
+   :memory-ids-created []
+   :memory-ids-accessed []
+   :session (result/rescue "unknown" (crystal/session-id))
+   :summary {:progress-count 0
+             :task-count 0
+             :commit-count 0
+             :recall-count 0
+             :hivemind-shout-count 0
+             :kanban-completed 0
+             :kg-edge-count 0
+             :kanban-movement-count 0
+             :created-count 0
+             :accessed-count 0
+             :created-by-type {}}
+   :errors [{:type :harvest-failed :fn "harvest-all"}]})
+
+(def ^:private harvest-timeout-ms 10000)
+
+(defn- timeout-fallback
+  "Pure: the value a source reports when it misses the harvest deadline."
+  [base fn-name]
+  (assoc base :error {:type :harvest-timeout :fn fn-name}))
+
+(defn- start-harvest-sources!
+  "Boundary: start the 8 parallel source reads on the IO pool. Returns a map of
+   source key -> future."
+  [{:keys [dir effective-agent project-id scoped lineage]}]
+  {:progress   (pool/with-io (harvest-progress-direct {:directory dir}))
+   :tasks      (pool/with-io (harvest-tasks-direct scoped))
+   :commits    (pool/with-io (harvest-commits-direct {:directory dir :agent-id effective-agent}))
+   :recalls    (pool/with-io (let [all (result/rescue {} (recall/get-buffered-recalls))]
+                               (if lineage
+                                 (scope-recalls all lineage project-id)
+                                 all)))
+   :hivemind   (pool/with-io (harvest-hivemind-messages {:directory dir, :agent-id effective-agent, :lineage lineage}))
+   :kanban     (pool/with-io (harvest-kanban-activity scoped))
+   :kg-edges   (pool/with-io (harvest-kg-edges-direct {:directory dir :agent-id effective-agent}))
+   :kanban-mvs (pool/with-io (harvest-kanban-movements-direct scoped))})
+
+(defn- await-harvest-sources
+  "Boundary: deref every source future against the harvest deadline. A source
+   that misses it reports an empty value carrying a :harvest-timeout error."
+  [futures]
+  (let [await (fn [k base fn-name]
+                (deref (get futures k) harvest-timeout-ms (timeout-fallback base fn-name)))]
+    {:progress   (await :progress {:notes [] :count 0} "harvest-session-progress")
+     :tasks      (await :tasks {:tasks [] :count 0} "harvest-completed-tasks")
+     :commits    (await :commits {:commits [] :count 0} "harvest-git-commits")
+     :recalls    (deref (:recalls futures) harvest-timeout-ms {})
+     :hivemind   (await :hivemind {:messages [] :count 0} "harvest-hivemind-messages")
+     :kanban     (await :kanban {:tasks-completed [] :completed-count 0} "harvest-kanban-activity")
+     :kg-edges   (await :kg-edges {:edges [] :count 0 :by-relation {}} "harvest-kg-edges")
+     :kanban-mvs (await :kanban-mvs {:movements [] :count 0 :transitions {}} "harvest-kanban-movements")}))
+
+(defn- source-errors
+  "Pure: the non-nil :error of each harvested source, in source order."
+  [{:keys [progress tasks commits hivemind kanban kg-edges kanban-mvs]}]
+  (filterv some? (map :error [progress tasks commits hivemind kanban kg-edges kanban-mvs])))
+
+(defn- harvest-session-timing
+  "Boundary: the session's temporal metadata, empty when it cannot be read."
+  [effective-agent]
+  (let [session-start (or (crystal/get-session-start effective-agent)
+                          (crystal/get-session-start "_global")
+                          (crystal/get-session-start nil))]
+    (result/rescue
+     {:session-start nil :session-end nil :duration-minutes 0}
+     (crystal/session-timing-metadata session-start (java.time.Instant/now)))))
+
+(defn- flush-created-ids!
+  "Boundary: drain the buffered created-memory ids for PROJECT-ID, narrowed to
+   the caller's lineage when it has one."
+  [project-id lineage]
+  (let [flushed (result/rescue [] (recall/flush-created-ids! project-id))]
+    (if lineage
+      (scope-created-ids flushed project-id)
+      flushed)))
+
+(defn- harvest-world
+  "Boundary: resolve who and where this harvest is for. The swarm world is read
+   ONCE for the whole harvest: a coordinator owns a row by walking the parent map
+   upward, and paying for it per source would read the store three times."
+  [{:keys [directory agent-id session-ref parent-of lineage]}]
+  (let [dir (or directory (ctx/current-directory))
+        parent-of (or parent-of
+                      (when session-ref
+                        (result/rescue {} (session/parent-of))))]
+    {:dir dir
+     :effective-agent (or agent-id (ctx/current-agent-id))
+     :project-id (when dir (scope/get-current-project-id dir))
+     :lineage lineage
+     :scoped {:directory dir :session-ref session-ref :parent-of parent-of}}))
+
+(defn- log-harvest-timing!
+  [t0 {:keys [progress tasks commits recalls hivemind kanban kg-edges kanban-mvs]} session-ref]
+  (log/info "harvest-all: parallel collection" (- (System/currentTimeMillis) t0) "ms"
+            "progress:" (:count progress) "tasks:" (:count tasks)
+            "commits:" (:count commits) "recalls:" (count recalls)
+            "hivemind:" (:count hivemind)
+            "kanban:" (:completed-count kanban)
+            "kg-edges:" (:count kg-edges)
+            "kanban-mvs:" (:count kanban-mvs)
+            "scoped-to:" (:session/id session-ref)))
+
+(defn- finish-harvest
+  "Pure: assemble the harvest map from the collected SOURCES and add what this
+   harvest consumed (so the wrap clears exactly that and leaves a concurrent
+   session's rows alone) and, for a caller-scoped harvest, the scope the
+   synthesizer's own shout filter reads."
+  [{:keys [dir effective-agent project-id lineage]} sources extras session-ref]
+  (let [{:keys [tasks kanban-mvs]} sources]
+    (cond->
+     (assoc
+      (assemble-harvest-result
+       (merge sources
+              extras
+              {:dir dir
+               :effective-agent effective-agent
+               :errors (source-errors sources)}))
+      :harvested-task-ids     (vec (distinct (keep :id (:tasks tasks))))
+      :harvested-movement-ids (vec (distinct (keep :kanban-movement/id
+                                                   (:movements kanban-mvs))))
+      :session-ref            session-ref)
+      lineage (assoc :project-id project-id
+                     :coordination-agent-ids (vec (sort lineage))))))
+
 (defn harvest-all
   "Harvest all session data for wrap crystallization.
    Orchestrates 8 sources in parallel with 10s timeout.
@@ -651,124 +791,29 @@
                      Kanban 20260915164015-7e057e5b.
      :parent-of   -- session-id -> parent session-id, for the ownership walk.
                      Derived from the swarm world when a ref is given and this
-                     is absent."
+                     is absent.
+
+   CPPB: `harvest-world` (collect scope) -> `start-harvest-sources!` /
+   `await-harvest-sources` (collect) -> `finish-harvest` (pure assemble)."
   ([] (harvest-all nil))
-  ([{:keys [directory agent-id session-ref parent-of lineage], :as _opts}]
-   (result/rescue {:progress-notes []
-                   :completed-tasks []
-                   :git-commits []
-                   :recalls {}
-                   :hivemind-messages []
-                   :kanban-activity {:tasks-completed [] :completed-count 0}
-                   :kg-edges-created {:edges [] :count 0 :by-relation {}}
-                   :kanban-movements {:movements [] :count 0 :transitions {}}
-                   :session-temporal {:session-start nil :session-end nil :duration-minutes 0}
-                   :memory-ids-created []
-                   :memory-ids-accessed []
-                   :session (result/rescue "unknown" (crystal/session-id))
-                   :summary {:progress-count 0
-                             :task-count 0
-                             :commit-count 0
-                             :recall-count 0
-                             :hivemind-shout-count 0
-                             :kanban-completed 0
-                             :kg-edge-count 0
-                             :kanban-movement-count 0
-                             :created-count 0
-                             :accessed-count 0
-                             :created-by-type {}}
-                   :errors [{:type :harvest-failed :fn "harvest-all"}]}
-                  (let [dir (or directory (ctx/current-directory))
-                        effective-agent (or agent-id (ctx/current-agent-id))
-                        project-id (when dir (scope/get-current-project-id dir))
-                        ;; Read the world ONCE for the whole harvest: a coordinator
-                        ;; owns a row by walking this map upward, and paying for it
-                        ;; per source would read the store three times.
-                        parent-of (or parent-of
-                                      (when session-ref
-                                        (result/rescue {} (session/parent-of))))
-                        scoped {:directory dir :session-ref session-ref :parent-of parent-of}
-                        t0 (System/currentTimeMillis)
-                        f-progress   (pool/with-io (harvest-progress-direct {:directory dir}))
-                        f-tasks      (pool/with-io (harvest-tasks-direct scoped))
-                        f-commits    (pool/with-io (harvest-commits-direct {:directory dir :agent-id effective-agent}))
-                        f-recalls    (pool/with-io (let [all (result/rescue {} (recall/get-buffered-recalls))]
-                                                      (if lineage
-                                                        (scope-recalls all lineage project-id)
-                                                        all)))
-                        f-hivemind   (pool/with-io (harvest-hivemind-messages {:directory dir, :agent-id effective-agent, :lineage lineage}))
-                        f-kanban     (pool/with-io (harvest-kanban-activity scoped))
-                        f-kg-edges   (pool/with-io (harvest-kg-edges-direct {:directory dir :agent-id effective-agent}))
-                        f-kanban-mvs (pool/with-io (harvest-kanban-movements-direct scoped))
-                        harvest-timeout 10000
-                        progress   (deref f-progress harvest-timeout {:notes [] :count 0 :error {:type :harvest-timeout :fn "harvest-session-progress"}})
-                        tasks      (deref f-tasks harvest-timeout {:tasks [] :count 0 :error {:type :harvest-timeout :fn "harvest-completed-tasks"}})
-                        commits    (deref f-commits harvest-timeout {:commits [] :count 0 :error {:type :harvest-timeout :fn "harvest-git-commits"}})
-                        recalls    (deref f-recalls harvest-timeout {})
-                        hivemind   (deref f-hivemind harvest-timeout {:messages [] :count 0 :error {:type :harvest-timeout :fn "harvest-hivemind-messages"}})
-                        kanban     (deref f-kanban harvest-timeout {:tasks-completed [] :completed-count 0 :error {:type :harvest-timeout :fn "harvest-kanban-activity"}})
-                        kg-edges   (deref f-kg-edges harvest-timeout {:edges [] :count 0 :by-relation {} :error {:type :harvest-timeout :fn "harvest-kg-edges"}})
-                        kanban-mvs (deref f-kanban-mvs harvest-timeout {:movements [] :count 0 :transitions {} :error {:type :harvest-timeout :fn "harvest-kanban-movements"}})
-                        _ (log/info "harvest-all: parallel collection" (- (System/currentTimeMillis) t0) "ms"
-                                    "progress:" (:count progress) "tasks:" (:count tasks)
-                                    "commits:" (:count commits) "recalls:" (count recalls)
-                                    "hivemind:" (:count hivemind)
-                                    "kanban:" (:completed-count kanban)
-                                    "kg-edges:" (:count kg-edges)
-                                    "kanban-mvs:" (:count kanban-mvs)
-                                    "scoped-to:" (:session/id session-ref))
-                        session-start (or (crystal/get-session-start effective-agent)
-                                          (crystal/get-session-start "_global")
-                                          (crystal/get-session-start nil))
-                        session-timing (result/rescue
-                                        {:session-start nil :session-end nil :duration-minutes 0}
-                                        (crystal/session-timing-metadata
-                                         session-start
-                                         (java.time.Instant/now)))
-                        memory-ids-created (let [flushed (result/rescue [] (recall/flush-created-ids! project-id))]
-                                             (if lineage
-                                               (scope-created-ids flushed project-id)
-                                               flushed))
-                        _ (log/info "harvest-all: flushed" (count memory-ids-created)
-                                    "created-ids for project-id" project-id
-                                    "ids:" (mapv :id memory-ids-created))
-                        memory-ids-accessed (vec (keys recalls))
-                        errors (filterv some? [(:error progress)
-                                               (:error tasks)
-                                               (:error commits)
-                                               (:error hivemind)
-                                               (:error kanban)
-                                               (:error kg-edges)
-                                               (:error kanban-mvs)])
-                        session (crystal/session-id)]
-                    (cond->
-                     (assoc
-                      (assemble-harvest-result
-                       {:progress            progress
-                        :tasks               tasks
-                        :commits             commits
-                        :recalls             recalls
-                        :hivemind            hivemind
-                        :kanban              kanban
-                        :kg-edges            kg-edges
-                        :kanban-mvs          kanban-mvs
-                        :session-timing      session-timing
-                        :memory-ids-created  memory-ids-created
-                        :memory-ids-accessed memory-ids-accessed
-                        :dir                 dir
-                        :effective-agent     effective-agent
-                        :errors              errors
-                        :session             session})
-                      ;; What this harvest actually consumed, so the wrap can clear
-                      ;; exactly that and leave a concurrent session's rows alone.
-                      :harvested-task-ids     (vec (distinct (keep :id (:tasks tasks))))
-                      :harvested-movement-ids (vec (distinct (keep :kanban-movement/id
-                                                                  (:movements kanban-mvs))))
-                      :session-ref            session-ref)
-                      ;; A caller-scoped harvest names its scope, which the
-                      ;; synthesizer's own shout filter reads.
-                      lineage (assoc :project-id project-id
-                                     :coordination-agent-ids (vec (sort lineage))))))))
+  ([{:keys [session-ref], :as opts}]
+   (result/rescue
+    (harvest-failure-fallback)
+    (let [world (harvest-world opts)
+          t0 (System/currentTimeMillis)
+          sources (await-harvest-sources (start-harvest-sources! world))
+          _ (log-harvest-timing! t0 sources session-ref)
+          {:keys [effective-agent project-id lineage]} world
+          created (flush-created-ids! project-id lineage)
+          _ (log/info "harvest-all: flushed" (count created)
+                      "created-ids for project-id" project-id
+                      "ids:" (mapv :id created))]
+      (finish-harvest world sources
+                      {:session-timing (harvest-session-timing effective-agent)
+                       :memory-ids-created created
+                       :memory-ids-accessed (vec (keys (:recalls sources)))
+                       :session (crystal/session-id)}
+                      session-ref)))))
 
 (m/=> harvest-all
       [:function

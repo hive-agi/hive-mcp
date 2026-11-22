@@ -1,0 +1,133 @@
+{:strict-tiny [],
+ :zero-budget [],
+ :fifo
+ [{:result
+   {:batch ["ax-1" "c-1" "n-1" "d-1"],
+    :remaining 0,
+    :total 4,
+    :delivered 4,
+    :seq 1,
+    :done true,
+    :pull
+    "Rows with :ref are POINTERS, not content. Pull one with `memory get :id <id>`, several with `memory batch-get :ids [...]`, or follow its edges with `memory kg traverse :start_node <id>`. Pull what the current task needs; ignore the rest."},
+   :buffer
+   {:entries [],
+    :cursor 0,
+    :done true,
+    :seq-num 1,
+    :sent #{"d-1" "n-1" "ax-1" "c-1"}}}],
+ :fifo-refs
+ [{:result
+   {:batch ["ax-1" "c-1" "n-1" "d-1"],
+    :remaining 0,
+    :total 4,
+    :delivered 4,
+    :seq 1,
+    :done true,
+    :context-refs {:axioms "ctx-1", :decisions "ctx-2"},
+    :pull
+    "Rows with :ref are POINTERS, not content. Pull one with `memory get :id <id>`, several with `memory batch-get :ids [...]`, or follow its edges with `memory kg traverse :start_node <id>`. Pull what the current task needs; ignore the rest."},
+   :buffer
+   {:entries [],
+    :cursor 0,
+    :done true,
+    :seq-num 1,
+    :sent #{"d-1" "n-1" "ax-1" "c-1"},
+    :context-refs {:axioms "ctx-1", :decisions "ctx-2"},
+    :refs-delivered? true}}],
+ :ranked-strict
+ [{:result
+   {:batch ["ax-1"],
+    :remaining 3,
+    :total 4,
+    :delivered 1,
+    :seq 1,
+    :context-refs {:axioms "ctx-9"}},
+   :buffer
+   {:entries ["ax-1" "d-1" "c-1" "n-1"],
+    :cursor 1,
+    :done false,
+    :seq-num 1,
+    :sent #{},
+    :context-refs {:axioms "ctx-9"},
+    :refs-delivered? true,
+    :offers {"c-1" 1, "n-1" 1, "d-1" 1}}}
+  {:result
+   {:batch ["d-1"],
+    :remaining 2,
+    :total 4,
+    :delivered 2,
+    :seq 2,
+    :pull
+    "Rows with :ref are POINTERS, not content. Pull one with `memory get :id <id>`, several with `memory batch-get :ids [...]`, or follow its edges with `memory kg traverse :start_node <id>`. Pull what the current task needs; ignore the rest."},
+   :buffer
+   {:entries ["ax-1" "d-1" "c-1" "n-1"],
+    :cursor 2,
+    :done false,
+    :seq-num 2,
+    :sent #{},
+    :context-refs {:axioms "ctx-9"},
+    :refs-delivered? true,
+    :offers {"c-1" 2, "n-1" 2, "d-1" 1}}}
+  {:result
+   {:batch ["c-1"], :remaining 1, :total 4, :delivered 3, :seq 3},
+   :buffer
+   {:entries ["ax-1" "d-1" "c-1" "n-1"],
+    :cursor 3,
+    :done false,
+    :seq-num 3,
+    :sent #{},
+    :context-refs {:axioms "ctx-9"},
+    :refs-delivered? true,
+    :offers {"c-1" 2, "n-1" 3, "d-1" 1}}}],
+ :ranked
+ [{:result
+   {:batch ["ax-1" "c-1" "d-1" "n-1"],
+    :remaining 0,
+    :total 4,
+    :delivered 4,
+    :seq 1,
+    :done true,
+    :pull
+    "Rows with :ref are POINTERS, not content. Pull one with `memory get :id <id>`, several with `memory batch-get :ids [...]`, or follow its edges with `memory kg traverse :start_node <id>`. Pull what the current task needs; ignore the rest."},
+   :buffer
+   {:entries [],
+    :cursor 0,
+    :done true,
+    :seq-num 1,
+    :sent #{"d-1" "n-1" "ax-1" "c-1"},
+    :offers {}}}],
+ :empty [],
+ :refs-only
+ [{:result
+   {:batch [],
+    :remaining 0,
+    :total 0,
+    :delivered 0,
+    :seq 1,
+    :done true,
+    :context-refs {:axioms "ctx-only"}},
+   :buffer
+   {:entries [],
+    :cursor 0,
+    :done true,
+    :seq-num 1,
+    :sent #{},
+    :context-refs {:axioms "ctx-only"},
+    :refs-delivered? true}}],
+ :strict-small
+ [{:result
+   {:batch ["ax-1" "c-1"],
+    :remaining 2,
+    :total 4,
+    :delivered 2,
+    :seq 1,
+    :context-refs {:axioms "ctx-1"}},
+   :buffer
+   {:entries ["ax-1" "c-1" "n-1" "d-1"],
+    :cursor 2,
+    :done false,
+    :seq-num 1,
+    :sent #{},
+    :context-refs {:axioms "ctx-1"},
+    :refs-delivered? true}}]}

@@ -1,0 +1,7 @@
+{:active-no-ids :proceed,
+ :completed :refused,
+ :completed-force :proceed,
+ :draft-plan :proceed,
+ :no-entry :proceed,
+ :note-entry :refused,
+ :note-forced :refused}

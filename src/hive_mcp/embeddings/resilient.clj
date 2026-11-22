@@ -179,6 +179,114 @@
         (when-not @started (release))
         outcome))))
 
+;; -----------------------------------------------------------------------------
+;; run-chain stages (CPPB): promote (chain-step) -> boundary (attempt-entry!)
+;; with pure exhaustion constructors
+;; -----------------------------------------------------------------------------
+
+(def ^:private ExInfo [:fn #(instance? clojure.lang.ExceptionInfo %)])
+
+(def ^:private ChainStep
+  [:enum :retry-skipped :providers-exhausted :deadline :attempt])
+
+(def ^:private AttemptStep
+  "What one guarded attempt on a chain entry came to."
+  [:map
+   [:step [:enum :skipped :not-admitted :ok :failed]]
+   [:value {:optional true} :any]
+   [:failure {:optional true} :map]
+   [:retry? {:optional true} :boolean]])
+
+(defn- chain-step
+  "Promote (pure): the chain loop's next move. With every provider skipped by
+   an open circuit and nothing yet failed, the skipped entries are retried
+   once with the circuit bypassed, so a call never fails without one real
+   attempt."
+  [entry failures skipped forced? expired?]
+  (cond
+    (and (nil? entry) (empty? failures) (seq skipped) (not forced?) (not expired?)) :retry-skipped
+    (and (nil? entry) (not expired?)) :providers-exhausted
+    expired? :deadline
+    :else :attempt))
+
+(m/=> chain-step [:=> [:cat :any [:sequential :map] [:sequential :any] :boolean :boolean] ChainStep])
+
+(defn- deadline-exhausted
+  "Pure: the :exhausted-by :deadline error naming every failure and every
+   provider never tried."
+  [elapsed-ms total-budget-ms untried failures]
+  (ex-info (str "Embedding chain ran out of time after " elapsed-ms
+                "ms (total budget " total-budget-ms "ms)"
+                (when (seq failures)
+                  (str " — " (failures-summary failures)))
+                (when (seq untried)
+                  (str " — never tried: "
+                       (str/join ", " (map describe untried)))))
+           {:error :embedder/chain-exhausted
+            :exhausted-by :deadline
+            :elapsed-ms elapsed-ms
+            :total-budget-ms total-budget-ms
+            :untried (mapv describe untried)
+            :failures failures}))
+
+(m/=> deadline-exhausted [:=> [:cat :int :int [:sequential :map] [:sequential :map]] ExInfo])
+
+(defn- providers-exhausted
+  "Pure: the :exhausted-by :providers error, every provider tried and failed."
+  [elapsed-ms failures skipped]
+  (ex-info (str "All embedding providers in the chain failed after "
+                elapsed-ms "ms — " (failures-summary failures))
+           {:error :embedder/chain-exhausted
+            :exhausted-by :providers
+            :elapsed-ms elapsed-ms
+            :failures failures
+            :untried skipped}))
+
+(m/=> providers-exhausted [:=> [:cat :int [:sequential :map] [:sequential :any]] ExInfo])
+
+(defn- settle-attempt!
+  "Pipeline: fold one admitted attempt's outcome into the provider's circuit.
+   A warm provider's timeout is retried once on the cold budget and leaves
+   the circuit closed; any other failure opens it."
+  [{:keys [health cooldown-ms clock]} id was-warm outcome]
+  (adt/adt-case AttemptOutcome outcome
+                :attempt/ok (do (record-health! health id (clock) cooldown-ms true)
+                                {:step :ok :value (:value outcome)})
+                :attempt/failed (let [retry? (boolean (and was-warm
+                                                           (= :weave/timeout (:error outcome))
+                                                           (not (get-in @health [id :probing]))))]
+                                  (when-not retry?
+                                    (record-health! health id (clock) cooldown-ms false))
+                                  {:step :failed
+                                   :retry? retry?
+                                   :failure (select-keys outcome [:provider :model :elapsed-ms
+                                                                  :budget-ms :error :message])})))
+
+(m/=> settle-attempt! [:=> [:cat :map :any :boolean :any] AttemptStep])
+
+(defn- attempt-entry!
+  "Boundary: one circuit-guarded, gate-admitted attempt on `entry`. A provider
+   whose circuit is open (and not `forced?`) is :skipped; a permit wait that
+   outlives the deadline is :not-admitted and frees any half-open probe it
+   reserved; a throw opens the circuit and propagates."
+  [{:keys [budget-ms cold-budget-ms warmth health cooldown-ms clock] :as embedder}
+   entry call dl forced?]
+  (let [id (identity-of entry)]
+    (if-not (or forced? (claim-provider! health id (clock)))
+      {:step :skipped}
+      (let [was-warm (contains? @warmth id)
+            per (attempt-budget warmth entry budget-ms cold-budget-ms)
+            outcome (try (admitted-attempt warmth entry call dl per)
+                         (catch Throwable t
+                           (record-health! health id (clock) cooldown-ms false)
+                           (throw t)))]
+        (if (= ::not-admitted outcome)
+          (do (swap! health #(if (get-in % [id :probing]) (dissoc % id) %))
+              {:step :not-admitted})
+          (settle-attempt! embedder id was-warm outcome))))))
+
+(m/=> attempt-entry! [:=> [:cat :map :map :any :any :boolean] AttemptStep])
+
 (defn- run-chain
   "Try each provider in `chain`, bounded by ONE deadline.
 
@@ -193,73 +301,28 @@
    Returns the first success value; throws ex-info :embedder/chain-exhausted
    (:exhausted-by :providers | :deadline) when none succeeds. The message names
    every provider tried, its model and the elapsed time, and :untried names
-   every provider never admitted or never reached."
-  [{:keys [chain budget-ms cold-budget-ms total-budget-ms warmth health cooldown-ms clock]} call]
+   every provider never admitted or never reached.
+
+   Stages: `chain-step` decides, `attempt-entry!` (-> `settle-attempt!`)
+   attempts, `providers-exhausted` / `deadline-exhausted` build the errors."
+  [{:keys [chain total-budget-ms] :as embedder} call]
   (let [t0 (System/nanoTime)
         elapsed #(long (/ (- (System/nanoTime) t0) 1e6))
         dl (dl/deadline total-budget-ms)
-        exhausted (fn [untried failures]
-                    (let [ms (elapsed)]
-                      (ex-info (str "Embedding chain ran out of time after " ms
-                                    "ms (total budget " total-budget-ms "ms)"
-                                    (when (seq failures)
-                                      (str " — " (failures-summary failures)))
-                                    (when (seq untried)
-                                      (str " — never tried: "
-                                           (str/join ", " (map describe untried)))))
-                               {:error :embedder/chain-exhausted
-                                :exhausted-by :deadline
-                                :elapsed-ms ms
-                                :total-budget-ms total-budget-ms
-                                :untried (mapv describe untried)
-                                :failures failures})))]
+        out-of-time #(deadline-exhausted (elapsed) total-budget-ms %1 %2)]
     (loop [[entry & more] chain failures [] skipped [] forced? false]
-      (cond
-        ;; Every provider was skipped by an open circuit. A call never fails
-        ;; without one real attempt, so a single-provider chain still embeds
-        ;; after a transient failure: retry the skipped entries, circuit bypassed.
-        (and (nil? entry) (empty? failures) (seq skipped) (not forced?)
-             (not (dl/expired? dl)))
-        (recur skipped [] [] true)
-
-        (and (nil? entry) (not (dl/expired? dl)))
-        (let [ms (elapsed)]
-          (throw (ex-info (str "All embedding providers in the chain failed after "
-                               ms "ms — " (failures-summary failures))
-                          {:error :embedder/chain-exhausted
-                           :exhausted-by :providers
-                           :elapsed-ms ms
-                           :failures failures
-                           :untried skipped})))
-        (dl/expired? dl)
-        (throw (exhausted (concat skipped (when entry (cons entry more))) failures))
-        :else
-        (let [id (identity-of entry)]
-          (if-not (or forced? (claim-provider! health id (clock)))
-            (recur more failures (conj skipped entry) forced?)
-            (let [was-warm (contains? @warmth id)
-                  per (attempt-budget warmth entry budget-ms cold-budget-ms)
-                  outcome (try (admitted-attempt warmth entry call dl per)
-                               (catch Throwable t
-                                 (record-health! health id (clock) cooldown-ms false)
-                                 (throw t)))]
-              (if (= ::not-admitted outcome)
-                (do (swap! health #(if (get-in % [id :probing]) (dissoc % id) %))
-                    (throw (exhausted (concat skipped (cons entry more)) failures)))
-                (adt/adt-case AttemptOutcome outcome
-                              :attempt/ok (do (record-health! health id (clock) cooldown-ms true)
-                                              (:value outcome))
-                              :attempt/failed (let [failures (conj failures
-                                                                   (select-keys outcome
-                                                                                [:provider :model :elapsed-ms
-                                                                                 :budget-ms :error :message]))
-                                                    retry? (and was-warm
-                                                                (= :weave/timeout (:error outcome))
-                                                                (not (get-in @health [id :probing])))]
-                                                (when-not retry?
-                                                  (record-health! health id (clock) cooldown-ms false))
-                                                (recur (if retry? (cons entry more) more)
-                                                       failures skipped forced?)))))))))))
+      (case (chain-step entry failures skipped forced? (dl/expired? dl))
+        :retry-skipped (recur skipped [] [] true)
+        :providers-exhausted (throw (providers-exhausted (elapsed) failures skipped))
+        :deadline (throw (out-of-time (concat skipped (when entry (cons entry more))) failures))
+        :attempt
+        (let [{:keys [step value failure retry?]} (attempt-entry! embedder entry call dl forced?)]
+          (case step
+            :ok value
+            :skipped (recur more failures (conj skipped entry) forced?)
+            :not-admitted (throw (out-of-time (concat skipped (cons entry more)) failures))
+            :failed (recur (if retry? (cons entry more) more)
+                           (conj failures failure) skipped forced?)))))))
 
 (defn- timed-chain
   "`run-chain`, crediting its wall time (gate wait included) to the memory add

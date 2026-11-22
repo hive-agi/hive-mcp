@@ -92,6 +92,24 @@
   (remove-watch (:state slot) key)
   slot)
 
+(def MapRef
+  "A deref-able holder of a keyed map: the plain `(atom {})` registries that
+   sit beside the slot types."
+  [:fn {:gen/elements [(atom {})]} #(instance? clojure.lang.IDeref %)])
+
+(defn atom-get
+  "The value under `k` in the map held by `map-ref`, or `default` (nil when
+   omitted). The one read behind every plain atom-backed registry lookup."
+  ([map-ref k] (atom-get map-ref k nil))
+  ([map-ref k default] (get @map-ref k default)))
+
+(m/=> atom-get
+      [:function
+       [:=> [:cat MapRef :any] :any]
+       [:=> [:cat MapRef :any :any] :any]])
+
+
+
 ;;; ============================================================================
 ;;; IRegistry — a keyed multi-impl registry
 ;;; ============================================================================
@@ -166,6 +184,13 @@
   "Any slot `watch-slot!` can watch: a SingleSlot or a MultiSlot, both of
    which keep their impls in a :state atom."
   [:or SlotValue RegistryValue])
+
+(defn reg-has?
+  "True when `registry` (an IRegistry) holds an entry under `k`."
+  [registry k]
+  (contains? (reg-snapshot registry) k))
+
+(m/=> reg-has? [:=> [:cat RegistryValue :any] :boolean])
 
 (m/=> multi-slot [:=> [:cat MultiSlotConfig] RegistryValue])
 
