@@ -4,8 +4,9 @@
    [:transports :delivery :chain]).
 
    The target is resolved FIRST, from the id alone:
-     :coordinator  `coordinator:<digits>`, a Claude Code session, never in the
-                   swarm registry
+     :coordinator  `coordinator:<pid>` or `coordinator:<first 8 hex of the
+                   session id>` (bb-mcp #45), a Claude Code session, never
+                   in the swarm registry (`coordinator-id?`)
      :ling         a row in the swarm registry
      nil           unknown: an addressing error, the chain is never tried
 
@@ -35,7 +36,9 @@
             [hive-mcp.nats.ling-inbox :as ling-inbox]
             [hive-mcp.transport.registry :as reg]
             [malli.core :as m]
-            [hive-mcp.resilience.swallow :as swallow]))
+            [hive-mcp.resilience.swallow :as swallow]
+            [hive-dsl.context.identity :as ctx-id]
+            [hive-mcp.channel.audience :as audience]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -47,6 +50,16 @@
 (def ^:dynamic *connection*
   "0-arg port: the live NATS connection, or nil."
   (fn [] (client/current-connection)))
+
+(def ^:dynamic *inbox-status*
+  "2-arg port (connection, inbox id): the inbox status map with :armed?
+   (hive-mcp.nats.inbox/status)."
+  (fn [conn id] (inbox/status conn id)))
+
+(def ^:dynamic *inbox-send*
+  "2-arg port (connection, message {:to id :body ..}): the send receipt
+   (hive-mcp.nats.inbox/send!)."
+  (fn [conn msg] (inbox/send! conn msg)))
 
 (defn- registry-row
   "The swarm registry row of `id`, resolved at call time. nil when the swarm
@@ -128,13 +141,20 @@
 (def ^:private coordinator-prefix "coordinator:")
 
 (defn coordinator-id?
-  "True for `coordinator:<digits>`, the id of a Claude Code session."
+  "True for the id of a Claude Code session, in either spelling bb-mcp
+   stamps: `coordinator:<pid>` (decimal digits) or `coordinator:<first 8
+   lowercase hex of the session id>` (bb-mcp #45). The token is read by
+   hive-mcp.channel.audience/coordinator-session and its shape judged by
+   hive-dsl.context.identity/session-id-shape?, the one grammar the other
+   coordinator readers share. The id must be exactly `coordinator:<token>`:
+   a `-<project>` lane suffix, a lane with no session (`coordinator`,
+   `coordinator-hive`), a ling id or any other token shape is not one."
   [id]
   (boolean
-   (and (string? id)
-        (str/starts-with? id coordinator-prefix)
-        (let [pid (subs id (count coordinator-prefix))]
-          (and (seq pid) (every? #(Character/isDigit ^char %) pid))))))
+   (when (string? id)
+     (when-let [token (audience/coordinator-session id)]
+       (and (= id (str coordinator-prefix token))
+            (ctx-id/session-id-shape? token))))))
 
 (defn target-kind
   "What `id` addresses: :coordinator, :ling (a swarm registry row) or nil."
@@ -204,7 +224,7 @@
    consumer (it dedups by id) and to the stream (duplicate window)."
   [conn inbox-id from]
   (fn [{:keys [task-id task ling-seq]}]
-    (let [receipt (inbox/send! conn (cond-> {:id (str task-id) :to inbox-id :body task
+    (let [receipt (*inbox-send* conn (cond-> {:id (str task-id) :to inbox-id :body task
                                              :meta (cond-> {:task-id (str task-id)}
                                                      ;; send order across the ling's
                                                      ;; routes (nats.ling-inbox/seq-stamp!)
@@ -249,8 +269,8 @@
     :else
     (if-let [conn (*connection*)]
       (if-let [id (inbox/safe-encode-inbox-id to)]
-        (if (:armed? (inbox/status conn id))
-          (r/ok (select-keys (inbox/send! conn (cond-> {:to id :body message}
+        (if (:armed? (*inbox-status* conn id))
+          (r/ok (select-keys (*inbox-send* conn (cond-> {:to id :body message}
                                                  from (assoc :from from)))
                              [:id :to :subject :seq :duplicate?]))
           (inapplicable :nats-inbox kind (str "inbox " id " is not armed")))
