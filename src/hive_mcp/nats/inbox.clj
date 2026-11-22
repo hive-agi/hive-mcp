@@ -270,6 +270,40 @@
      {:inbox id :messages msgs
       :pending (or (:pending (info->status id (consumer-info conn id))) 0)})))
 
+(def Fetched
+  "One message pulled but NOT acked: the caller acks after it has handed the
+   message on (hive-mcp.nats.inbox-stream acks after the SSE write)."
+  [:map [:message Delivered] [:ack! ifn?] [:nak! ifn?]])
+
+(defn fetch!
+  "Pull up to `n` (default 10, max 256) messages from armed inbox `id`
+   WITHOUT acking them. Each answer is a `Fetched`: call :ack! once the
+   message is delivered, :nak! to have the broker redeliver it now. One left
+   alone is redelivered after the durable's 30 s ack wait. `wait-ms` (default
+   0) waits that long for a first message. Throws :inbox/not-armed."
+  ([conn id] (fetch! conn id nil))
+  ([^Connection conn raw-id {:keys [n wait-ms]}]
+   (let [id   (encode-inbox-id raw-id)
+         _    (when-not (consumer-info conn id)
+                (throw (ex-info (str "inbox " id " is not armed: run `inbox arm` first")
+                                {:error :inbox/not-armed :inbox id})))
+         n    (-> (or n 10) long (max 1) (min 256))
+         wait (-> (or wait-ms 0) long (max 0) (min 30000))
+         b    (-> (FetchConsumeOptions/builder) (.maxMessages (int n)))
+         opts (.build (if (pos? wait) (.noWaitExpiresIn b wait) (.noWait b)))
+         cc   (.getConsumerContext conn stream-name (durable id))
+         fr   (.fetch cc opts)]
+     (loop [acc []]
+       (if-let [^Message msg (.nextMessage fr)]
+         (recur (conj acc {:message (decode (.getData msg) (.streamSequence (.metaData msg)))
+                           :ack!    (fn [] (.ackSync msg (Duration/ofSeconds 5)) true)
+                           :nak!    (fn [] (.nak msg) true)}))
+         acc)))))
+
+(m/=> fetch! [:function
+              [:=> [:cat :any :string] [:vector Fetched]]
+              [:=> [:cat :any :string [:maybe :map]] [:vector Fetched]]])
+
 (m/=> read! [:function
              [:=> [:cat :any :string] ReadResult]
              [:=> [:cat :any :string [:maybe :map]] ReadResult]])
