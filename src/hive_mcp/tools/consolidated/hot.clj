@@ -373,7 +373,10 @@
 (defn- memory-refusal
   "The heavy-reload refusal for this call, or nil."
   [command params]
-  (memory-gate/refusal command params (memory-gate-opts params)))
+  ;; :reason goes on the wire as the qualified string "hot/memory-low", the same
+  ;; convention unmount-outcome uses: JSON would drop a keyword's namespace.
+  (some-> (memory-gate/refusal command params (memory-gate-opts params))
+          (update :reason #(subs (str %) 1))))
 
 (defn handle-reload
   "Reload one addon (or every addon built from one namespace) plus dependents."
