@@ -361,11 +361,6 @@
 ;; Kill Helpers (decomposed from kill-headless!)
 ;; ===========================================================================
 
-(defn- close-writer-quietly!
-  "Close a writer, ignoring any exceptions."
-  [^BufferedWriter writer]
-  (result/rescue nil (.close writer)))
-
 (defn- terminate-process!
   "Terminate process gracefully or forcibly."
   [^Process process {:keys [force? timeout-ms ling-id pid]
@@ -437,7 +432,7 @@
                        pid (:pid entry)
                        ^BufferedWriter writer (:stdin-writer entry)]
                    (log/info "Killing headless ling" {:ling-id ling-id :pid pid :force? force?})
-                   (close-writer-quietly! writer)
+                   (result/rescue nil (.close writer)) ; best effort: the process is being killed anyway
                    (terminate-process! process {:force? force? :timeout-ms timeout-ms
                                                 :ling-id ling-id :pid pid})
                    (let [exit-code (await-exit-code process)]
