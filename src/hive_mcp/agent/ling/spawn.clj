@@ -358,9 +358,11 @@
 
 (defn- row-filter
   "hive-agent's registry row filter chain, resolved softly so core needs no
-   swarm addon: nil when hive-agent (or its shout-filters ns) is absent."
+   swarm addon: nil when hive-agent (or its shout-filters ns) is absent.
+   An absent addon is the expected case, so this is a soft resolve and not
+   a logged swallow."
   []
-  (swallow/attempt (requiring-resolve 'hive-agent.events.shout-filters/row!)))
+  (soft/resolve-soft 'hive-agent.events.shout-filters/row!))
 
 (defn- register-slave-row!
   "Persist a slave row through the spawn store, first making sure its parent
