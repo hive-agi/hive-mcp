@@ -44,6 +44,23 @@
    waiting 30 s on a stalled store stub."
   memory-write-timeout-ms)
 
+(def ^:dynamic *write-pool*
+  "ExecutorService `handle-add` runs `do-add!` on, read at call time. nil
+   (the default) means the shared `pool/memory-pool`. A test binds its own
+   pool so the write it drives never queues behind other writes."
+  nil)
+
+(def ^:dynamic *await-write!*
+  "Port `handle-add` blocks on the pooled write through, read at call time.
+   Contract (the one `hive-weave.pool/await!` has):
+   (fn [pool f {:keys [timeout-ms fallback name]}]) submits `f` to `pool`
+   and answers `f`'s value, or `fallback` when the wait ends first (timeout,
+   rejection, failure), cancelling `f` with interrupt. The default is
+   `await!`, whose wait is a wall clock. A test binds an await whose wait
+   ends on an event instead (the store stub entered the stage under test),
+   so the stage a timeout is attributed to does not depend on host load."
+  (fn [pool f opts] (wpool/await! pool f opts)))
+
 (def ^:const ^:private store-stage-heal-budget-ms
   "Heal-wait budget for a store stage whose backend already wraps its own
    RPCs in a reconnect-and-retry (hive-milvus `resilient`: await + retry).
@@ -794,8 +811,8 @@
                                                 :embed-ms @embed-ms
                                                 :total-ms (quot (- (System/nanoTime) started-ns) 1000000)
                                                 :outcome  outcome})))
-            result (wpool/await!
-                    (pool/memory-pool)
+            result (*await-write!*
+                    (or *write-pool* (pool/memory-pool))
                     (let [budgets *stage-budgets-ms*]
                       #(binding [*stage-budgets-ms* budgets
                                  write-latency/*embed-ms* embed-ms]

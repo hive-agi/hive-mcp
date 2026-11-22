@@ -118,21 +118,46 @@
 
 (use-fixtures :each with-empty-default-slot)
 
+(defn- await-until
+  "An `*await-write!*` port whose wait ends on the delivery of `event`
+   instead of a wall clock. Held to the `await!` contract: it submits `f`
+   to `pool`, answers `fallback` when the wait ends first, and cancels `f`
+   with interrupt. `bound-ms` only guards a broken stub from hanging the
+   suite; it is not the clock under test."
+  [event bound-ms]
+  (fn [^java.util.concurrent.ExecutorService pool ^Callable f {:keys [fallback]}]
+    (let [fut (.submit pool f)]
+      (if (= ::never-entered (deref event bound-ms ::never-entered))
+        (deref fut bound-ms fallback)
+        (do (.cancel fut true)
+            fallback)))))
+
 (deftest handle-add-timeout-names-the-stalled-stage
-  (proto/register-store! :default
-                         (stub-store #(do (Thread/sleep 1500) nil)
-                                     (fn [_] "id-never")))
-  (let [res (binding [wr/*write-timeout-ms* 300]
-              (wr/handle-add {:type "note" :content (str "stall-" (random-uuid))
-                              :tags ["t"] :directory "/tmp"}))
-        text (:text res)]
-    (is (:isError res) "a timed-out write is an error")
-    (is (str/includes? text "timed out after 300ms")
-        "the historical prefix is kept")
-    (is (str/includes? text ":dedup-lookup")
-        "the stage the store stalled in is named")
-    (is (str/includes? text ":stage-stalled") "the cause is named")
-    (is (str/includes? text ":stage-elapsed-ms") "the stage clock is reported")))
+  (let [entered (promise)
+        release (promise)
+        pool    (java.util.concurrent.Executors/newSingleThreadExecutor)]
+    (proto/register-store! :default
+                           (stub-store #(do (deliver entered true) @release nil)
+                                       (fn [_] "id-never")))
+    (try
+      (let [res  (binding [wr/*write-timeout-ms* 300
+                           wr/*stage-budgets-ms* {}
+                           wr/*write-pool*       pool
+                           wr/*await-write!*     (await-until entered 60000)]
+                   (wr/handle-add {:type "note" :content (str "stall-" (random-uuid))
+                                   :tags ["t"] :directory "/tmp"}))
+            text (:text res)]
+        (is (realized? entered) "the store stub entered the dedup lookup")
+        (is (:isError res) "a timed-out write is an error")
+        (is (str/includes? text "timed out after 300ms")
+            "the historical prefix is kept")
+        (is (str/includes? text "in stage :dedup-lookup")
+            "the stage the store stalled in is named")
+        (is (str/includes? text ":stage-stalled") "the cause is named")
+        (is (str/includes? text ":stage-elapsed-ms") "the stage clock is reported"))
+      (finally
+        (deliver release true)
+        (.shutdownNow pool)))))
 
 (deftest handle-add-success-is-untouched-by-progress
   (let [seen (atom [])]
