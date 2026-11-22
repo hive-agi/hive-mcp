@@ -1314,3 +1314,5 @@
 (def tools
   "REMOVED: Flat magit tools no longer exposed. Use consolidated `magit` tool."
   [])
+
+(malli.core/=> invoke-with-handshake-retry [:=> #:provenance{:kind :inferred-static, :source "hive-carto.candidate.mallify.static"} [:cat :any :any] :map])

@@ -233,3 +233,7 @@
 
 (m/=> claimed-core-names
       [:=> [:cat [:map [:claims [:sequential Claim]]]] [:set :string]])
+
+(malli.core/=> excludes? [:=> {:provenance/kind :inferred-static, :provenance/source "hive-carto.candidate.mallify.static"} [:cat :any :any] :boolean])
+
+(malli.core/=> refuse [:=> {:provenance/kind :inferred-static, :provenance/source "hive-carto.candidate.mallify.static"} [:cat :any :any :any] :map])

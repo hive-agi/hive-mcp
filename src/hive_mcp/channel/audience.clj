@@ -407,3 +407,5 @@
 
 ;; Rows are the formatted piggyback shape {:a :e :m :t}, kept open.
 (m/=> digest [:=> [:cat [:maybe [:sequential :map]]] [:vector :map]])
+
+(malli.core/=> digestible? [:=> #:provenance{:kind :inferred-static, :source "hive-carto.candidate.mallify.static"} [:cat :any] :boolean])

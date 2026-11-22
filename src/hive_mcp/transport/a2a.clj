@@ -411,3 +411,5 @@
 
   ;; Test JSON-RPC dispatch
   (dispatch-jsonrpc {:jsonrpc "2.0" :id 1 :method "tasks/get" :params {:id "test-123"}}))
+
+(malli.core/=> json-response [:=> #:provenance{:kind :inferred-static, :source "hive-carto.candidate.mallify.static"} [:cat :any :any] :map])

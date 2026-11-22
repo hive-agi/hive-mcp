@@ -318,3 +318,5 @@
       [:function
        [:=> [:cat ChainSpec :any [:map-of :keyword ifn?] :any] :map]
        [:=> [:cat ChainSpec :any [:map-of :keyword ifn?] :any [:maybe :map]] :map]])
+
+(malli.core/=> resolved-by [:=> #:provenance{:kind :inferred-static, :source "hive-carto.candidate.mallify.static"} [:cat :any :any] [:enum :fallback :primary]])

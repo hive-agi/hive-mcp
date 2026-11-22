@@ -622,3 +622,5 @@
 (m/=> reset-registry! [:=> [:cat] [:map-of schema/RegistryId schema/AddonOutcome]])
 
 (m/=> registry-status [:=> [:cat] schema/RegistryStatus])
+
+(malli.core/=> retract-owned-by! [:=> {:provenance/kind :inferred-static, :provenance/source "hive-carto.candidate.mallify.static"} [:cat :any] :nil])

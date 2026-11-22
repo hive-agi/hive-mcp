@@ -279,3 +279,7 @@
   (ok :help help-text))
 
 (m/=> handle-help [:=> [:cat EventsParams] [:map [:ok [:= true]] [:command [:= :help]] [:result :string]]])
+
+(malli.core/=> err [:=> #:provenance{:kind :inferred-static, :source "hive-carto.candidate.mallify.static"} [:cat :any :any] :map])
+
+(malli.core/=> ok [:=> #:provenance{:kind :inferred-static, :source "hive-carto.candidate.mallify.static"} [:cat :any :any] :map])

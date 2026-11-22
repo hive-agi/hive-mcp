@@ -168,3 +168,5 @@
 (m/=> handle-batch-reembed [:=> [:cat [:maybe :map]] core/McpResponse])
 
 (m/=> drain-pending! [:=> [:cat] ReembedTally])
+
+(malli.core/=> reembed-one! [:=> #:provenance{:kind :inferred-static, :source "hive-carto.candidate.mallify.static"} [:cat :any :any] [:or :map :nil]])
