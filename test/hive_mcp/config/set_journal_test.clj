@@ -141,12 +141,80 @@
       (is (= (set (map str (range n)))
              (set (map #(first (str/split (:value %) #"-")) lines)))))))
 
-(deftest a-full-journal-is-rotated
-  (let [path (temp-path)
-        f    (io/file path)]
+(defn- fill!
+  "Make the journal file at `path` one byte past the rotation size, its
+   first bytes `marker` so the file can be told apart after it moves."
+  [path marker]
+  (let [f (io/file path)]
     (io/make-parents f)
+    (spit f marker)
     (with-open [raf (java.io.RandomAccessFile. f "rw")]
       (.setLength raf (inc sj/max-journal-bytes)))
+    f))
+
+(defn- rotated-files
+  "Every rotated journal beside `path`, by name."
+  [path]
+  (let [f (io/file path)]
+    (->> (.listFiles (.getParentFile f))
+         (filter #(and (not= (.getName f) (.getName %))
+                       (str/starts-with? (.getName %) "config-set-journal.")))
+         (sort-by #(.getName %)))))
+
+(defn- head [^java.io.File f n]
+  (with-open [r (io/reader f)]
+    (let [buf (char-array n)] (.read r buf 0 n) (String. buf))))
+
+(deftest a-full-journal-is-rotated-to-a-timestamped-name
+  (let [path (temp-path)]
+    (fill! path "first")
     (is (true? (sj/append! path redact (attempt "models.default-model" "a/b"))))
     (is (= 1 (count (read-lines path))) "the new journal starts with this line")
-    (is (= (inc sj/max-journal-bytes) (.length (io/file (str path ".1")))))))
+    (let [[r :as rs] (rotated-files path)]
+      (is (= 1 (count rs)))
+      (is (re-matches #"config-set-journal\.\d{8}T\d{6}Z\.ednl" (.getName r)))
+      (is (= (inc sj/max-journal-bytes) (.length r)))
+      (is (= "first" (head r 5))))))
+
+(deftest rotation-never-deletes-or-replaces
+  (let [path (temp-path)
+        f    (io/file path)
+        now  (java.time.Instant/parse "2026-11-22T04:30:00Z")
+        taken (sj/rotated-file f now 0)]
+    (testing "a file already holding the rotation name is left alone"
+      (io/make-parents taken)
+      (spit taken "older history")
+      (fill! path "second")
+      (is (= (sj/rotated-file f now 1) (sj/rotate-if-full! f now)))
+      (is (= "older history" (slurp taken))))
+    (testing "rotating again in the same second takes the next free suffix"
+      (fill! path "third")
+      (is (= (sj/rotated-file f now 2) (sj/rotate-if-full! f now))))
+    (is (= #{"older history" "second" "third"}
+           (set (map #(str/replace (head % 13) "\u0000" "") (rotated-files path))))
+        "every generation survives")
+    (is (= ["config-set-journal.20261122T043000Z.ednl"
+            "config-set-journal.20261122T043000Z-1.ednl"
+            "config-set-journal.20261122T043000Z-2.ednl"]
+           (mapv #(.getName (sj/rotated-file f now %)) [0 1 2])))
+    (testing "a journal below the size is not rotated"
+      (spit f "small")
+      (is (nil? (sj/rotate-if-full! f now))))))
+
+(deftest a-long-key-or-id-is-bounded
+  (let [path (temp-path)
+        big  (apply str (repeat (* 4096 sj/max-id-chars) "k"))
+        ctx  (assoc (request/make-request-ctx {:caller-id big :session-id big})
+                    :identity {:caller-id big :verified? true})]
+    (request/with-request-context ctx
+      (sj/append! path redact (assoc (attempt big "v")
+                                     :agent-id big
+                                     :identity (sj/request-identity))))
+    (let [line (first (read-lines path))]
+      (doseq [k [:key :agent-id :caller-id :verified-caller-id :session-id]]
+        (is (str/ends-with? (get line k) (str "...[" (count big) " chars]")) (name k))
+        (is (< (count (get line k)) (+ sj/max-id-chars 32)) (name k)))
+      (is (< (count (slurp path)) (* 4 (+ sj/max-id-chars sj/max-value-chars)))
+          "one line stays small however long the caller's strings are")))
+  (is (nil? (sj/bound-str nil)))
+  (is (= "short" (sj/bound-str "short"))))
