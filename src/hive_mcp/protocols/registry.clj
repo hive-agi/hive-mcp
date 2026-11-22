@@ -7,7 +7,8 @@
    (throw, or construct a fallback, or seed a default), and an optional
    teardown run on `clear!`. Consumers wrap a Slot in trivial name-preserving
    delegations, so existing call sites are untouched."
-  (:require [malli.core :as m]))
+  (:require [malli.core :as m]
+            [hive-mcp.resilience.swallow :as swallow]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -51,7 +52,7 @@
   (clear! [_]
     (when-let [impl @state]
       (when teardown
-        (try (teardown impl) (catch Exception _))))
+        (swallow/attempt-ex (teardown impl))))
     (reset! state nil)
     nil))
 

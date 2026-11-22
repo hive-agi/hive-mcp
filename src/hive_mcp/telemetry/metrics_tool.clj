@@ -5,7 +5,8 @@
   (:require [hive-addon.registry.commands :as addon-cmds]
             [hive-mcp.telemetry.metrics :as metrics]
             [hive-mcp.telemetry.resources :as resources]
-            [malli.core :as m]))
+            [malli.core :as m]
+            [hive-mcp.resilience.swallow :as swallow]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -81,8 +82,7 @@
   "Contribute the `metrics` group to `target-tool`. Never throws; returns the
    contributed names or nil."
   []
-  (try (addon-cmds/contribute! target-tool owner contribution)
-       (catch Throwable _ nil)))
+  (swallow/attempt (addon-cmds/contribute! target-tool owner contribution)))
 
 (def ^:private TextContent
   [:map [:type [:= "text"]] [:text :string]])

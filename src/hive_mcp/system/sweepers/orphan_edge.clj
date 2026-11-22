@@ -33,7 +33,8 @@
   (:require [hive-mcp.protocols.lifecycle :as lifecycle]
             [hive-mcp.system.registry :as reg]
             [taoensso.timbre :as log]
-            [malli.core :as m]))
+            [malli.core :as m]
+            [hive-mcp.extensions.soft :as ext-soft]))
 
 (def ^:const default-scan-window
   "Edges read per sweep."
@@ -158,8 +159,7 @@
 (defn- resolve-var
   "The var at `sym`, or nil when its namespace is not loadable."
   [sym]
-  (try (requiring-resolve sym)
-       (catch Throwable _ nil)))
+  (ext-soft/resolve-soft sym))
 
 (defn- default-scan
   "One window of edges: {:edges [...] :taken n}. :taken counts edge entity ids

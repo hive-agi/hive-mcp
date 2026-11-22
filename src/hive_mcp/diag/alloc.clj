@@ -12,7 +12,8 @@
   (:require [hive-spi.diag.ports :as p]
             [hive-spi.diag.schema :as schema]
             [hive-dsl.result :as r]
-            [malli.core :as m]))
+            [malli.core :as m]
+            [hive-mcp.extensions.soft :as ext-soft]))
 
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
@@ -21,11 +22,9 @@
   "Resolve [start stop] from jvm-alloc-rate-meter.core, or nil when the library
    is not on the classpath."
   []
-  (try
-    (let [start (requiring-resolve 'jvm-alloc-rate-meter.core/start-alloc-rate-meter)
-          stop  (requiring-resolve 'jvm-alloc-rate-meter.core/stop-alloc-rate-meter)]
-      (when (and start stop) [start stop]))
-    (catch Throwable _ nil)))
+  (let [start (ext-soft/resolve-soft 'jvm-alloc-rate-meter.core/start-alloc-rate-meter)
+        stop  (ext-soft/resolve-soft 'jvm-alloc-rate-meter.core/stop-alloc-rate-meter)]
+    (when (and start stop) [start stop])))
 
 (defrecord AllocRateSampler []
   p/IAllocationSampler

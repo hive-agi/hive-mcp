@@ -17,7 +17,8 @@
   (:require [clojure.data.json :as json]
             [clojure.string :as str]
             [hive-mcp.nats.streams :as streams]
-            [malli.core :as m])
+            [malli.core :as m]
+            [hive-mcp.resilience.swallow :as swallow])
   (:import [io.nats.client Connection JetStreamApiException PublishOptions
             FetchConsumeOptions Message]
            [io.nats.client.api ConsumerConfiguration AckPolicy DeliverPolicy
@@ -100,7 +101,7 @@
    delivered as its raw text under :body, never dropped."
   [^bytes data seq]
   (let [s (String. data "UTF-8")
-        e (try (json/read-str s :key-fn keyword) (catch Exception _ nil))]
+        e (swallow/attempt-ex (json/read-str s :key-fn keyword))]
     (if (and (map? e) (contains? e :body))
       (assoc (select-keys e [:id :from :body :meta :ts]) :seq seq)
       {:seq seq :body s})))
@@ -150,7 +151,7 @@
 (defn safe-encode-inbox-id
   "`encode-inbox-id`, or nil when `id` cannot be made a valid inbox id."
   [id]
-  (try (encode-inbox-id id) (catch clojure.lang.ExceptionInfo _ nil)))
+  (swallow/attempt-ex (encode-inbox-id id)))
 
 (m/=> safe-encode-inbox-id [:=> [:cat :any] [:maybe :string]])
 

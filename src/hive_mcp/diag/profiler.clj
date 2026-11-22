@@ -14,7 +14,8 @@
   (:require [hive-spi.diag.ports :as p]
             [hive-spi.diag.schema :as schema]
             [hive-dsl.result :as r]
-            [malli.core :as m]))
+            [malli.core :as m]
+            [hive-mcp.extensions.soft :as ext-soft]))
 
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
@@ -22,14 +23,12 @@
 (defn- resolve-start
   "clj-async-profiler.core/start, or nil when the library is absent."
   []
-  (try (requiring-resolve 'clj-async-profiler.core/start)
-       (catch Throwable _ nil)))
+  (ext-soft/resolve-soft 'clj-async-profiler.core/start))
 
 (defn- resolve-stop
   "clj-async-profiler.core/stop, or nil when the library is absent."
   []
-  (try (requiring-resolve 'clj-async-profiler.core/stop)
-       (catch Throwable _ nil)))
+  (ext-soft/resolve-soft 'clj-async-profiler.core/stop))
 
 (defrecord AsyncProfiler [state]
   p/IProfiler

@@ -23,7 +23,9 @@
   (:require [clojure.java.io :as io]
             [clojure.string :as str]
             [malli.core :as m]
-            [taoensso.timbre :as log])
+            [taoensso.timbre :as log]
+            [hive-mcp.extensions.soft :as ext-soft]
+            [hive-mcp.resilience.swallow :as swallow])
   (:import [io.prometheus.client CollectorRegistry Gauge]
            [java.lang.management GarbageCollectorMXBean ManagementFactory
             MemoryPoolMXBean MemoryUsage ThreadInfo ThreadMXBean]
@@ -87,26 +89,22 @@
 (defn- rss-bytes
   "VmRSS from /proc/self/status in bytes; nil off Linux or on any failure."
   []
-  (try
-    (when (.exists (io/file "/proc/self/status"))
+  (swallow/attempt (when (.exists (io/file "/proc/self/status"))
       (some (fn [^String line]
               (when (str/starts-with? line "VmRSS:")
                 (some-> (re-find #"\d+" line) parse-long (* 1024))))
-            (proc-lines "/proc/self/status")))
-    (catch Throwable _ nil)))
+            (proc-lines "/proc/self/status")))))
 
 (defn- proc-kb-bytes
   "The `field:` kB line of a /proc key/value file (e.g. /proc/meminfo), in
    bytes; nil off Linux or on any failure."
   [path field]
-  (try
-    (let [k (str field ":")]
+  (swallow/attempt (let [k (str field ":")]
       (when (.exists (io/file path))
         (some (fn [^String line]
                 (when (str/starts-with? line k)
                   (some-> (re-find #"\d+" line) parse-long (* 1024))))
-              (proc-lines path))))
-    (catch Throwable _ nil)))
+              (proc-lines path))))))
 
 (defn- open-fds []
   (let [os (ManagementFactory/getOperatingSystemMXBean)]
@@ -185,8 +183,7 @@
     (if (str/blank? n) "<unnamed>" n)))
 
 (def ^:private normalizer
-  (delay (or (try (some-> (requiring-resolve 'hive-observability.jvm.threads/normalize-name) deref)
-                  (catch Throwable _ nil))
+  (delay (or (some-> (ext-soft/resolve-soft 'hive-observability.jvm.threads/normalize-name) deref)
              fallback-normalize)))
 
 (defn group-name
@@ -533,9 +530,8 @@
    key telemetry.resources.interval-ms; capacity from
    telemetry.resources.capacity. Unset keys are absent."
   []
-  (let [cfg (fn [k] (try (some-> (requiring-resolve 'hive-mcp.config.core/get-config-value)
-                                 (apply [k]))
-                         (catch Throwable _ nil)))
+  (let [cfg (fn [k] (swallow/attempt (some-> (requiring-resolve 'hive-mcp.config.core/get-config-value)
+                                 (apply [k]))))
         int-of (fn [v] (cond (int? v) v (string? v) (parse-long v) :else nil))
         interval (or (int-of (System/getenv "HIVE_RESOURCE_SAMPLE_MS"))
                      (int-of (cfg "telemetry.resources.interval-ms")))
@@ -548,11 +544,9 @@
   "The raw CollectorRegistry behind hive-mcp.telemetry.prometheus/registry,
    or nil when Prometheus is unavailable."
   []
-  (try
-    (when ((requiring-resolve 'hive-mcp.telemetry.prometheus/init!))
+  (swallow/attempt (when ((requiring-resolve 'hive-mcp.telemetry.prometheus/init!))
       (let [reg @@(requiring-resolve 'hive-mcp.telemetry.prometheus/registry)]
-        ((requiring-resolve 'iapetos.registry/raw) reg)))
-    (catch Throwable _ nil)))
+        ((requiring-resolve 'iapetos.registry/raw) reg)))))
 
 (defn start-default!
   "Start the sampler with `config-opts` and the gauges in the hive-mcp

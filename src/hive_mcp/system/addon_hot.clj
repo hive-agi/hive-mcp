@@ -27,7 +27,8 @@
             [hive-mcp.dns.result :as r]
             [hive-mcp.hot.claims :as claims]
             [taoensso.timbre :as log]
-            [malli.core :as m]))
+            [malli.core :as m]
+            [hive-mcp.extensions.soft :as ext-soft]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -223,7 +224,7 @@
 ;; -----------------------------------------------------------------------------
 
 (defn- soft [sym]
-  (try (requiring-resolve sym) (catch Throwable _ nil)))
+  (ext-soft/resolve-soft sym))
 
 (defn- call [sym & args]
   (if-let [f (soft sym)]

@@ -19,7 +19,9 @@
             [hive-spi.memory.decorate :as decorate]
             [hive-spi.memory.ports]
             [hive-spi.kg.protocol]
-            [malli.core :as m])
+            [malli.core :as m]
+            [hive-mcp.extensions.soft :as ext-soft]
+            [hive-mcp.resilience.swallow :as swallow])
   (:import [java.util.concurrent ConcurrentHashMap]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
@@ -35,8 +37,7 @@
 (defn- resolve-recorder
   "The hive-ttracking.metrics/record! var, or nil when it is not loadable."
   []
-  (try (requiring-resolve 'hive-ttracking.metrics/record!)
-       (catch Throwable _ nil)))
+  (ext-soft/resolve-soft 'hive-ttracking.metrics/record!))
 
 (defn- current-recorder
   "The recorder (a fn of k elapsed-ns outcome) or nil. Resolves once."
@@ -71,8 +72,7 @@
   "Record one observation through the recorder. Never throws. Returns nil."
   [k elapsed-ns outcome]
   (when-let [f (current-recorder)]
-    (try (f k elapsed-ns outcome)
-         (catch Throwable _ nil)))
+    (swallow/attempt (f k elapsed-ns outcome)))
   nil)
 
 (defmacro timed
@@ -148,8 +148,7 @@
 (def ^:private kind->protocols
   {:memory (delay
              (cond-> (vec (protocols-in 'hive-spi.memory.ports))
-               (try (requiring-resolve 'hive-spi.memory.receipt/IMemoryStoreAddReceipt)
-                    (catch java.io.FileNotFoundException _older-spi nil))
+               (ext-soft/resolve-soft 'hive-spi.memory.receipt/IMemoryStoreAddReceipt)
                (into (protocols-in 'hive-spi.memory.receipt))))
    :kg (delay (protocols-in 'hive-spi.kg.protocol))})
 
@@ -215,12 +214,10 @@
   ([kind target {:keys [backend protocols]}]
    (if (or (nil? target) (not (enabled?)) (metered? target))
      target
-     (try
-       (let [ps   (or protocols (some-> (kind->protocols kind) deref))
+     (or (swallow/attempt (let [ps   (or protocols (some-> (kind->protocols kind) deref))
              area (keyword "store" (name kind))
              ctor (ctor-for kind ps area (= kind :memory) target)]
-         (ctor target (or backend (label-of target))))
-       (catch Throwable _ target)))))
+         (ctor target (or backend (label-of target))))) target))))
 
 ;;; ---------------------------------------------------------------------------
 ;;; Memory registry decorator
@@ -237,13 +234,11 @@
   "Add `memory-decorator` to the hive-spi chain, re-decorating registered
    stores, when metering is enabled. Never throws. True when added."
   []
-  (try
-    (boolean
+  (boolean (swallow/attempt (boolean
      (when (enabled?)
        (when-let [add! (requiring-resolve 'hive-spi.memory.registry/add-decorator!)]
          (add! memory-decorator)
-         true)))
-    (catch Throwable _ false)))
+         true))))))
 
 ;;; ---------------------------------------------------------------------------
 ;;; KG facade timing

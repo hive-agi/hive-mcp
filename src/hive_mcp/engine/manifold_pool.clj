@@ -33,7 +33,8 @@
    Safe to call once; idempotent guard via `*installed*`."
   (:require [malli.core :as m]
             [manifold.executor :as ex]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [hive-mcp.resilience.swallow :as swallow]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -58,7 +59,7 @@
 (m/=> default-max-threads [:=> [:cat] [:int {:min 64}]])
 
 (defn- read-int [s]
-  (try (when s (Long/parseLong (str s))) (catch Throwable _ nil)))
+  (swallow/attempt (when s (Long/parseLong (str s)))))
 
 (defn resolve-max-threads
   "Resolution order:
