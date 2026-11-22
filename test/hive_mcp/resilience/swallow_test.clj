@@ -53,8 +53,12 @@
   (testing "InterruptedException is swallowed but the thread stays interrupted"
     (with-capture
       (fn [_]
-        (is (nil? (swallow/attempt (throw (InterruptedException. "stop")))))
-        (is (true? (Thread/interrupted)))))))
+        ;; read the flag in the same expression: clojure.test's reporting
+        ;; between two `is` forms may clear it
+        (let [v (swallow/attempt (throw (InterruptedException. "stop")))
+              flagged? (Thread/interrupted)]
+          (is (nil? v))
+          (is (true? flagged?)))))))
 
 (deftest the-label-is-clipped
   (is (<= (count (swallow/clip (apply str (repeat 500 "x")))) 83))
