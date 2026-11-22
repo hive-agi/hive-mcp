@@ -65,11 +65,6 @@
   [agent-id]
   (get @agent-states agent-id))
 
-(defn- clear-agent-state!
-  "Remove SAA state for an agent."
-  [agent-id]
-  (swap! agent-states dissoc agent-id))
-
 (defn- shout-phase!
   "Broadcast phase transition to hivemind via requiring-resolve."
   [agent-id phase message]
@@ -448,7 +443,7 @@
                                 (#{:complete :error} (:phase state))))
                       (map first))]
     (doseq [agent-id to-clear]
-      (clear-agent-state! agent-id))
+      (swap! agent-states dissoc agent-id))
     {:cleared (count to-clear)}))
 
 (m/=> clear-completed-states! [:=> [:cat] [:map [:cleared [:int {:min 0}]]]])

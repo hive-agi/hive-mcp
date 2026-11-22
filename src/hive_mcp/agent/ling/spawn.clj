@@ -266,10 +266,6 @@
         (log/error t "Spawn-dispatch: unexpected error"
                    {:ling-id slave-id})))))
 
-(defn- headless-mode?
-  [mode]
-  (contains? (headless-reg/registered-headless) mode))
-
 (defn- enrich-task
   [{:keys [task cwd kanban-task-id]}]
   (when task
@@ -283,7 +279,7 @@
 
 (defn- resolve-headless-inputs
   [{:keys [mode ctx presets]}]
-  (let [headless? (headless-mode? mode)]
+  (let [headless? (contains? (headless-reg/registered-headless) mode)]
     {:headless? headless?
      :preset-content (when (and headless? (seq presets))
                        (load-presets-content presets))

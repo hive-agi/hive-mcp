@@ -144,81 +144,132 @@
   (or description
       (when (and (string? content) (not (str/blank? content))) content)))
 
-(defn- create* [{:keys [title priority context agent_id tags description status]
-                 :as params}]
+(defn validate-create-params!
+  "Stage 1 of kanban create: reject a blank title or an unknown status by
+   throwing a :validation-error ex-info. Returns nil when the params are valid."
+  [{:keys [title status]}]
   (when (or (nil? title) (and (string? title) (str/blank? title)))
     (throw (ex-info "Kanban task requires a non-empty title" {:type :validation-error})))
   (when (and status (not (kp/valid-status? (kp/normalize-status status))))
     (throw (ex-info (str "Invalid kanban status: " (pr-str status)
                          ". Must be one of " kp/valid-statuses
                          " (aliases: " (keys kp/status-enum->tag) ")")
-                    {:type :validation-error})))
-  ;; HCR: explicit :directory > :_caller_cwd (bb-mcp session pwd) >
-  ;; request-ctx > server user.dir. Keeps default scope on the caller's
-  ;; pwd project instead of the server's own (hive-mcp).
-  (let [eff-dir   (ctx/resolve-caller-directory params)
-        eff-agent (or agent_id (ctx/current-agent-id) (System/getenv "CLAUDE_SWARM_SLAVE_ID"))
-        ;; Priority precedence: explicit :priority param > a priority-{high,medium,low}
-        ;; tag in :tags (the priority-* tag convention audit cards already use) > medium.
-        priority  (or priority
-                      (some (fn [t]
-                              (when (and (string? t) (str/starts-with? t "priority-"))
-                                (let [p (subs t 9)]
-                                  (when (#{"high" "medium" "low"} p) p))))
-                            tags)
-                      "medium")
-        status    (or (kp/normalize-status status) "todo")
-        project-id (or (create-scope/explicit-project-id params) (scope/get-current-project-id eff-dir))
-        idem-key   (normalize-idempotency-key params)
-        ;; Idempotency check: if an entry tagged `idempotency:<key>`
-        ;; already exists in this project scope, return its id without
-        ;; writing again. Makes `b+` safe to re-run as part of a
-        ;; partially-failed wrap-ceremony batch.
-        existing-id (find-by-idempotency-key idem-key project-id)]
+                    {:type :validation-error}))))
+
+(m/=> validate-create-params! [:=> [:cat :map] :nil])
+
+(defn resolve-create-priority
+  "Priority precedence: explicit :priority param > a priority-{high,medium,low}
+   tag in :tags (the priority-* tag convention audit cards already use) > medium."
+  [priority tags]
+  (or priority
+      (some (fn [t]
+              (when (and (string? t) (str/starts-with? t "priority-"))
+                (let [p (subs t 9)]
+                  (when (#{"high" "medium" "low"} p) p))))
+            tags)
+      "medium"))
+
+(m/=> resolve-create-priority [:=> [:cat [:maybe :string] [:maybe [:sequential :any]]] :string])
+
+(defn create-extra-tags
+  "Caller-supplied tags (e.g. wave:N from plan-to-kanban, epic:foo) to merge with
+   the standard kanban tag set. priority-* and scope:project:* are stripped: the
+   former is canonicalized via :priority and re-emitted by build-kanban-tags, the
+   latter is owned by the resolved project scope. Non-sequential tags yield [].
+   Audit kanban 20260429203429: :tags used to be silently dropped."
+  [tags]
+  (if (sequential? tags)
+    (into [] (comp (filter string?)
+                   (remove #(or (str/starts-with? % "priority-")
+                                (str/starts-with? % "scope:project:"))))
+          tags)
+    []))
+
+(m/=> create-extra-tags [:=> [:cat :any] [:vector :string]])
+
+(defn create-card-content
+  "The kanban card payload map (serialized to JSON as the entry content).
+   `now` is the creation timestamp, injected so the stage stays pure."
+  [{:keys [title status priority context description now]}]
+  (cond-> {:task-type "kanban" :title title :status status
+           :priority priority :created now
+           :started nil :context context}
+    description (assoc :description description)))
+
+(m/=> create-card-content [:=> [:cat :map] :map])
+
+(defn create-card-tags
+  "Full tag vector of a new card: standard kanban tags, caller extras, and the
+   idempotency tag when a key was supplied. Distinct, order-preserving."
+  [status priority project-id extra-tags idem-tag]
+  (vec (distinct (concat (kt/build-kanban-tags status priority project-id)
+                         extra-tags
+                         (when idem-tag [idem-tag])))))
+
+(m/=> create-card-tags [:=> [:cat :any :any :any [:maybe [:sequential :string]] [:maybe :string]] [:vector :any]])
+
+(defn- resolve-create-context
+  "Collect stage: every ambient read a create needs (caller directory, agent,
+   project scope, idempotency lookup), resolved once into a plain map."
+  [{:keys [agent_id tags status priority] :as params}]
+  (let [eff-dir    (ctx/resolve-caller-directory params)
+        project-id (or (create-scope/explicit-project-id params)
+                       (scope/get-current-project-id eff-dir))
+        idem-key   (normalize-idempotency-key params)]
+    {:eff-dir     eff-dir
+     ;; HCR: explicit :directory > :_caller_cwd (bb-mcp session pwd) >
+     ;; request-ctx > server user.dir.
+     :eff-agent   (or agent_id (ctx/current-agent-id) (System/getenv "CLAUDE_SWARM_SLAVE_ID"))
+     :priority    (resolve-create-priority priority tags)
+     :status      (or (kp/normalize-status status) "todo")
+     :project-id  project-id
+     :idem-key    idem-key
+     ;; A tagged entry already in this project scope short-circuits the write,
+     ;; making `b+` safe to re-run in a partially-failed wrap-ceremony batch.
+     :existing-id (find-by-idempotency-key idem-key project-id)}))
+
+(defn- persist-card!
+  "Boundary stage: write the card through the generic memory-add pipeline
+   (embedding + duplicate detection + KG edges stay on `mem-crud/handle-add`;
+   only the IMemoryStore slot changes — :default in legacy mode, :kanban after
+   the cutover flag flips), then record the movement for wrap harvest."
+  [{:keys [title] :as params}
+   {:keys [eff-dir eff-agent priority status project-id idem-key]}]
+  (let [content     (create-card-content
+                     {:title title :status status :priority priority
+                      :context (:context params)
+                      :description (create-description params)
+                      :now (kt/kanban-timestamp)})
+        tags        (create-card-tags status priority project-id
+                                      (create-extra-tags (:tags params))
+                                      (idempotency-tag idem-key))
+        crud-result (mem-crud/handle-add {:type "note"
+                                          :content (json/write-str content)
+                                          :tags tags :directory eff-dir
+                                          :agent_id eff-agent :duration "permanent"
+                                          :knowledge_gaps []
+                                          :store-key (kanban-facade/active-key)})]
+    (log/info "kanban-create result:" crud-result)
+    (if (:isError crud-result)
+      crud-result
+      (do (track-movement! {:task-id (or (:text crud-result) "unknown")
+                            :title title :from nil :to status
+                            :project-id project-id})
+          {:type "text" :text (:text crud-result)}))))
+
+(defn- create*
+  "Create a kanban card: validate -> collect context -> (idempotency hit |
+   persist). Each stage is a small named fn; this is the pipeline."
+  [params]
+  (validate-create-params! params)
+  (let [{:keys [existing-id idem-key] :as cctx} (resolve-create-context params)]
     (if existing-id
       (do
         (log/info "kanban-create idempotency hit — returning existing id"
                   {:idempotency-key idem-key :id existing-id})
         {:type "text" :text existing-id})
-      (let [content (cond-> {:task-type "kanban" :title title :status status
-                             :priority priority :created (kt/kanban-timestamp)
-                             :started nil :context context}
-                      (create-description params) (assoc :description (create-description params)))
-            ;; Merge caller-supplied tags (e.g. wave:N from plan-to-kanban,
-            ;; epic:foo from grouping) with the standard kanban tag set.
-            ;; Audit kanban 20260429203429: previously :tags was silently dropped.
-            ;; priority-* is stripped here — it is canonicalized via :priority above
-            ;; and re-emitted by build-kanban-tags, so keeping it would duplicate.
-            extra-tags (when (sequential? tags)
-                         (into [] (comp (filter string?)
-                                        (remove #(or (str/starts-with? % "priority-") (str/starts-with? % "scope:project:"))))
-                               tags))
-            ;; Thread the idempotency tag through if a key was supplied
-            ;; — future creates with the same key will hit
-            ;; `find-by-idempotency-key` above and short-circuit.
-            idem-tag (idempotency-tag idem-key)
-            tags (vec (distinct (concat (kt/build-kanban-tags status priority project-id)
-                                        (or extra-tags [])
-                                        (when idem-tag [idem-tag]))))
-            ;; Thread the kanban-store toggle's active key into the generic
-            ;; memory-add pipeline. Embedding + duplicate detection + KG
-            ;; edges all stay on `mem-crud/handle-add`; only the IMemoryStore
-            ;; slot routing changes. :default in legacy mode, :kanban after
-            ;; the cutover flag flips.
-            crud-result (mem-crud/handle-add {:type "note"
-                                              :content (json/write-str content)
-                                              :tags tags :directory eff-dir
-                                              :agent_id eff-agent :duration "permanent"
-                                              :knowledge_gaps []
-                                              :store-key (kanban-facade/active-key)})]
-        (log/info "kanban-create result:" crud-result)
-        (when-not (:isError crud-result)
-          (track-movement! {:task-id (or (:text crud-result) "unknown")
-                            :title title :from nil :to status
-                            :project-id project-id}))
-        (if (:isError crud-result)
-          crud-result
-          {:type "text" :text (:text crud-result)})))))
+      (persist-card! params cctx))))
 
 (defn- live-child-deps
   "Production reads for `children/open-children`: the KG edge queries and a
