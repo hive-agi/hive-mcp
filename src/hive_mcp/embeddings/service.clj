@@ -307,6 +307,8 @@
   []
   (get (global-config/get-global-config) :embedder))
 
+(m/=> embedder-config [:=> [:cat] [:maybe :map]])
+
 (defn- resolve-provider-key
   "Look up provider key for a memory type string. Falls back to :default."
   [type-str]
@@ -362,6 +364,8 @@
   (if (= dimension 768)
     base-collection-name
     (str base-collection-name "-" dimension "d")))
+
+(m/=> collection-name-for-dimension [:=> [:cat :int] :string])
 
 (defn- dimension-for-collection
   "The dimension of the vectors `collection-name` holds, read back from its

@@ -42,6 +42,8 @@
 
 (defn- present [s] (when (and (string? s) (not (str/blank? s))) s))
 
+(m/=> present [:=> [:cat :any] [:maybe :string]])
+
 (defn owner-key
   "The identity an owner id is compared by. A coordinator lane that names a
    session reads as `coordinator:<session>`, so `coordinator:7-hive` and

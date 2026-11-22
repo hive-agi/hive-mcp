@@ -593,6 +593,8 @@
   (when (map? m)
     (if (contains? m k) (get m k) (get m (name k)))))
 
+(m/=> json-get [:=> [:cat :any :keyword] :any])
+
 (defn- json-deref
   "Follow a local $ref (#/definitions/X or #/$defs/X) against the root schema;
    any other node is returned unchanged."

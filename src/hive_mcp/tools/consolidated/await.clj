@@ -30,6 +30,8 @@
 
 (defn- blank->nil [s] (when-not (str/blank? (str s)) (str s)))
 
+(m/=> blank->nil [:=> [:cat :any] [:maybe :string]])
+
 (defn- ->kw
   "A keyword from a keyword or a string (a leading colon is dropped)."
   [x]
@@ -37,10 +39,14 @@
         (blank->nil x) (keyword (let [s (str x)] (if (str/starts-with? s ":") (subs s 1) s)))
         :else nil))
 
+(m/=> ->kw [:=> [:cat :any] [:maybe :keyword]])
+
 (defn- ->long [x]
   (cond (integer? x) (long x)
         (string? x)  (parse-long (str/trim x))
         :else        nil))
+
+(m/=> ->long [:=> [:cat :any] [:maybe :int]])
 
 (defn- ->bool [x]
   (cond (boolean? x) x
@@ -51,6 +57,8 @@
   "`m` with keyword keys (JSON objects may arrive with string keys)."
   [m]
   (when (map? m) (into {} (map (fn [[k v]] [(->kw k) v])) m)))
+
+(m/=> keyword-keys [:=> [:cat :any] [:maybe [:map-of [:maybe :keyword] :any]]])
 
 (def ^:private owner-string-keys
   "Flat owner params that are strings, and the Owner key each one lands on."
@@ -141,6 +149,8 @@
                       (when-let [k (:error (ex-data e))] (str " [" k "]")))))
     (catch Throwable e
       (mcp-error (str "await " verb " failed: " (.getMessage e))))))
+
+(m/=> run-verb [:=> [:cat :string ifn?] tc/McpResponse])
 
 (defn handle-create
   "Create a :pending awaiter (see create-request for the params). Answers

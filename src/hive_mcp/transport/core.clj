@@ -101,6 +101,8 @@
     (sequential? v) (mapv bytes->str v)
     :else v))
 
+(m/=> bytes->str [:=> [:cat Bencodable] Bencodable])
+
 (defn decode-msg
   "Decode bencode bytes to Clojure map."
   [^bytes data]

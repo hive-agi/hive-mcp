@@ -53,6 +53,8 @@
                (headless-modes mode)
                (headless-reg/get-headless-backend mode))))
 
+(m/=> headless-mode? [:=> [:cat :any] :boolean])
+
 ;; ── Effect Ports ────────────────────────────────────────────────────────────
 
 (def ^:private default-spark-ports

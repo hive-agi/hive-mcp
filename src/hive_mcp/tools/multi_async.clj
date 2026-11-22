@@ -90,6 +90,8 @@
   []
   (System/currentTimeMillis))
 
+(m/=> now-ms [:=> [:cat] :int])
+
 (defn- make-batch-entry
   "Build a batch registry entry for a newly dispatched batch."
   [fut ops-count created-at]

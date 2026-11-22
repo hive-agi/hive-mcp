@@ -269,6 +269,8 @@
     (coll? v) (empty? v)
     :else false))
 
+(m/=> blank-payload-value? [:=> [:cat :any] :boolean])
+
 (defn empty-shout?
   "Predicate: would this shout carry a zero-information payload?
 

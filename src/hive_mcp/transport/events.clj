@@ -54,6 +54,10 @@
   [message]
   (r/err :events/unavailable {:error/kind :unavailable :message message}))
 
+(m/=> unavailable [:=> [:cat :string]
+                   [:map [:error [:= :events/unavailable]] [:error/kind [:= :unavailable]]
+                    [:message :string]]])
+
 (defn- nats-call
   "One op against the live NATS connection; unavailable when it is down."
   [{:keys [op subject payload handler]}]

@@ -39,6 +39,9 @@
   [sym]
   (rescue nil (requiring-resolve sym)))
 
+(m/=> try-resolve [:=> [:cat :qualified-symbol]
+                    [:maybe [:fn {:gen/elements [#'clojure.core/inc]} var?]]])
+
 ;; =============================================================================
 ;; Registered Workspaces (live LSP bridge, any vessel)
 ;; =============================================================================

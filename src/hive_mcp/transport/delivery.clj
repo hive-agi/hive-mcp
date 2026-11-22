@@ -185,9 +185,16 @@
          {:error/kind :inapplicable
           :message    (str (name adapter) " does not serve " (name kind) " targets: " why)}))
 
+(m/=> inapplicable [:=> [:cat [:or :keyword :string :symbol] [:or :keyword :string :symbol] :string]
+                     [:map [:error [:= :delivery/inapplicable]] [:error/kind [:= :inapplicable]]
+                      [:message :string]]])
+
 (defn- unavailable
   [category message]
   (r/err category {:error/kind :unavailable :message message}))
+
+(m/=> unavailable [:=> [:cat :keyword :string]
+                   [:map [:error :keyword] [:error/kind [:= :unavailable]] [:message :string]]])
 
 (defn- ling-nats-deliver-fn
   "The :deliver-fn a NATS ling dispatch hands Ling.dispatch!: once hive-mcp

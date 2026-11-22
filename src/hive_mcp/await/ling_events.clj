@@ -93,6 +93,8 @@
     (let [v (get m k)]
       (if (some? v) v (get m (name k))))))
 
+(m/=> field [:=> [:cat :any :keyword] :any])
+
 (defn- text
   "`v` as a non-blank string (a keyword by its name), else nil."
   [v]

@@ -24,6 +24,8 @@
   (let [v (get msg (keyword k) (get msg k))]
     (if (keyword? v) (name v) v)))
 
+(m/=> field [:=> [:cat [:maybe :map] [:or :string :keyword]] :any])
+
 (def ClientMessage
   "What a client sends, as the channel decodes it: any JSON value, a map
    keyed by keywords (WebSocket) or strings (bencode)."

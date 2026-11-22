@@ -42,6 +42,8 @@
   (->> (re-seq edn-block-pattern content)
        (mapv second)))
 
+(m/=> extract-edn-blocks [:=> [:cat :string] [:vector :string]])
+
 ;; =============================================================================
 ;; Detection Predicates
 ;; =============================================================================
@@ -252,6 +254,8 @@
     (when-let [steps (get-steps-key data)]
       (sequential? steps))))
 
+(m/=> is-plan-edn? [:=> [:cat :any] [:maybe :boolean]])
+
 (defn- is-phase-edn?
   "Check if parsed EDN looks like a phase block ({:phase N :tasks [...]})."
   [data]
@@ -274,6 +278,8 @@
   "Convert keyword to string using name, pass strings through unchanged."
   [v]
   (if-let [_ (keyword? v)] (name v) v))
+
+(m/=> keyword->string [:=> [:cat [:maybe [:or :keyword :string]]] [:maybe :string]])
 
 (defn- strip-all-namespaces
   "Remove namespaces from all keys in a map. First stage of normalization."
@@ -419,10 +425,14 @@
   [m plain-k ns-k]
   (if-let [v (plain-k m)] v (ns-k m)))
 
+(m/=> ns-key [:=> [:cat [:maybe :map] :keyword :keyword] :any])
+
 (defn- ns-key-or
   "Retrieve value trying plain key, namespaced, then default. CC-free via if-let."
   [m plain-k ns-k default]
   (if-let [v (plain-k m)] v (if-let [v2 (ns-k m)] v2 default)))
+
+(m/=> ns-key-or [:=> [:cat [:maybe :map] :keyword :keyword :any] :any])
 
 (defn- normalize-phase-task
   "Normalize a single task within a phase context.

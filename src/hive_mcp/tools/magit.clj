@@ -88,6 +88,10 @@
   [^String abs]
   (if-let [k (:kind *repo-port*)] (k abs) (real-kind abs)))
 
+(m/=> path-kind [:=> [:cat :string]
+                 [:map [:type [:enum :symlink :dir :file :absent]]
+                  [:target-exists? {:optional true} :boolean]]])
+
 (defn- exists-follow?
   "java.io.File#exists over `path-kind`: a file, a directory, or a link whose
    target exists."
@@ -392,6 +396,8 @@
   [error]
   (str/trim (str/replace (str error) #"\s*Plain CLI git works meanwhile\.?" "")))
 
+(m/=> scrub [:=> [:cat :any] :string])
+
 (defn- invoke-vessel
   "[envelope elapsed-ms] of one editor dispatch of OP."
   [op timeout-ms]
@@ -664,6 +670,9 @@
       (log/error e (str (name category) " failed"))
       (result/err category {:message (.getMessage e)}))))
 
+(m/=> try-result [:=> [:cat :keyword ifn?]
+                  [:or [:map [:ok :any]] [:map [:error :keyword]]]])
+
 (defn- result->mcp
   "Convert Result to MCP response.
    {:ok data} -> (mcp-success data), {:error ...} -> (mcp-error message).
@@ -673,10 +682,14 @@
     (mcp-success (val entry))
     (mcp-error (str "Error: " (get r :message (get r :error "unknown"))))))
 
+(m/=> result->mcp [:=> [:cat [:or [:map [:ok :any]] [:map [:error :keyword]]]] core/McpResponse])
+
 (defn- handle-op
   "Run a closed magit op through the Result boundary."
   [category op timeout-ms]
   (result->mcp (try-result category #(dispatch->result op timeout-ms))))
+
+(m/=> handle-op [:=> [:cat :keyword [:map [:op :keyword]] [:maybe :int]] core/McpResponse])
 
 ;; ============================================================
 ;; Magit Integration Tools (requires hive-mcp-magit addon)
@@ -731,8 +744,12 @@
   [rel entry]
   (or (= rel ".") (= entry rel) (str/starts-with? entry (str rel "/"))))
 
+(m/=> names? [:=> [:cat :string :string] :boolean])
+
 (defn- abs-in [^String root ^String rel]
   (.getPath (java.io.File. root rel)))
+
+(m/=> abs-in [:=> [:cat :string :string] :string])
 
 (defn- staged-paths
   "Read the index directly, without asking the shared Emacs buffer to choose a repo.
@@ -1321,6 +1338,9 @@
   [:map [:exit :int] [:out :string]])
 
 (def ^:private GitArgs [:sequential :string])
+
+(m/=> git-ok [:=> [:cat GitRun :keyword]
+              [:or [:map [:ok :string]] [:map [:error :keyword] [:message :string]]]])
 
 (m/=> git! [:function
             [:=> [:cat :string GitArgs] GitRun]

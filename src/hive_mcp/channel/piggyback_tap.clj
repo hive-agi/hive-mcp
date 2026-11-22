@@ -77,6 +77,8 @@
          (if (string? body) body (pr-str body))
          "\n---/" tag "---")))
 
+(m/=> format-block [:=> [:cat :string :any] [:maybe :string]])
+
 (defn drain-all!
   "Drain all 5 piggyback channels for an agent.
 

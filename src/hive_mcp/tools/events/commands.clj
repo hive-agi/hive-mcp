@@ -44,6 +44,9 @@
         (throw (ex-info (str "Could not resolve symbol: " (ex-message t))
                         {:symbol sym}))))))
 
+(m/=> resolve-or-throw [:=> [:cat [:or :symbol :string]]
+                         [:fn {:gen/elements [#'clojure.core/inc]} var?]])
+
 (defn- normalize-agent-ids
   "Coerce :agent-ids/:agent_ids/:all into the shape `hive-agent.events.observers/enable!`
    expects: either `:all` keyword or a set of agent-id strings."

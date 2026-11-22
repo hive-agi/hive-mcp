@@ -695,6 +695,8 @@
   [content]
   (reduce + 0 (map (comp count :text) (filter #(= "text" (:type %)) (id/normalize-content content)))))
 
+(m/=> piggyback-content-chars [:=> [:cat :any] [:int {:min 0}]])
+
 ;; =============================================================================
 ;; Grant Gate
 ;; =============================================================================

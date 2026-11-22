@@ -57,6 +57,8 @@
                        #'clojure.core/*agent*]}
    var?])
 
+(m/=> clj-var [:=> [:cat :qualified-symbol] AVar])
+
 (def NsSym
   [:symbol {:gen/elements '[hive-mcp.hot.keep hive-mcp.hot.self clojure.string clojure.core
                             no.such.namespace]}])

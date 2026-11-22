@@ -31,6 +31,8 @@
     (subs path 0 (dec (count path)))
     path))
 
+(m/=> strip-trailing-slash [:=> [:cat :string] :string])
+
 (defn- parent-dir [path]
   (some-> (io/file path) .getParent))
 

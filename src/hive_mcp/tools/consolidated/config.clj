@@ -89,6 +89,9 @@
     (and secret? (or (string? v) (number? v))) (redact-leaf v)
     :else     v))
 
+;; the tree comes back in its own shape, secret leaves replaced
+(m/=> redact-tree [:=> [:cat :any :boolean] :any])
+
 (defn- redact-secrets-map
   [m raw]
   (if (map? m)
@@ -117,6 +120,10 @@
   "Redact `v` found at `path`; the declared secrets are read only on demand."
   ([v] (redact-config [] v))
   ([path v] (redact-at path v (delay (raw-secrets)))))
+
+(m/=> redact-config [:function
+                     [:=> [:cat :any] :any]
+                     [:=> [:cat [:sequential :any] :any] :any]])
 
 (defn- redact-errors
   "Malli explanation errors: each :value is redacted by its own :in path, and

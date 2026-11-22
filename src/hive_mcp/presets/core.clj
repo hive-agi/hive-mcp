@@ -156,6 +156,8 @@
                   cat)]
     (or (first matches) "general")))
 
+(m/=> detect-category [:=> [:cat :string] :string])
+
 (defn- extract-title
   "Extract title from markdown content (first H1)."
   [content]
