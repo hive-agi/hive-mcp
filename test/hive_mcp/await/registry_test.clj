@@ -183,9 +183,10 @@
           (is (empty? (:failed report)))
           (is (nil? (:corrupt-aside report))))
         (is (= :cancelled (:status (registry/lookup reg2 "r2"))))
-        (manual/fire! {:sha "abc"})
-        (manual/fire! {:sha "abc"})
-        (manual/fire! {:sha "def"})
+        ;; r1 has no filter, so only a fire naming it reaches it.
+        (manual/fire! {:sha "abc"} "r1")
+        (manual/fire! {:sha "abc"} "r1")
+        (manual/fire! {:sha "def"} "r1")
         (is (wait-until 2000 #(resumed? reg2 "r1"))
             "the wake settles (woken AND persisted) before this registry dies")
         (is (= 1 (count @resumes)) "exactly one wake after re-init")
