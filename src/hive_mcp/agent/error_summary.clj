@@ -54,10 +54,6 @@
   (into [] (comp (take limit) (map ste->frame))
         (.getStackTrace t)))
 
-(defn- throwable-message
-  [^Throwable t]
-  (or (ex-message t) (.getName (class t))))
-
 (defn- cause-of
   "Walk either Java getCause or ex-info :cause — whichever is set."
   [^Throwable t]
@@ -71,7 +67,7 @@
 
 (defn- summarize-throwable
   [^Throwable t {:keys [max-message max-frames max-cause-depth] :as opts}]
-  (let [msg         (throwable-message t)
+  (let [msg         (or (ex-message t) (.getName (class t)))
         data        (when (instance? clojure.lang.IExceptionInfo t) (ex-data t))
         etype       (:error/type data)
         class-name  (.getName (class t))
@@ -178,10 +174,6 @@
          fit        (some (fn [c] (when (<= (count c) budget) c)) candidates)]
      (or fit (truncate budget head)))))
 
-(defn- serialized-size
-  [s]
-  (count (pr-str s)))
-
 (defn fit-to-budget
   "Progressively trim a summary until (count (pr-str summary)) <= budget.
 
@@ -192,7 +184,7 @@
      4. drop frames + cause
      5. minimal (truncate message to fit)"
   [summary budget]
-  (let [try-fit   (fn [s] (when (<= (serialized-size s) budget) s))
+  (let [try-fit   (fn [s] (when (<= (count (pr-str s)) budget) s))
         halved    (update summary :frames #(vec (take (quot (count %) 2) %)))
         no-frames (assoc summary :frames [])
         no-cause  (dissoc summary :cause)

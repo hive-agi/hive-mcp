@@ -107,12 +107,6 @@
           (recur (inc mid) hi)
           (recur lo mid))))))
 
-(defn- make-line-entries
-  "Create [{:text line :ts ts} ...] from lines and timestamps vectors."
-  [lines ts-vec start end]
-  (mapv (fn [i] {:text (nth lines i) :ts (nth ts-vec i)})
-        (range start end)))
-
 (defn ring-buffer-contents-since
   "Get ring buffer lines appended after a given timestamp."
   [buffer since]
@@ -126,7 +120,8 @@
       (let [idx (binary-search-after ts-vec since n)]
         (if (>= idx n)
           []
-          (make-line-entries lines ts-vec idx n))))))
+          (mapv (fn [i] {:text (nth lines i) :ts (nth ts-vec i)})
+                (range idx n)))))))
 
 (defn ring-buffer-stats
   "Get ring buffer statistics."
