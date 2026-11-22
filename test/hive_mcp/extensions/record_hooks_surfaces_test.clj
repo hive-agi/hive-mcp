@@ -15,7 +15,8 @@
             [hive-mcp.swarm.datascript :as ds]
             [hive-mcp.test.stub.swarm-host :as sh]
             [hive-mcp.tools.projectile :as projectile]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [hive-mcp.test.project-fs :refer [write-project!]]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -31,10 +32,6 @@
 ;; =============================================================================
 ;; :project/visible — projectile `project list`
 ;; =============================================================================
-
-(defn- write-project! [dir cfg]
-  (.mkdirs (io/file dir))
-  (spit (io/file dir ".hive-project.edn") (pr-str cfg)))
 
 (defn- hide-sec [entities] (filterv #(not= "pl-sec" (:project/id %)) entities))
 

@@ -114,6 +114,21 @@
   (or (resolve-var ns-str sym)
       (throw (addon-outdated ns-str sym))))
 
+(defn ensure-adapters!
+  "Make sure the host adapters fill the swarm port slots before a shim
+   delegates. The adapters are resolved late: a static require would close a
+   load cycle through the events adapter. A failure here (for instance a call
+   made while that cycle is still loading) leaves the ports on their noops
+   until a later call installs them; it is logged at debug, never thrown.
+   Returns nil."
+  []
+  (try ((requiring-resolve 'hive-mcp.swarm.adapters.boot/ensure!))
+       (catch Throwable t
+         (log/debug "swarm adapters not ensured; ports stay on noops" {:error (ex-message t)})))
+  nil)
+
+(m/=> ensure-adapters! [:=> [:cat] :nil])
+
 ;; never nil: an outdated addon throws AddonOutdated instead
 (m/=> resolve-required [:=> [:cat NsStr [:or :symbol :string]]
                         [:fn {:gen/elements [#'clojure.core/identity]}
