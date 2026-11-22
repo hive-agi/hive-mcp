@@ -150,6 +150,25 @@
   (is (= :unknown-awaiter (:refused (le/apply-action! *reg* {:op :arm :awaiter-id "nope"
                                                               :run-id nil :ling-id nil})))))
 
+(deftest a-resumed-lings-parked-shout-arms-its-earlier-awaiter
+  (testing "park -> wake -> the successor parks on an awaiter naming the original id -> wake"
+    (create! "g1" "lander")
+    (shout! "lander" :parked {:termination :parked :awaiter-id "g1" :run-id "run-1"})
+    (is (wait-until 2000 #(= :armed (status "g1"))))
+    (manual/fire! {} "g1")
+    (is (wait-until 2000 #(= :woken (status "g1"))))
+    (create! "g2" "lander")
+    (shout! "lander-w-g1-1" :parked {:termination :parked :awaiter-id "g2" :run-id "run-2"})
+    (is (wait-until 2000 #(= :armed (status "g2"))) "the successor's park arms it")
+    (manual/fire! {} "g2")
+    (is (wait-until 2000 #(= :woken (status "g2"))))
+    (is (= 2 (count @resumes))))
+  (testing "a chained resume name is the same ling; a mere prefix is not"
+    (is (le/same-ling? "lander" "lander-w-1234abcd-1-r2-w-9f9f9f9f-3"))
+    (is (not (le/same-ling? "land" "lander")))
+    (is (not (le/same-ling? "lander-w-1234abcd-1" "lander")))
+    (is (not (le/same-ling? nil "lander")))))
+
 (deftest classify-reads-the-exit-shout
   (is (= {:op :arm :awaiter-id "x" :run-id "r" :ling-id "l"}
          (le/classify {:agent-id "l" :event-type :parked
