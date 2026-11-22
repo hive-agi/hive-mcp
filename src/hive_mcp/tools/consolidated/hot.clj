@@ -249,6 +249,7 @@
    :hot/ns-reloaded :hot/ns-skipped :hot/ns-dragged
    :hot/ns-unchanged? :hot/multi-file :hot/stale-ctors
    :hot/refused? :hot/preflight :hot/restored :hot/down :hot/restored?
+   :hot/reload-failures :hot/quarantined
    :ok? :errors :diagnostic :diagnostics :teardown/data-preserved?])
 
 (def inject-report-keys
