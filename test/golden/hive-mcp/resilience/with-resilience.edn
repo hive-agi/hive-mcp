@@ -1,0 +1,7 @@
+{:fatal
+ {:thrown "ExceptionInfo", :tag :embedder/input-too-large, :calls 1},
+ :ok {:value :fine, :calls 1},
+ :schema-mismatch
+ {:thrown "ExceptionInfo", :tag :embedder/dim-mismatch, :calls 1},
+ :transient-recovers {:value :recovered, :calls 2},
+ :transient-twice {:thrown "IOException", :tag nil, :calls 2}}
