@@ -7,8 +7,17 @@
    OOM-killed the hive-mcp JVM, taking every ling with it. A plain
    changed-only reload of one addon stays allowed: it is the small one.
 
+   The floor and the swap ratio are configurable (config.edn
+   [:services :hot :memory-floor-gb] and [:services :hot :min-swap-free-ratio]).
+   The `force_memory=true` override is for the operator: a ling caller's
+   override is ignored and the refusal says so.
+
    Pure except `read-meminfo`, which callers may replace."
   (:require [clojure.string :as str]))
+
+;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
+;;
+;; SPDX-License-Identifier: AGPL-3.0-or-later
 
 (def default-floor-gb
   "MemAvailable below this refuses a heavy reload."
@@ -45,17 +54,22 @@
   (try (parse-meminfo (slurp "/proc/meminfo"))
        (catch java.io.IOException _no-proc-meminfo-on-this-host nil)))
 
+(defn- valid-floor [x] (when (and (number? x) (not (neg? x))) x))
+(defn- valid-ratio [x] (when (and (number? x) (<= 0 x 1)) x))
+
 (defn verdict
   "Pure. nil when a heavy reload may run, else a refusal map naming the
-   numbers and the override. `mem` is a `parse-meminfo` map."
+   numbers and the override. `mem` is a `parse-meminfo` map. An invalid
+   configured floor or ratio falls back to the default."
   ([mem] (verdict mem {}))
   ([{:keys [mem-available-kb swap-free-kb swap-total-kb]}
-    {:keys [floor-gb min-swap-free-ratio]
-     :or   {floor-gb default-floor-gb min-swap-free-ratio default-min-swap-free-ratio}}]
-   (let [avail-gb   (when mem-available-kb (/ mem-available-kb 1048576.0))
+    {:keys [floor-gb min-swap-free-ratio]}]
+   (let [floor-gb   (or (valid-floor floor-gb) default-floor-gb)
+         ratio      (or (valid-ratio min-swap-free-ratio) default-min-swap-free-ratio)
+         avail-gb   (when mem-available-kb (/ mem-available-kb 1048576.0))
          low-mem?   (boolean (and avail-gb (< avail-gb floor-gb)))
          swap-full? (boolean (and swap-free-kb swap-total-kb (pos? swap-total-kb)
-                                  (< (/ (double swap-free-kb) swap-total-kb) min-swap-free-ratio)))]
+                                  (< (/ (double swap-free-kb) swap-total-kb) ratio)))]
      (when (or low-mem? swap-full?)
        {:ok? false
         :refused? true
@@ -64,13 +78,14 @@
         :floor-gb floor-gb
         :swap-free-kb swap-free-kb
         :swap-total-kb swap-total-kb
+        :min-swap-free-ratio ratio
         :message (str "refused: a forced reload or reload-all needs memory the host does not have ("
                       (str/join ", "
                                 (cond-> []
-                                  low-mem?   (conj (format "MemAvailable %.1f GB < %d GB floor" avail-gb floor-gb))
+                                  low-mem?   (conj (format "MemAvailable %.1f GB < %s GB floor" avail-gb floor-gb))
                                   swap-full? (conj (format "SwapFree %d of %d kB < %.0f%%"
                                                            swap-free-kb swap-total-kb
-                                                           (* 100.0 min-swap-free-ratio)))))
+                                                           (* 100.0 ratio)))))
                       "). A plain reload of one changed addon is still allowed. "
                       "Operator override: force_memory=true.")}))))
 
@@ -81,10 +96,19 @@
   (or (= command :reload-all)
       (contains? #{true "true"} (:force params))))
 
+(defn- override? [params] (contains? #{true "true"} (:force_memory params)))
+
 (defn refusal
-  "The refusal for this call, or nil. `read-mem` defaults to `read-meminfo`."
-  ([command params] (refusal command params read-meminfo))
-  ([command params read-mem]
+  "The refusal for this call, or nil.
+   OPTS: :read-mem (default `read-meminfo`), :floor-gb, :min-swap-free-ratio,
+   :ling? — true when the caller is a ling, whose force_memory is ignored."
+  ([command params] (refusal command params {}))
+  ([command params {:keys [read-mem ling?] :or {read-mem read-meminfo} :as opts}]
    (when (and (heavy? command params)
-              (not (contains? #{true "true"} (:force_memory params))))
-     (some-> (read-mem) verdict))))
+              (or ling? (not (override? params))))
+     (when-let [r (some-> (read-mem) (verdict opts))]
+       (cond-> r
+         (and ling? (override? params))
+         (assoc :override-ignored :ling-caller
+                :message (str (:message r)
+                              " force_memory was ignored: the override is for the operator, not a ling.")))))))

@@ -350,6 +350,31 @@
 
 (m/=> reload-call-opts [:=> [:cat :map :any] :map])
 
+(def ^:dynamic *read-meminfo*
+  "The memory reader the heavy-reload gate uses; tests rebind it."
+  memory-gate/read-meminfo)
+
+(defn memory-gate-opts
+  "Options for `memory-gate/refusal` from config.edn [:services :hot] and the
+   caller. Config and the ling test are resolved softly, so this namespace
+   gains no hard edge to config or the DSL layer."
+  [params]
+  (let [cfg   (swallow/attempt
+               (when-let [get-in-config (soft 'hive-mcp.config.core/get-in-config)]
+                 (get-in-config [:services :hot])))
+        ling? (swallow/attempt
+               (when-let [ling-caller? (soft 'hive-mcp.dsl.response/ling-caller?)]
+                 (ling-caller? (:_caller_id params))))]
+    {:read-mem            *read-meminfo*
+     :floor-gb            (:memory-floor-gb cfg)
+     :min-swap-free-ratio (:min-swap-free-ratio cfg)
+     :ling?               (boolean ling?)}))
+
+(defn- memory-refusal
+  "The heavy-reload refusal for this call, or nil."
+  [command params]
+  (memory-gate/refusal command params (memory-gate-opts params)))
+
 (defn handle-reload
   "Reload one addon (or every addon built from one namespace) plus dependents."
   [{:keys [addon namespace strategy force] :as params}]
@@ -358,8 +383,8 @@
     (and (nil? addon) (nil? namespace))
     (mcp-error "addon (or namespace) is required — e.g. {:command \"reload\" :addon \"hive.carto\"}")
 
-    (memory-gate/refusal :reload params)
-    (mcp-json (memory-gate/refusal :reload params))
+    (memory-refusal :reload params)
+    (mcp-json (memory-refusal :reload params))
 
     :else
     (let [{:keys [specs host hot-init error]} (prepared)]
@@ -426,8 +451,8 @@
     (not (bridge-available?))
     (mcp-error unavailable-msg)
 
-    (memory-gate/refusal :reload-all params)
-    (mcp-json (memory-gate/refusal :reload-all params))
+    (memory-refusal :reload-all params)
+    (mcp-json (memory-refusal :reload-all params))
 
     :else
     (let [{:keys [specs host plan hot-init error]} (prepared)]
