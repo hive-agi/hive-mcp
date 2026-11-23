@@ -516,23 +516,37 @@
     (when (str/starts-with? (str subject) "hive.v1.")
       (note-ce-skip! :cloudevents/unknown-kind {:subject subject}))))
 
+(def ^:private ce-id-keys
+  "Payload keys read for the ce-id of a core publish, first non-blank string
+   wins: :event-id, :instr/id (instruction envelopes), :shout-id (shouts)."
+  [:event-id :instr/id :shout-id])
+
 (defn- ce-id-of
-  "The ce-id of a core publish of DATA: its :event-id when a non-blank
-   string, else a fresh UUID."
+  "The ce-id of a core publish of DATA: the value of the first key of
+   `ce-id-keys` that holds a non-blank string, else a fresh UUID."
   [data]
-  (let [id (when (map? data) (:event-id data))]
-    (if (and (string? id) (not (str/blank? id))) id (str (random-uuid)))))
+  (or (when (map? data)
+        (some (fn [k]
+                (let [id (get data k)]
+                  (when (and (string? id) (not (str/blank? id))) id)))
+              ce-id-keys))
+      (str (random-uuid))))
 
 (defn- add-headers
-  "H (or new Headers when nil) with every [name value] of M put in it; H
-   unchanged when M is empty."
-  ^Headers [^Headers h m]
-  (if (seq m)
-    (let [^Headers h (or h (Headers.))]
-      (doseq [[k v] m]
-        (.put h ^String k ^"[Ljava.lang.String;" (into-array String [v])))
-      h)
-    h))
+  "TRACE Headers (nil allowed) plus every [name value] of CE-MAP, as a NEW
+   Headers object; TRACE itself when CE-MAP is empty or any put fails, so a
+   failed merge leaves no partial ce-* header and TRACE is never mutated."
+  ^Headers [^Headers trace ce-map]
+  (if (seq ce-map)
+    (try
+      (let [^Headers h (if trace (Headers. trace) (Headers.))]
+        (doseq [[k v] ce-map]
+          (.put h ^String k ^"[Ljava.lang.String;" (into-array String [v])))
+        h)
+      (catch Throwable e
+        (note-ce-skip! :cloudevents/merge-failed {:message (.getMessage e)})
+        trace))
+    trace))
 
 (defn- safe-ce-headers
   "`ce-headers` of SUBJECT and ID at the current time, or nil when building
@@ -575,8 +589,9 @@
    `max-payload-depth` to prevent StackOverflow from deep/cyclic payloads,
    then serializes to JSON with UTF-8 encoding. No-op if disconnected.
    One message carries the trace headers and, on a hive.v1.* subject, the
-   CloudEvents binary-mode headers (`ce-headers`, ce-id the payload's
-   :event-id or a fresh UUID); the body is the JSON of the payload either way.
+   CloudEvents binary-mode headers (`ce-headers`, ce-id the payload's first
+   message id of `ce-id-keys` or a fresh UUID); the body is the JSON of the
+   payload either way.
    Serialization failures and StackOverflow are logged and swallowed —
    one bad shout must not crash the publisher."
   [subject data]

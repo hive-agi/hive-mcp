@@ -3,6 +3,7 @@
    headers of hive-events (ce-*), beside the trace headers on the same
    message, with the body unchanged. Checked on a recording jnats Connection."
   (:require [clojure.data.json :as json]
+            [hive-mcp.channel.instruction-store :as instr]
             [clojure.test :refer [deftest is testing use-fixtures]]
             [hive-mcp.context.request :as ctx]
             [hive-mcp.extensions.soft :as soft]
@@ -166,6 +167,47 @@
                                (requiring-resolve sym)))]
     (nc/publish! "hive.v1.event.x" {:ok true}))
   (is (= [{:subject "hive.v1.event.x" :headers nil :body "{\"ok\":true}"}] @*sent*)))
+
+(deftest an-instruction-envelope-keeps-its-instr-id-as-ce-id
+  (let [env (instr/wrap-envelope "ling-1" {:instr/id "instr-42" :text "do it"})]
+    (nc/publish! "hive.v1.instruction.ling-1" env)
+    (let [msg (first @*sent*)]
+      (assert-ce msg "hive.instruction" "instr-42")
+      (is (= "instr-42" (get (json/read-str (:body msg)) "id")) "the body is the envelope"))))
+
+(deftest ce-id-follows-the-documented-key-order
+  (doseq [[payload id] [[{:event-id "ev" :instr/id "in" :shout-id "sh"} "ev"]
+                        [{:event-id "  " :instr/id "in" :shout-id "sh"} "in"]
+                        [{:instr/id 7 :shout-id "sh"} "sh"]]]
+    (reset! *sent* [])
+    (nc/publish! "hive.v1.event.x" payload)
+    (is (= id (get-in (first @*sent*) [:headers "ce-id"])) (pr-str payload))))
+
+(deftest without-a-message-id-ce-id-is-a-fresh-uuid
+  (doseq [payload [{:ok true} {:event-id "" :instr/id nil :shout-id 5} [1 2] "text"]]
+    (reset! *sent* [])
+    (nc/publish! "hive.v1.event.x" payload)
+    (is (parse-uuid (str (get-in (first @*sent*) [:headers "ce-id"]))) (pr-str payload))))
+
+(deftest a-failed-merge-publishes-with-the-trace-headers-only
+  (let [poison {"ce-id" "x" "bad\r\nname" "v"}
+        trace  (#'nc/trace-headers (tc/parse caller-tp))
+        merged (#'nc/add-headers trace poison)]
+    (is (identical? trace merged) "the trace Headers come back untouched")
+    (is (= #{"traceparent"} (set (.keySet ^Headers merged))) "no partial ce-* header"))
+  (testing "through publish!: the message still goes out, trace headers, no ce-*"
+    (binding [soft/*resolve* (fn [sym]
+                               (if (= 'hive.events.cloudevents/->headers sym)
+                                 (fn [_ _] {:ok {"ce-id" "x" "bad\r\nname" "v"}})
+                                 (requiring-resolve sym)))]
+      (ctx/with-request-context {:trace (tc/parse caller-tp)}
+        (nc/publish! "hive.v1.event.x" {:event-id "e-9" :ok true})))
+    (is (= 1 (count @*sent*)))
+    (let [{:keys [headers body]} (first @*sent*)]
+      (is (some? (get headers "traceparent")))
+      (is (empty? (ce-keys headers)))
+      (is (nil? (get headers "content-type")))
+      (is (= "{\"event-id\":\"e-9\",\"ok\":true}" body)))))
 
 ;; ── Inbox: the JetStream publish site ───────────────────────────────────────
 
