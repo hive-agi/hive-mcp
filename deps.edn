@@ -191,7 +191,7 @@
 
         ;; hive-system — system-level abstractions (IProcess, INetwork,
         ;; process liveness, secrets, shell, redaction).
-        io.github.hive-agi/hive-system {:mvn/version "0.4.3"}
+        io.github.hive-agi/hive-system {:mvn/version "0.4.4"}
 
         ;; Integrant — lifecycle framework for component-based systems
         ;; Replaces monolithic start! with declarative system map + profile merging
