@@ -212,79 +212,143 @@
 ;; Trace context (STD-04 O1: W3C traceparent in MCP params._meta, SEP-414)
 ;; =============================================================================
 
+;; Carrier rules (STD-04 O1). FAIL OPEN: no trace step may fail, delay or
+;; drop a tool call.
+;; - The ONLY inbound carrier is tools/call params._meta.traceparent and
+;;   params._meta.tracestate (unprefixed, MCP SEP-414). The trace never travels
+;;   in the tool arguments: the shim binds it in `*carrier*` around the SDK
+;;   method, so a handler receives exactly the arguments the client sent, and
+;;   a reload of this namespace cannot hand a tool keys it does not know.
+;; - A call made while a trace is bound (a nested or multi call) continues
+;;   that trace as a child: same trace-id and flags, new span id.
+;; - Otherwise a valid carrier is adopted; a missing or malformed one gives a
+;;   new root. An invalid tracestate is dropped.
+;; - Arguments named `_traceparent` / `_tracestate` sent by a client are NOT a
+;;   carrier: they are ignored for the trace and stripped before any handler
+;;   sees them (`trace-arg-keys`).
+;; - Any failure in a trace step means "no trace"; the call proceeds.
+
 (def trace-arg-keys
-  "Argument keys `carry-trace-meta` copies tools/call params._meta into, so
-   the trace context survives the SDK, which hands a handler only
-   params.arguments. `wrap-handler-context` strips them again."
+  "Argument keys a client may send that look like a trace carrier.
+   `wrap-handler-context` strips them and never reads them: the trace comes
+   only from params._meta (see `*carrier*`), so a client cannot set the trace
+   through an argument, nor reach a tool with one of these keys."
   [:_traceparent :_tracestate])
 
-(defn trace-meta->args
-  "Pure. ARGUMENTS with the traceparent and tracestate of PARAMS' _meta
-   (unprefixed keys, MCP SEP-414) copied under `trace-arg-keys`. jsonrpc4clj
-   reads `_meta` as :meta, so both spellings are looked up. Unchanged when
-   _meta carries neither."
-  [params arguments]
-  (let [meta-map (or (:_meta params) (:meta params) (get params "_meta"))
-        pick     (fn [k] (when (map? meta-map)
-                           (or (get meta-map (keyword k)) (get meta-map k))))
-        tp       (pick "traceparent")
-        ts       (pick "tracestate")]
-    (cond-> (or arguments {})
-      (string? tp) (assoc :_traceparent tp)
-      (string? ts) (assoc :_tracestate ts))))
+(def ^:dynamic *carrier*
+  "Inbound W3C carrier of the tools/call in flight on this thread,
+   {:traceparent s} plus :tracestate when present, or nil. Bound by the
+   `carry-trace-meta` shim around the SDK tools/call method (and conveyed by
+   request-offload's bound-fn); read once by `request-trace`."
+  nil)
 
-(m/=> trace-meta->args [:=> [:cat [:maybe map?] [:maybe map?]] map?])
+(defn trace-meta->args
+  "Pure and total. The carrier in tools/call PARAMS' _meta (unprefixed keys,
+   MCP SEP-414): {:traceparent s} plus :tracestate when it is a string. nil
+   when PARAMS is not a map, has no _meta map, or no string traceparent.
+   jsonrpc4clj reads `_meta` as :meta, so both spellings are looked up. The
+   arguments are never read nor changed (the name is historical).
+   The 2-arity [params arguments] returns ARGUMENTS untouched: it is what a
+   shim installed by an earlier build of this namespace calls after a live
+   reload, and it must then inject nothing (`install-trace-meta!` wraps the
+   current shim around it)."
+  ([params]
+   (when (map? params)
+     (let [meta-map (or (:_meta params) (:meta params) (get params "_meta"))]
+       (when (map? meta-map)
+         (let [tp (or (get meta-map :traceparent) (get meta-map "traceparent"))
+               ts (or (get meta-map :tracestate) (get meta-map "tracestate"))]
+           (when (string? tp)
+             (cond-> {:traceparent tp}
+               (string? ts) (assoc :tracestate ts))))))))
+  ([_params arguments] arguments))
+
+(m/=> trace-meta->args [:function
+                        [:=> [:cat :any]
+                         [:maybe [:map [:traceparent :string]
+                                  [:tracestate {:optional true} :string]]]]
+                        [:=> [:cat :any :any] :any]])
 
 (defonce ^:private trace-random
   (delay (tc/secure-random-fn)))
 
 (defn request-trace
-  "Trace context of a request from its (keywordized) ARGS: the parsed
-   :_traceparent/:_tracestate when the traceparent is valid, otherwise a new
-   root. An invalid tracestate is dropped. RANDOM-FN defaults to one shared
-   SecureRandom."
-  ([args] (request-trace args @trace-random))
-  ([args random-fn]
-   (or (tc/parse (:_traceparent args) (:_tracestate args))
-       (tc/new-root random-fn))))
+  "Trace context of a tools/call, in order:
+   1. a child of BOUND (the :trace already in the request context, i.e. a
+      nested or multi call): same trace-id and flags, new span id;
+   2. the parsed CARRIER ({:traceparent :tracestate} from params._meta) when
+      its traceparent is valid (an invalid tracestate is dropped);
+   3. a new root.
+   Total: any failure gives nil (\"no trace\") and the call proceeds. The
+   0-arity reads the bound trace, `*carrier*` and one shared SecureRandom."
+  ([]
+   (try (request-trace (:trace (ctx/request-ctx)) *carrier* @trace-random)
+        (catch Throwable _ nil)))
+  ([bound carrier random-fn]
+   (try
+     (or (when bound (tc/child bound (tc/new-span-id random-fn)))
+         (when (map? carrier) (tc/parse (:traceparent carrier) (:tracestate carrier)))
+         (tc/new-root random-fn))
+     (catch Throwable _ nil))))
 
 (m/=> request-trace [:function
-                     [:=> [:cat [:maybe map?]] [:maybe map?]]
-                     [:=> [:cat [:maybe map?] ifn?] [:maybe map?]]])
+                     [:=> [:cat] [:maybe map?]]
+                     [:=> [:cat [:maybe map?] [:maybe map?] ifn?] [:maybe map?]]])
 
 (defn- trace-wrapped?
-  "True when F, or the request-offload wrapper around it, is a
-   `carry-trace-meta` wrapper."
+  "True when F, or the request-offload wrapper around it, is a CURRENT
+   `carry-trace-meta` wrapper (marked ::carrier-shim). A shim of the earlier
+   build (marked only ::trace-meta) does not count: the current shim is
+   wrapped around it once, and it passes params through unchanged."
   [f]
-  (boolean (or (::trace-meta (meta f))
-               (some-> (:hive-mcp.server.request-offload/orig (meta f)) meta ::trace-meta))))
+  (boolean (or (::carrier-shim (meta f))
+               (some-> (:hive-mcp.server.request-offload/orig (meta f)) meta ::carrier-shim))))
+
+(defn- call-with-carrier
+  "Run (ORIG method context params) with `*carrier*` bound to PARAMS' _meta
+   carrier. PARAMS go on untouched, whatever their shape; a carrier that
+   cannot be read binds nothing."
+  [orig method context params]
+  (if-let [carrier (try (trace-meta->args params) (catch Throwable _ nil))]
+    (binding [*carrier* carrier]
+      (orig method context params))
+    (orig method context params)))
 
 (defn carry-trace-meta
-  "Wrap the tools/call request-method fn ORIG so the arguments it passes on
-   carry params._meta's traceparent and tracestate (`trace-meta->args`).
-   Idempotent. ORIG's metadata is kept, so a request-offload wrapper inside
-   still reads as offloaded and is not wrapped a second time."
+  "Wrap the tools/call request-method fn ORIG so it runs with params._meta's
+   traceparent and tracestate bound in `*carrier*`. PARAMS, arguments
+   included, pass on unchanged. Idempotent. The wrapper calls through the
+   `call-with-carrier` var, so a reload of this namespace takes effect in the
+   installed wrapper without wrapping again. ORIG's metadata is kept, so a
+   request-offload wrapper inside still reads as offloaded."
   [orig]
   (if (trace-wrapped? orig)
     orig
     (with-meta
       (fn [method context params]
-        (orig method context
-              (if (map? params)
-                (assoc params :arguments (trace-meta->args params (:arguments params)))
-                params)))
-      (assoc (meta orig) ::trace-meta true))))
+        (#'call-with-carrier orig method context params))
+      (assoc (meta orig) ::trace-meta true ::carrier-shim true))))
 
 (m/=> carry-trace-meta [:=> [:cat ifn?] ifn?])
 
 (defn install-trace-meta!
-  "Install `carry-trace-meta` around the SDK's tools/call method. Returns true
-   when the method is wrapped afterwards, nil when there is no such method."
+  "Install `carry-trace-meta` around the SDK's tools/call method. Idempotent:
+   an installed wrapper (bare, or inside or around request-offload's) is left
+   in place, so loading this namespace twice wraps once. Safe at any moment,
+   tool-table refresh or not: the shim only binds `*carrier*` and never
+   touches the arguments. Returns true when the method is wrapped afterwards,
+   nil when there is no such method or the install failed (logged; tools/call
+   then runs untraced)."
   []
-  (when-let [orig (get (methods jsonrpc-server/receive-request) "tools/call")]
-    (.addMethod ^clojure.lang.MultiFn jsonrpc-server/receive-request "tools/call"
-                (carry-trace-meta orig))
-    true))
+  (try
+    (when-let [orig (get (methods jsonrpc-server/receive-request) "tools/call")]
+      (when-not (trace-wrapped? orig)
+        (.addMethod ^clojure.lang.MultiFn jsonrpc-server/receive-request "tools/call"
+                    (carry-trace-meta orig)))
+      true)
+    (catch Throwable e
+      (log/warn "trace-meta install failed (tools/call runs untraced):" (ex-message e))
+      nil)))
 
 (m/=> install-trace-meta! [:=> [:cat] [:maybe [:= true]]])
 
@@ -332,8 +396,8 @@
             [{:type "text" :isError true
               :text (agent-identity/refusal-text decision (:caller-id who))}])
         (binding [ctx/*request-cache* (atom {})]
-          (let [trace (request-trace args)
-                args (apply dissoc args trace-arg-keys)
+          (let [trace (request-trace)
+                args (if (map? args) (apply dissoc args trace-arg-keys) args)
                 agent-id (id/extract-agent-id args nil)
                 project-id (id/extract-project-id args)
                 directory (id/extract-directory args)]

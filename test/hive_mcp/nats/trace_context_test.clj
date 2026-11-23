@@ -7,7 +7,8 @@
             [hive-mcp.context.request :as ctx]
             [hive-mcp.nats.client :as nc]
             [hive-mcp.server.routes.middleware :as mw]
-            [hive-ttracking.tracecontext :as tc])
+            [hive-ttracking.tracecontext :as tc]
+            [jsonrpc4clj.server :as jsonrpc-server])
   (:import [io.nats.client Connection Connection$Status]
            [io.nats.client.impl Headers NatsMessage]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
@@ -51,14 +52,17 @@
   (nc/publish! "hive.v1.event.test" {:ok true})
   [{:type "text" :text "done"}])
 
-(defn- call-tool
-  "Run ARGS through the tools/call shim and wrap-handler-context, the way the
-   SDK hands a request to a tool handler."
-  [params]
+(defn- call-tool-with
+  "Run PARAMS through the tools/call shim into the wrapped HANDLER, the way
+   the SDK hands a request to a tool handler (params.arguments only)."
+  [handler params]
   (let [shim (mw/carry-trace-meta
-              (fn [_method _context p] ((mw/wrap-handler-context handler-publishing)
-                                        (:arguments p))))]
+              (fn [_method _context p] (handler (:arguments p))))]
     (shim "tools/call" {} params)))
+
+(defn- call-tool
+  [params]
+  (call-tool-with (mw/wrap-handler-context handler-publishing) params))
 
 ;; ── tools/call -> NATS ──────────────────────────────────────────────────────
 
@@ -101,9 +105,13 @@
     (is (= {:x 1} (select-keys @seen [:x :_traceparent :_tracestate])))))
 
 (deftest trace-meta->args-reads-both-meta-spellings
-  (is (= caller-tp (:_traceparent (mw/trace-meta->args {:_meta {:traceparent caller-tp}} {}))))
-  (is (= caller-tp (:_traceparent (mw/trace-meta->args {:meta {:traceparent caller-tp}} {}))))
-  (is (= {:a 1} (mw/trace-meta->args {} {:a 1}))))
+  (is (= {:traceparent caller-tp} (mw/trace-meta->args {:_meta {:traceparent caller-tp}})))
+  (is (= {:traceparent caller-tp :tracestate "a=b"}
+         (mw/trace-meta->args {:meta {"traceparent" caller-tp "tracestate" "a=b"}})))
+  (is (nil? (mw/trace-meta->args {:arguments {:a 1}})))
+  (testing "total over shapes it does not understand"
+    (doseq [p [nil [] "s" 5 {:meta "x"} {:meta {:traceparent 5}}]]
+      (is (nil? (mw/trace-meta->args p)) (pr-str p)))))
 
 (deftest carry-trace-meta-is-idempotent
   (let [orig (fn [_ _ p] p)
@@ -140,3 +148,95 @@
     (is (not= caller-parent-id (:parent-id ctx))))
   (testing "no bound trace: no TRACEPARENT"
     (is (not (contains? (headless/build-child-env "ling-x" {:cwd "/tmp"}) "TRACEPARENT")))))
+
+;; ── Review fixes (fail open, nesting, live reload) ─────────────────────────
+
+(deftest non-map-arguments-with-meta-pass-through-untouched
+  (doseq [arguments [[1 2] "str" 5 nil]]
+    (let [seen (atom ::none)
+          shim (mw/carry-trace-meta (fn [_ _ p] (reset! seen p) :ok))
+          params {:name "t" :arguments arguments :meta {:traceparent caller-tp}}]
+      (is (= :ok (shim "tools/call" {} params)) (pr-str arguments))
+      (is (= params @seen) "params reach the SDK method unchanged")))
+  (testing "non-map params"
+    (let [shim (mw/carry-trace-meta (fn [_ _ p] p))]
+      (doseq [p [nil [] "x"]] (is (= p (shim "tools/call" {} p)))))))
+
+(defn- refusing-connection
+  "Recording Connection whose headers publish throws, like jnats against a
+   server without header support."
+  ^Connection [sent]
+  (reify Connection
+    (getStatus [_] Connection$Status/CONNECTED)
+    (^void publish [_ ^String subject ^bytes body]
+      (swap! sent conj {:subject subject :headers nil :body (String. body "UTF-8")}))
+    (^void publish [_ ^String _subject ^Headers _h ^bytes _body]
+      (throw (IllegalArgumentException. "Headers are not supported by the server")))
+    (close [_])))
+
+(deftest header-refusing-publish-still-delivers
+  (let [conn-atom @#'nc/connection
+        sent (atom [])]
+    (reset! conn-atom (refusing-connection sent))
+    (ctx/with-request-context {:trace (tc/parse caller-tp)}
+      (nc/publish! "hive.v1.event.test" {:ok true}))
+    (is (= [{:subject "hive.v1.event.test" :headers nil :body "{\"ok\":true}"}] @sent))))
+
+(deftest header-build-failure-still-delivers
+  (with-redefs [nc/trace-headers (fn [_] (throw (RuntimeException. "boom")))]
+    (ctx/with-request-context {:trace (tc/parse caller-tp)}
+      (nc/publish! "hive.v1.event.test" {:ok true})))
+  (is (= [{:subject "hive.v1.event.test" :headers nil :body "{\"ok\":true}"}] @*sent*)))
+
+(deftest nested-call-is-a-child-of-the-bound-trace
+  (let [inner-trace (atom nil)
+        inner (mw/wrap-handler-context
+               (fn [_] (reset! inner-trace (:trace (ctx/request-ctx))) [{:type "text" :text "in"}]))
+        outer-trace (atom nil)
+        outer (mw/wrap-handler-context
+               (fn [_] (reset! outer-trace (:trace (ctx/request-ctx))) (inner {:y 2})))]
+    (call-tool-with outer {:name "t" :arguments {:x 1} :meta {:traceparent caller-tp}})
+    (is (= caller-trace-id (:trace-id @outer-trace)))
+    (is (= caller-trace-id (:trace-id @inner-trace)) "same trace-id")
+    (is (not= (:parent-id @outer-trace) (:parent-id @inner-trace)) "new span id")))
+
+(deftest request-trace-failure-means-no-trace-and-the-call-proceeds
+  (with-redefs [tc/new-root (fn [& _] (throw (RuntimeException. "rng down")))]
+    (let [seen (atom ::none)
+          h (mw/wrap-handler-context (fn [_] (reset! seen (:trace (ctx/request-ctx))) [{:type "text" :text "ok"}]))]
+      (is (= [{:type "text" :text "ok"}] (h {:x 1})))
+      (is (nil? @seen)))))
+
+(deftest client-trace-args-cannot-set-the-trace-nor-reach-a-tool
+  (let [seen (atom nil)
+        h (mw/wrap-handler-context
+           (fn [args] (reset! seen [args (:trace (ctx/request-ctx))]) [{:type "text" :text "ok"}]))]
+    (h {:x 1 :_traceparent caller-tp :_tracestate "a=b"})
+    (let [[args trace] @seen]
+      (is (= {:x 1} (select-keys args [:x :_traceparent :_tracestate])))
+      (is (not= caller-trace-id (:trace-id trace)) "an argument is not a carrier"))))
+
+(deftest install-is-idempotent-across-reloads
+  (let [mf jsonrpc-server/receive-request
+        before (get (methods mf) "tools/call")
+        base (fn [_ _ p] p)]
+    (try
+      (.addMethod ^clojure.lang.MultiFn mf "tools/call" base)
+      (is (true? (mw/install-trace-meta!)))
+      (let [once (get (methods mf) "tools/call")]
+        (is (true? (mw/install-trace-meta!)))
+        (require 'hive-mcp.server.routes.middleware :reload)
+        (is (identical? once (get (methods mf) "tools/call")) "wrapped once"))
+      (finally (.addMethod ^clojure.lang.MultiFn mf "tools/call" before)))))
+
+(deftest strict-tool-works-right-after-install-before-any-refresh
+  (testing "a tool rejecting unknown keys, built BEFORE install, behind the SDK method"
+    (let [strict (fn [args]
+                   (when-let [extra (seq (remove #{:x} (keys args)))]
+                     (throw (ex-info "unknown params" {:extra extra})))
+                   [{:type "text" :text "ok"}])
+          sdk-method (fn [_ _ params] (strict (:arguments params)))
+          installed (mw/carry-trace-meta sdk-method)]
+      (is (= [{:type "text" :text "ok"}]
+             (installed "tools/call" {} {:name "t" :arguments {:x 1}
+                                         :meta {:traceparent caller-tp}}))))))

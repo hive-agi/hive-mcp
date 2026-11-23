@@ -20,7 +20,8 @@
             [hive-ttracking.tracecontext :as tc]
             [hive-mcp.context.request :as ctx])
   (:import [io.nats.client Nats Options$Builder Connection$Status
-            MessageHandler ErrorListener JetStreamSubscription Message]
+            MessageHandler ErrorListener JetStreamSubscription Message Connection
+            Dispatcher]
            [io.nats.client.impl ErrorListenerLoggerImpl Headers]
            [java.time Duration]
            [io.nats.client ConnectionListener]))
@@ -51,7 +52,8 @@
 (defn connected?
   "Return true if NATS connection is active and connected."
   []
-  (some-> @connection (.getStatus) (= Connection$Status/CONNECTED)))
+  (when-let [^Connection c @connection]
+    (= (.getStatus c) Connection$Status/CONNECTED)))
 
 (defn current-connection
   "The live jnats Connection when CONNECTED, else nil. For callers that need
@@ -108,7 +110,7 @@
 (defn- adopt-connection!
   "First CONNECTED: publish the Connection and a dispatcher. Reconnects
    reuse both (jnats heals the same Connection and its subscriptions)."
-  [conn]
+  [^Connection conn]
   (when-not (identical? conn @connection)
     (reset! dispatcher (.createDispatcher conn))
     (reset! connection conn)))
@@ -143,7 +145,7 @@
   "Close the current connection (if any) and invalidate its listener."
   []
   (swap! epoch-counter inc)
-  (when-let [conn @connection]
+  (when-let [^Connection conn @connection]
     (swallow/attempt-ex (.close conn)))
   (reset! connection nil)
   (reset! dispatcher nil)
@@ -391,14 +393,45 @@
     (let [^Headers h (.getHeaders msg)]
       (tc/parse (.getFirst h "traceparent") (.getFirst h "tracestate")))))
 
+(defn- safe-outbound-headers
+  "Headers for an outbound message of the bound trace (a child of it), or
+   nil when no trace is bound or building them fails in any way. Its own
+   guarded step: a trace failure never reaches the publish."
+  ^Headers []
+  (try (trace-headers (outbound-trace))
+       (catch Throwable e
+         (log/debug "[NATS] trace header build failed, publishing plain:" (.getMessage e))
+         nil)))
+
+(defn- publish-traced!
+  "Publish BYTES on SUBJECT through CONN, with headers H when non-nil. When
+   the headers publish throws (a build problem, or jnats refusing headers,
+   e.g. \"Headers are not supported by the server\"), the message is sent
+   again WITHOUT headers: a trace never costs a message. A failure of the
+   plain publish itself propagates to the caller as before."
+  [^Connection conn ^String subject ^bytes bytes ^Headers h]
+  (if h
+    (try (.publish conn subject h bytes)
+         (catch Exception e
+           (log/debug "[NATS] headers refused on" subject ", publishing plain:" (.getMessage e))
+           (.publish conn subject bytes)))
+    (.publish conn subject bytes)))
+
 (defn- call-with-trace
   "Run (F) with TRACE-CTX bound as :trace in the request context; plain (F)
-   when TRACE-CTX is nil."
+   when TRACE-CTX is nil. Inbound carrier rules: a valid `traceparent` header
+   (plus `tracestate`, dropped when invalid) binds; anything else binds
+   nothing. Reading the headers is guarded: a failure there runs (F) plain."
   [trace-ctx f]
   (if trace-ctx
     (let [bound (assoc (ctx/request-ctx) :trace trace-ctx)]
       (ctx/with-request-context bound (f)))
     (f)))
+
+(defn- safe-inbound-trace
+  "`inbound-trace` of MSG, or nil when reading it fails."
+  [msg]
+  (try (inbound-trace msg) (catch Throwable _ nil)))
 
 ;; =============================================================================
 ;; Publish / Subscribe
@@ -411,14 +444,12 @@
    Serialization failures and StackOverflow are logged and swallowed —
    one bad shout must not crash the publisher."
   [subject data]
-  (when-let [conn @connection]
+  (when-let [^Connection conn @connection]
     (when (connected?)
       (try
         (let [safe (clamp-depth data)
               bytes (.getBytes (json/write-str safe) "UTF-8")]
-          (if-let [h (trace-headers (outbound-trace))]
-            (.publish conn ^String subject ^Headers h ^bytes bytes)
-            (.publish conn subject bytes)))
+          (publish-traced! conn subject bytes (safe-outbound-headers)))
         (catch StackOverflowError _e
           (log/warn "[NATS] StackOverflow serializing payload for" subject
                     "— dropped (depth cap insufficient or cycle in scalar)"))
@@ -431,13 +462,13 @@
    from JSON using clojure.data.json with keyword keys. Logs warnings on
    handler exceptions. Tracks subscription in the subscriptions atom for cleanup."
   [subject handler-fn]
-  (when-let [disp @dispatcher]
-    (let [sub (.subscribe disp subject
+  (when-let [^Dispatcher disp @dispatcher]
+    (let [sub (.subscribe disp ^String subject ^MessageHandler
                           (reify MessageHandler
                             (onMessage [_ msg]
                               (try
                                 (let [data (json/read-str (String. (.getData msg) "UTF-8") :key-fn keyword)]
-                                  (call-with-trace (inbound-trace msg)
+                                  (call-with-trace (safe-inbound-trace msg)
                                                    #(handler-fn data)))
                                 (catch Exception e
                                   (log/warn "[NATS] Handler error on" subject ":" (.getMessage e)))))))]
@@ -448,8 +479,8 @@
   "Unsubscribe from a subject. Safe to call when not subscribed."
   [subject]
   (when-let [_sub (get @subscriptions subject)]
-    (when-let [disp @dispatcher]
-      (.unsubscribe disp subject))
+    (when-let [^Dispatcher disp @dispatcher]
+      (.unsubscribe disp ^String subject))
     (swap! subscriptions dissoc subject)))
 ;; =============================================================================
 ;; Function Contracts (m16 coverage batch)

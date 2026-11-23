@@ -36,7 +36,7 @@
 ;; Process Registry
 ;; ===========================================================================
 
-(defonce ^:private process-registry
+(defonce ^:private ^ConcurrentHashMap process-registry
   (ConcurrentHashMap.))
 
 (defonce ^:private shutdown-hook-registered?
@@ -241,15 +241,26 @@
   ["ANTHROPIC_API_KEY" "ANTHROPIC_AUTH_TOKEN" "ANTHROPIC_BASE_URL"
    "OPENAI_API_KEY" "MOONSHOT_API_KEY" "KIMI_API_KEY"])
 
+(defonce ^:private trace-random
+  ;; One SecureRandom for every span id a spawn draws (not one per spawn).
+  (delay (tc/secure-random-fn)))
+
 (defn trace-env
   "STD-04 O1: {\"TRACEPARENT\" ..} (and \"TRACESTATE\" when non-empty) for a
    child of the W3C trace context bound in the request context (:trace):
-   same trace-id, flags and tracestate, fresh parent-id. Empty when no valid
-   context is bound."
-  ([] (trace-env (:trace (request-ctx/request-ctx)) (tc/secure-random-fn)))
+   same trace-id, flags and tracestate, fresh parent-id.
+
+   Carrier rules: the child ling reads env TRACEPARENT / TRACESTATE (the
+   upper-cased W3C header names). Nothing is invented outside a trace: empty
+   when no valid context is bound. Fail open: any failure gives {} and the
+   spawn proceeds untraced. The 0-arity draws from one shared SecureRandom."
+  ([] (try (trace-env (:trace (request-ctx/request-ctx)) @trace-random)
+           (catch Throwable _ {})))
   ([trace-ctx random-fn]
-   (let [child (when trace-ctx (tc/child trace-ctx (tc/new-span-id random-fn)))]
-     (into {} (map (fn [[k v]] [(str/upper-case k) v])) (tc/->headers child)))))
+   (try
+     (let [child (when trace-ctx (tc/child trace-ctx (tc/new-span-id random-fn)))]
+       (into {} (map (fn [[k v]] [(str/upper-case k) v])) (tc/->headers child)))
+     (catch Throwable _ {}))))
 
 (m/=> trace-env [:function
                  [:=> [:cat] [:map-of :string :string]]
@@ -321,7 +332,7 @@
    `child-scope/*prefix*` at call time, the seam tests bind."
   [cmd-parts cwd]
   (doto (ProcessBuilder. ^java.util.List (vec cmd-parts))
-    (.directory (java.io.File. cwd))
+    (.directory (java.io.File. ^String cwd))
     (.redirectErrorStream false)))
 
 (defn- start-process!
