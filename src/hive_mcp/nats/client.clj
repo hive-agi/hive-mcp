@@ -22,7 +22,7 @@
   (:import [io.nats.client Nats Options$Builder Connection$Status
             MessageHandler ErrorListener JetStreamSubscription Message Connection
             Dispatcher]
-           [io.nats.client.impl ErrorListenerLoggerImpl Headers]
+           [io.nats.client.impl ErrorListenerLoggerImpl Headers NatsMessage]
            [io.nats.client.api ServerInfo]
            [java.time Duration]
            [io.nats.client ConnectionListener]))
@@ -360,13 +360,13 @@
   ;; One SecureRandom for every fresh span id this namespace draws.
   (delay (tc/secure-random-fn)))
 
-(defn bound-trace
+(defn- bound-trace
   "The W3C trace context bound in the request context of the calling thread
    (:trace of hive-mcp.context.request/*request-ctx*), or nil."
   []
   (:trace (ctx/request-ctx)))
 
-(defn outbound-trace
+(defn- outbound-trace
   "Context an outbound message carries: a child of CTX (default the bound
    one) with the same trace-id, flags and tracestate and a fresh parent-id.
    nil when CTX is nil or invalid, so nothing is invented outside a trace."
@@ -544,3 +544,49 @@
 (m/=> unsubscribe!
       [:=> [:cat :string]
        :any])
+
+;; Trace context (STD-04 O1). A trace context is the hive-ttracking
+;; tracecontext map; an invalid or nil one yields nil, never a throw.
+
+(def TraceCtx
+  "A W3C trace context as hive-ttracking.tracecontext builds it."
+  [:map
+   [:version [:= "00"]]
+   [:trace-id [:re {:gen/elements ["4bf92f3577b34da6a3ce929d0e0e4736"
+                                   "0af7651916cd43dd8448eb211c80319c"]}
+               #"^[0-9a-f]{32}$"]]
+   [:parent-id [:re {:gen/elements ["00f067aa0ba902b7" "b7ad6b7169203331"]}
+                #"^[0-9a-f]{16}$"]]
+   [:flags [:re {:gen/elements ["00" "01"]} #"^[0-9a-f]{2}$"]]
+   [:tracestate {:optional true} [:vector {:max 3} [:enum "a=b" "vendor=abc"]]]])
+
+(defn- sample-headers
+  "Generator sample: Headers carrying one valid traceparent."
+  ^Headers []
+  (doto (Headers.)
+    (.add "traceparent" ^"[Ljava.lang.String;"
+          (into-array String ["00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"]))))
+
+(defn- sample-message
+  "Generator sample: an inbound message, with H as headers when non-nil."
+  ^Message [^Headers h]
+  (let [^io.nats.client.impl.NatsMessage$Builder b
+        (-> (NatsMessage/builder) (.subject "s") (.data (.getBytes "{}" "UTF-8")))]
+    (.build (if h (.headers b h) b))))
+
+(def NatsHeaders
+  "jnats Headers."
+  [:fn {:gen/elements [(sample-headers) (Headers.)]} #(instance? Headers %)])
+
+(def InboundMessage
+  "An inbound jnats Message, with or without headers."
+  [:fn {:gen/elements [(sample-message nil) (sample-message (sample-headers))]}
+   #(instance? Message %)])
+
+(m/=> trace-headers
+      [:=> [:cat [:maybe TraceCtx]]
+       [:maybe NatsHeaders]])
+
+(m/=> inbound-trace
+      [:=> [:cat InboundMessage]
+       [:maybe TraceCtx]])
