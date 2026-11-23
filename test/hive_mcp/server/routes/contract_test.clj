@@ -45,7 +45,9 @@
    :exempt {}})
 
 (deftest the-gate-is-not-vacuous
-  (is (= 48 (count (:universe (coverage/coverage {:paths batch-paths}))))))
+  ;; 52 = 48 + the four STD-04 trace-context fns of middleware.clj
+  ;; (trace-meta->args, request-trace, carry-trace-meta, install-trace-meta!).
+  (is (= 52 (count (:universe (coverage/coverage {:paths batch-paths}))))))
 
 (deftest every-routes-contract-generates-both-sides
   (doseq [ns-sym '[hive-mcp.server.routes hive-mcp.server.routes.async-ack

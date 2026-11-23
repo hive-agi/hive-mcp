@@ -16,10 +16,12 @@
             [taoensso.timbre :as log]
             [malli.core :as m]
             [clojure.string :as str]
-            [hive-mcp.resilience.swallow :as swallow])
+            [hive-mcp.resilience.swallow :as swallow]
+            [hive-ttracking.tracecontext :as tc]
+            [hive-mcp.context.request :as ctx])
   (:import [io.nats.client Nats Options$Builder Connection$Status
-            MessageHandler ErrorListener JetStreamSubscription]
-           [io.nats.client.impl ErrorListenerLoggerImpl]
+            MessageHandler ErrorListener JetStreamSubscription Message]
+           [io.nats.client.impl ErrorListenerLoggerImpl Headers]
            [java.time Duration]
            [io.nats.client ConnectionListener]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
@@ -348,6 +350,57 @@
      (doall (map #(clamp-depth % (dec depth)) data)))))
 
 ;; =============================================================================
+;; Trace context (STD-04 O1: W3C traceparent / tracestate as NATS headers)
+;; =============================================================================
+
+(defonce ^:private trace-random
+  ;; One SecureRandom for every fresh span id this namespace draws.
+  (delay (tc/secure-random-fn)))
+
+(defn bound-trace
+  "The W3C trace context bound in the request context of the calling thread
+   (:trace of hive-mcp.context.request/*request-ctx*), or nil."
+  []
+  (:trace (ctx/request-ctx)))
+
+(defn outbound-trace
+  "Context an outbound message carries: a child of CTX (default the bound
+   one) with the same trace-id, flags and tracestate and a fresh parent-id.
+   nil when CTX is nil or invalid, so nothing is invented outside a trace."
+  ([] (outbound-trace (bound-trace)))
+  ([trace-ctx]
+   (when trace-ctx
+     (tc/child trace-ctx (tc/new-span-id @trace-random)))))
+
+(defn trace-headers
+  "jnats Headers holding `traceparent` (and `tracestate` when non-empty) for
+   a valid TRACE-CTX; nil for nil or an invalid context."
+  ^Headers [trace-ctx]
+  (when-let [hs (tc/->headers trace-ctx)]
+    (let [h (Headers.)]
+      (doseq [[k v] hs]
+        (.add h ^String k ^"[Ljava.lang.String;" (into-array String [v])))
+      h)))
+
+(defn inbound-trace
+  "Trace context carried by the headers of an inbound jnats MSG, or nil when
+   it has no headers or a missing or malformed traceparent (an invalid
+   tracestate is dropped, it never invalidates the traceparent)."
+  [^Message msg]
+  (when (.hasHeaders msg)
+    (let [^Headers h (.getHeaders msg)]
+      (tc/parse (.getFirst h "traceparent") (.getFirst h "tracestate")))))
+
+(defn- call-with-trace
+  "Run (F) with TRACE-CTX bound as :trace in the request context; plain (F)
+   when TRACE-CTX is nil."
+  [trace-ctx f]
+  (if trace-ctx
+    (let [bound (assoc (ctx/request-ctx) :trace trace-ctx)]
+      (ctx/with-request-context bound (f)))
+    (f)))
+
+;; =============================================================================
 ;; Publish / Subscribe
 ;; =============================================================================
 
@@ -363,7 +416,9 @@
       (try
         (let [safe (clamp-depth data)
               bytes (.getBytes (json/write-str safe) "UTF-8")]
-          (.publish conn subject bytes))
+          (if-let [h (trace-headers (outbound-trace))]
+            (.publish conn ^String subject ^Headers h ^bytes bytes)
+            (.publish conn subject bytes)))
         (catch StackOverflowError _e
           (log/warn "[NATS] StackOverflow serializing payload for" subject
                     "— dropped (depth cap insufficient or cycle in scalar)"))
@@ -382,7 +437,8 @@
                             (onMessage [_ msg]
                               (try
                                 (let [data (json/read-str (String. (.getData msg) "UTF-8") :key-fn keyword)]
-                                  (handler-fn data))
+                                  (call-with-trace (inbound-trace msg)
+                                                   #(handler-fn data)))
                                 (catch Exception e
                                   (log/warn "[NATS] Handler error on" subject ":" (.getMessage e)))))))]
       (swap! subscriptions assoc subject sub)

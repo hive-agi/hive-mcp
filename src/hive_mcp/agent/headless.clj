@@ -9,7 +9,9 @@
             [taoensso.timbre :as log]
             [hive-mcp.agent.identity :as agent-identity]
             [hive-mcp.system.child-scope :as child-scope]
-            [malli.core :as m])
+            [malli.core :as m]
+            [hive-mcp.context.request :as request-ctx]
+            [hive-ttracking.tracecontext :as tc])
   (:import [java.lang ProcessBuilder]
            [java.io BufferedReader InputStreamReader BufferedWriter OutputStreamWriter]
            [java.util.concurrent ConcurrentHashMap]))
@@ -239,6 +241,20 @@
   ["ANTHROPIC_API_KEY" "ANTHROPIC_AUTH_TOKEN" "ANTHROPIC_BASE_URL"
    "OPENAI_API_KEY" "MOONSHOT_API_KEY" "KIMI_API_KEY"])
 
+(defn trace-env
+  "STD-04 O1: {\"TRACEPARENT\" ..} (and \"TRACESTATE\" when non-empty) for a
+   child of the W3C trace context bound in the request context (:trace):
+   same trace-id, flags and tracestate, fresh parent-id. Empty when no valid
+   context is bound."
+  ([] (trace-env (:trace (request-ctx/request-ctx)) (tc/secure-random-fn)))
+  ([trace-ctx random-fn]
+   (let [child (when trace-ctx (tc/child trace-ctx (tc/new-span-id random-fn)))]
+     (into {} (map (fn [[k v]] [(str/upper-case k) v])) (tc/->headers child)))))
+
+(m/=> trace-env [:function
+                 [:=> [:cat] [:map-of :string :string]]
+                 [:=> [:cat [:maybe map?] ifn?] [:map-of :string :string]]])
+
 (defn build-child-env
   "Build environment variable map for a child ling process (pure calculation).
 
@@ -273,6 +289,7 @@
           cwd (assoc "BB_MCP_PROJECT_DIR" cwd)
           (and model (not= model "claude")) (assoc "OPENROUTER_MODEL" model))
         (merge (agent-identity/child-env env-extra ling-id credential))
+        (merge (trace-env))
         (#(apply dissoc % withheld-env-vars)))))
 
 (defn- configure-process-env!

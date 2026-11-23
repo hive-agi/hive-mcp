@@ -30,7 +30,10 @@
             [hive-mcp.tools.async-params :as async-params]
             [malli.core :as m]
             [hive-mcp.server.routes.async-task.lane :as async-lane]
-            [hive-mcp.server.routes.metrics-seam :as metrics])
+            [hive-mcp.server.routes.metrics-seam :as metrics]
+            [hive-ttracking.tracecontext :as tc]
+            [jsonrpc4clj.server :as jsonrpc-server]
+            [io.modelcontext.clojure-sdk.server])
 (:import [java.util.concurrent RejectedExecutionException]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -205,6 +208,88 @@
 
 (m/=> touch-caller-activity! [:=> [:cat [:=> [:cat :string] :any] [:maybe :string]] :any])
 
+;; =============================================================================
+;; Trace context (STD-04 O1: W3C traceparent in MCP params._meta, SEP-414)
+;; =============================================================================
+
+(def trace-arg-keys
+  "Argument keys `carry-trace-meta` copies tools/call params._meta into, so
+   the trace context survives the SDK, which hands a handler only
+   params.arguments. `wrap-handler-context` strips them again."
+  [:_traceparent :_tracestate])
+
+(defn trace-meta->args
+  "Pure. ARGUMENTS with the traceparent and tracestate of PARAMS' _meta
+   (unprefixed keys, MCP SEP-414) copied under `trace-arg-keys`. jsonrpc4clj
+   reads `_meta` as :meta, so both spellings are looked up. Unchanged when
+   _meta carries neither."
+  [params arguments]
+  (let [meta-map (or (:_meta params) (:meta params) (get params "_meta"))
+        pick     (fn [k] (when (map? meta-map)
+                           (or (get meta-map (keyword k)) (get meta-map k))))
+        tp       (pick "traceparent")
+        ts       (pick "tracestate")]
+    (cond-> (or arguments {})
+      (string? tp) (assoc :_traceparent tp)
+      (string? ts) (assoc :_tracestate ts))))
+
+(m/=> trace-meta->args [:=> [:cat [:maybe map?] [:maybe map?]] map?])
+
+(defonce ^:private trace-random
+  (delay (tc/secure-random-fn)))
+
+(defn request-trace
+  "Trace context of a request from its (keywordized) ARGS: the parsed
+   :_traceparent/:_tracestate when the traceparent is valid, otherwise a new
+   root. An invalid tracestate is dropped. RANDOM-FN defaults to one shared
+   SecureRandom."
+  ([args] (request-trace args @trace-random))
+  ([args random-fn]
+   (or (tc/parse (:_traceparent args) (:_tracestate args))
+       (tc/new-root random-fn))))
+
+(m/=> request-trace [:function
+                     [:=> [:cat [:maybe map?]] [:maybe map?]]
+                     [:=> [:cat [:maybe map?] ifn?] [:maybe map?]]])
+
+(defn- trace-wrapped?
+  "True when F, or the request-offload wrapper around it, is a
+   `carry-trace-meta` wrapper."
+  [f]
+  (boolean (or (::trace-meta (meta f))
+               (some-> (:hive-mcp.server.request-offload/orig (meta f)) meta ::trace-meta))))
+
+(defn carry-trace-meta
+  "Wrap the tools/call request-method fn ORIG so the arguments it passes on
+   carry params._meta's traceparent and tracestate (`trace-meta->args`).
+   Idempotent. ORIG's metadata is kept, so a request-offload wrapper inside
+   still reads as offloaded and is not wrapped a second time."
+  [orig]
+  (if (trace-wrapped? orig)
+    orig
+    (with-meta
+      (fn [method context params]
+        (orig method context
+              (if (map? params)
+                (assoc params :arguments (trace-meta->args params (:arguments params)))
+                params)))
+      (assoc (meta orig) ::trace-meta true))))
+
+(m/=> carry-trace-meta [:=> [:cat ifn?] ifn?])
+
+(defn install-trace-meta!
+  "Install `carry-trace-meta` around the SDK's tools/call method. Returns true
+   when the method is wrapped afterwards, nil when there is no such method."
+  []
+  (when-let [orig (get (methods jsonrpc-server/receive-request) "tools/call")]
+    (.addMethod ^clojure.lang.MultiFn jsonrpc-server/receive-request "tools/call"
+                (carry-trace-meta orig))
+    true))
+
+(m/=> install-trace-meta! [:=> [:cat] [:maybe [:= true]]])
+
+(install-trace-meta!)
+
 (defn wrap-handler-context
   "Bind request context: keywordize args, verify identity, resolve ids, bind
    ctx vars.
@@ -247,7 +332,9 @@
             [{:type "text" :isError true
               :text (agent-identity/refusal-text decision (:caller-id who))}])
         (binding [ctx/*request-cache* (atom {})]
-          (let [agent-id (id/extract-agent-id args nil)
+          (let [trace (request-trace args)
+                args (apply dissoc args trace-arg-keys)
+                agent-id (id/extract-agent-id args nil)
                 project-id (id/extract-project-id args)
                 directory (id/extract-directory args)]
             (crystal/record-session-start!
@@ -258,7 +345,8 @@
                                        :caller-id (:_caller_id args)
                                        :identity who
                                        :project-id project-id
-                                       :directory directory}
+                                       :directory directory
+                                       :trace trace}
               ((in-embed-lane :interactive #(handler args))))))))))
 
 (m/=> wrap-handler-context [:=> [:cat Handler] Handler])
