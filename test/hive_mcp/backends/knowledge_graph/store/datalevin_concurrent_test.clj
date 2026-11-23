@@ -19,10 +19,9 @@
             [clojure.test.check.clojure-test :refer [defspec]]
             [clojure.test.check.generators :as gen]
             [clojure.test.check.properties :as prop]
-            [datalevin.core :as dtlv]
             [hive-mcp.protocols.kg :as pkg]
-            [hive-test.linearizability :as lin]
-            [hive-datalevin.kg.store :as dl])
+            [hive-mcp.knowledge-graph.slots.factory :as factory]
+            [hive-test.linearizability :as lin])
   (:import (java.nio.file Files)
            (java.nio.file.attribute FileAttribute)))
 
@@ -68,7 +67,7 @@
 (deftest concurrent-transact-no-lost-writes
   (testing "4 threads × 25 transacts each — every edge persisted, no exceptions"
     (let [path     (temp-dir!)
-          store    (dl/create-store {:db-path path})
+          store    (factory/backend->store :datalevin {:db-path path})
           n-thread 4
           per      25
           total    (* n-thread per)
@@ -96,7 +95,7 @@
            #(= (count %) (count (distinct %)))
            (gen/vector (gen/choose 1000 9999) 8 32))]
     (let [path  (temp-dir!)
-          store (dl/create-store {:db-path path})]
+          store (factory/backend->store :datalevin {:db-path path})]
       (try
         (pkg/ensure-conn! store)
         (let [chunks (partition-all (max 1 (quot (count ids) 4)) ids)]
