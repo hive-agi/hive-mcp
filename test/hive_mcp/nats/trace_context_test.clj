@@ -134,7 +134,7 @@
 
 (deftest publish-outside-a-trace-sends-no-header
   (nc/publish! "hive.v1.event.test" {:ok true})
-  (is (nil? (:headers (last @*sent*)))))
+  (is (nil? (get-in (last @*sent*) [:headers "traceparent"]))))
 
 (deftest inbound-headers-bind-the-trace-for-the-handler
   (let [h   (doto (Headers.) (.add "traceparent" (into-array String [caller-tp])))
@@ -198,7 +198,9 @@
   (with-redefs [nc/trace-headers (fn [_] (throw (RuntimeException. "boom")))]
     (ctx/with-request-context {:trace (tc/parse caller-tp)}
       (nc/publish! "hive.v1.event.test" {:ok true})))
-  (is (= [{:subject "hive.v1.event.test" :headers nil :body "{\"ok\":true}"}] @*sent*)))
+  (is (= [{:subject "hive.v1.event.test" :body "{\"ok\":true}"}]
+         (map #(select-keys % [:subject :body]) @*sent*)))
+  (is (nil? (get-in (first @*sent*) [:headers "traceparent"]))))
 
 (deftest nested-call-is-a-child-of-the-bound-trace
   (let [inner-trace (atom nil)

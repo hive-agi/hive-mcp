@@ -18,11 +18,13 @@
             [clojure.string :as str]
             [hive-mcp.nats.streams :as streams]
             [malli.core :as m]
-            [hive-mcp.resilience.swallow :as swallow])
+            [hive-mcp.resilience.swallow :as swallow]
+            [hive-mcp.nats.client :as client])
   (:import [io.nats.client Connection JetStreamApiException PublishOptions
             FetchConsumeOptions Message]
            [io.nats.client.api ConsumerConfiguration AckPolicy DeliverPolicy
             ConsumerInfo]
+           [io.nats.client.impl Headers]
            [java.time Duration]
            [java.util UUID]))
 
@@ -233,16 +235,24 @@
 
 (defn send!
   "Publish one message to inbox `to` with a broker ack. Returns the stream
-   seq. The inbox need not be armed yet: the stream keeps the message."
+   seq. The inbox need not be armed yet: the stream keeps the message. The
+   message carries the trace and CloudEvents headers of
+   hive-mcp.nats.client/outbound-headers (ce-id the envelope id) when the
+   server takes headers; the body is the envelope either way."
   [^Connection conn {:keys [to] :as msg}]
-  (let [to  (encode-inbox-id to)
-        msg (assoc msg :to to)
-        _   (ensure-stream! conn)
-        env (envelope msg)
-        pa  (.publish (.jetStream conn) ^String (subject to)
-                      (.getBytes ^String (json/write-str env) "UTF-8")
-                      (-> (PublishOptions/builder) (.messageId (:id env)) (.build)))]
-    {:id (:id env) :to to :subject (subject to)
+  (let [to    (encode-inbox-id to)
+        msg   (assoc msg :to to)
+        _     (ensure-stream! conn)
+        env   (envelope msg)
+        subj  ^String (subject to)
+        body  (.getBytes ^String (json/write-str env) "UTF-8")
+        opts  (-> (PublishOptions/builder) (.messageId (:id env)) (.build))
+        h     (client/outbound-headers conn subj (:id env))
+        js    (.jetStream conn)
+        pa    (if h
+                (.publish js subj ^Headers h ^bytes body ^PublishOptions opts)
+                (.publish js subj ^bytes body ^PublishOptions opts))]
+    {:id (:id env) :to to :subject subj
      :seq (.getSeqno pa) :duplicate? (.isDuplicate pa)}))
 
 (m/=> send! [:=> [:cat :any [:map [:to :string]]] SendReceipt])

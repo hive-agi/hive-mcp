@@ -18,7 +18,9 @@
             [clojure.string :as str]
             [hive-mcp.resilience.swallow :as swallow]
             [hive-ttracking.tracecontext :as tc]
-            [hive-mcp.context.request :as ctx])
+            [hive-mcp.context.request :as ctx]
+            [hive-mcp.extensions.soft :as soft]
+            [hive-dsl.result :as r])
   (:import [io.nats.client Nats Options$Builder Connection$Status
             MessageHandler ErrorListener JetStreamSubscription Message Connection
             Dispatcher]
@@ -394,16 +396,6 @@
     (let [^Headers h (.getHeaders msg)]
       (tc/parse (.getFirst h "traceparent") (.getFirst h "tracestate")))))
 
-(defn- safe-outbound-headers
-  "Headers for an outbound message of the bound trace (a child of it), or
-   nil when no trace is bound or building them fails in any way. Its own
-   guarded step: a trace failure never reaches the publish."
-  ^Headers []
-  (try (trace-headers (outbound-trace))
-       (catch Throwable e
-         (log/debug "[NATS] trace header build failed, publishing plain:" (.getMessage e))
-         nil)))
-
 (defn- headers-supported?
   "False only when CONN's server info says the server takes no headers. Any
    doubt (no server info yet, a Connection without it, a throw) is true: the
@@ -455,6 +447,126 @@
   (try (inbound-trace msg) (catch Throwable _ nil)))
 
 ;; =============================================================================
+;; CloudEvents (STD-04 E1: binary-mode ce-* headers on hive.v1.* publishes)
+;; =============================================================================
+
+(def ^:private ce-kinds
+  #{"shout" "event" "inbox" "ci" "tool" "agent" "wave" "slave" "instruction"})
+
+(def ^:private ce-content-type "application/json")
+
+(defonce ^:private local-node-id (str (random-uuid)))
+
+(defonce ^:private ce-skips-logged (atom #{}))
+
+(defn ce-type
+  "CloudEvents type of a hive.v1.* SUBJECT: hive.event.<type> for
+   hive.v1.event.<type>, hive.<kind> for the other known kinds (shout, inbox,
+   ci, tool, agent, wave, slave, instruction); nil for any other subject."
+  [subject]
+  (let [[a b kind t] (str/split (str subject) #"\." 4)]
+    (when (and (= "hive" a) (= "v1" b) (contains? ce-kinds kind))
+      (if (= "event" kind)
+        (when-not (str/blank? t) (str "hive.event." t))
+        (str "hive." kind)))))
+
+(defn- node-id
+  "This process's node id: hive-mcp.nats.bridge's when that namespace is
+   loaded (the value stamped as :nats/source-node), else a local one."
+  []
+  (or (when-let [f (some-> (find-ns 'hive-mcp.nats.bridge) (ns-resolve 'source-node-id))]
+        (f))
+      local-node-id))
+
+(defn- note-ce-skip!
+  "Log REASON at debug the first time it is seen in this process; nil."
+  [reason detail]
+  (let [[before _] (swap-vals! ce-skips-logged conj reason)]
+    (when-not (contains? before reason)
+      (log/debug "[NATS] CloudEvents headers skipped (logged once):" reason detail))
+    nil))
+
+(defn- codec
+  "Result of resolving the hive-events CloudEvents codec without loading it."
+  []
+  (let [envelope (soft/resolve-cached 'hive.events.cloudevents/envelope)
+        to-headers (soft/resolve-cached 'hive.events.cloudevents/->headers)]
+    (if (and envelope to-headers)
+      (r/ok {:envelope envelope :to-headers to-headers})
+      (r/err :cloudevents/codec-absent))))
+
+(defn ce-headers
+  "Binary-mode CloudEvents headers (ce-specversion ce-id ce-source ce-type
+   ce-time ce-datacontenttype ce-hiveschemaversion, and content-type) for one
+   publish of message ID on SUBJECT at NOW-MS epoch millis; nil when SUBJECT
+   has no CloudEvents type (`ce-type`), the hive-events codec is absent, or
+   the codec refuses."
+  [subject id now-ms]
+  (if-let [type (ce-type subject)]
+    (let [res (r/let-ok [{:keys [envelope to-headers]} (codec)
+                         attrs (envelope {:type type
+                                          :source (str "/hive/" (node-id))
+                                          :id id
+                                          :clock (constantly now-ms)
+                                          :datacontenttype ce-content-type})]
+                (to-headers attrs {:content-type? true}))]
+      (if (r/ok? res)
+        (:ok res)
+        (note-ce-skip! (:error res) (dissoc res :error))))
+    (when (str/starts-with? (str subject) "hive.v1.")
+      (note-ce-skip! :cloudevents/unknown-kind {:subject subject}))))
+
+(defn- ce-id-of
+  "The ce-id of a core publish of DATA: its :event-id when a non-blank
+   string, else a fresh UUID."
+  [data]
+  (let [id (when (map? data) (:event-id data))]
+    (if (and (string? id) (not (str/blank? id))) id (str (random-uuid)))))
+
+(defn- add-headers
+  "H (or new Headers when nil) with every [name value] of M put in it; H
+   unchanged when M is empty."
+  ^Headers [^Headers h m]
+  (if (seq m)
+    (let [^Headers h (or h (Headers.))]
+      (doseq [[k v] m]
+        (.put h ^String k ^"[Ljava.lang.String;" (into-array String [v])))
+      h)
+    h))
+
+(defn- safe-ce-headers
+  "`ce-headers` of SUBJECT and ID at the current time, or nil when building
+   them fails in any way."
+  [subject id]
+  (try (ce-headers subject id (System/currentTimeMillis))
+       (catch Throwable e
+         (note-ce-skip! :cloudevents/build-failed {:message (.getMessage e)}))))
+
+(defn- safe-outbound-headers
+  "Headers for an outbound message: the bound trace (a child of it) and, with
+   SUBJECT and ID, the CloudEvents headers of `ce-headers`; nil when there is
+   neither. Each part is its own guarded step: a failure in one drops only
+   that part and never reaches the publish."
+  (^Headers [] (safe-outbound-headers nil nil))
+  (^Headers [subject id]
+   (let [trace (try (trace-headers (outbound-trace))
+                    (catch Throwable e
+                      (log/debug "[NATS] trace header build failed, publishing without it:"
+                                 (.getMessage e))
+                      nil))]
+     (cond-> trace
+       subject (add-headers (safe-ce-headers subject id))))))
+
+(defn outbound-headers
+  "Headers for one outbound message of ID on SUBJECT through CONN on a
+   publish path other than `publish!` (a JetStream publish): the bound trace
+   child and the CloudEvents headers of `ce-headers`; nil when there are none
+   or CONN's server takes no headers. Never throws."
+  ^Headers [conn subject id]
+  (when (headers-supported? conn)
+    (safe-outbound-headers subject id)))
+
+;; =============================================================================
 ;; Publish / Subscribe
 ;; =============================================================================
 
@@ -462,6 +574,9 @@
   "Publish JSON message to subject. Clamps nesting depth at
    `max-payload-depth` to prevent StackOverflow from deep/cyclic payloads,
    then serializes to JSON with UTF-8 encoding. No-op if disconnected.
+   One message carries the trace headers and, on a hive.v1.* subject, the
+   CloudEvents binary-mode headers (`ce-headers`, ce-id the payload's
+   :event-id or a fresh UUID); the body is the JSON of the payload either way.
    Serialization failures and StackOverflow are logged and swallowed —
    one bad shout must not crash the publisher."
   [subject data]
@@ -470,7 +585,8 @@
       (try
         (let [safe (clamp-depth data)
               bytes (.getBytes (json/write-str safe) "UTF-8")]
-          (publish-traced! conn subject bytes (safe-outbound-headers)))
+          (publish-traced! conn subject bytes
+                           (safe-outbound-headers subject (ce-id-of data))))
         (catch StackOverflowError _e
           (log/warn "[NATS] StackOverflow serializing payload for" subject
                     "— dropped (depth cap insufficient or cycle in scalar)"))
@@ -590,3 +706,27 @@
 (m/=> inbound-trace
       [:=> [:cat InboundMessage]
        [:maybe TraceCtx]])
+
+;; CloudEvents (STD-04 E1).
+
+(def Subject
+  "A NATS subject, hive.v1.* or other."
+  [:string {:gen/elements ["hive.v1.shout.hive.ling-1" "hive.v1.event.agent-spawn"
+                           "hive.v1.inbox.coordinator-1" "hive.v1.ci.repo.abc123"
+                           "hive.v1.mystery.x" "hive.conv.tell.a" "other"]}])
+
+(def CeHeaders
+  "Binary-mode CloudEvents headers: header name to header value."
+  [:map-of :string :string])
+
+(m/=> ce-type
+      [:=> [:cat [:maybe Subject]]
+       [:maybe :string]])
+
+(m/=> ce-headers
+      [:=> [:cat Subject [:string {:min 1}] [:int {:min 0 :max 4102444800000}]]
+       [:maybe CeHeaders]])
+
+(m/=> outbound-headers
+      [:=> [:cat :any Subject [:string {:min 1}]]
+       [:maybe NatsHeaders]])
