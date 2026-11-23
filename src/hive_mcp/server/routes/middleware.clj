@@ -30,7 +30,10 @@
             [hive-mcp.tools.async-params :as async-params]
             [malli.core :as m]
             [hive-mcp.server.routes.async-task.lane :as async-lane]
-            [hive-mcp.server.routes.metrics-seam :as metrics])
+            [hive-mcp.server.routes.metrics-seam :as metrics]
+            [hive-ttracking.tracecontext :as tc]
+            [jsonrpc4clj.server :as jsonrpc-server]
+            [io.modelcontext.clojure-sdk.server])
 (:import [java.util.concurrent RejectedExecutionException]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -205,6 +208,184 @@
 
 (m/=> touch-caller-activity! [:=> [:cat [:=> [:cat :string] :any] [:maybe :string]] :any])
 
+;; =============================================================================
+;; Trace context (STD-04 O1: W3C traceparent in MCP params._meta, SEP-414)
+;; =============================================================================
+
+;; Carrier rules (STD-04 O1). FAIL OPEN: no trace step may fail, delay or
+;; drop a tool call.
+;; - The ONLY inbound carrier is tools/call params._meta.traceparent and
+;;   params._meta.tracestate (unprefixed, MCP SEP-414). The trace never travels
+;;   in the tool arguments: the shim binds it in `*carrier*` around the SDK
+;;   method, so a handler receives exactly the arguments the client sent, and
+;;   a reload of this namespace cannot hand a tool keys it does not know.
+;; - A call made while a trace is bound (a nested or multi call) continues
+;;   that trace as a child: same trace-id and flags, new span id.
+;; - Otherwise a valid carrier is adopted; a missing or malformed one gives a
+;;   new root. An invalid tracestate is dropped.
+;; - Arguments named `_traceparent` / `_tracestate` sent by a client are NOT a
+;;   carrier: they are ignored for the trace and stripped before any handler
+;;   sees them (`trace-arg-keys`).
+;; - Any failure in a trace step means "no trace"; the call proceeds.
+
+(def trace-arg-keys
+  "Argument keys a client may send that look like a trace carrier.
+   `wrap-handler-context` strips them and never reads them: the trace comes
+   only from params._meta (see `*carrier*`), so a client cannot set the trace
+   through an argument, nor reach a tool with one of these keys.
+
+   NOTE for addon authors: the argument names `_traceparent` and
+   `_tracestate` are RESERVED. Do not declare them in a tool's inputSchema;
+   they are stripped before your handler runs."
+  [:_traceparent :_tracestate])
+
+(def ^:dynamic *carrier*
+  "Inbound W3C carrier of the tools/call in flight on this thread,
+   {:traceparent s} plus :tracestate when present, or nil. Bound by the
+   `carry-trace-meta` shim around the SDK tools/call method (and conveyed by
+   request-offload's bound-fn); read once by `request-trace`."
+  nil)
+
+(defn trace-meta->args
+  "Pure and total. The carrier in tools/call PARAMS' _meta (unprefixed keys,
+   MCP SEP-414): {:traceparent s} plus :tracestate when it is a string. nil
+   when PARAMS is not a map, has no _meta map, or no string traceparent.
+   jsonrpc4clj reads `_meta` as :meta, so both spellings are looked up. The
+   arguments are never read nor changed (the name is historical).
+   The 2-arity [params arguments] returns ARGUMENTS untouched: it is what a
+   shim installed by an earlier build of this namespace calls after a live
+   reload, and it must then inject nothing (`install-trace-meta!` wraps the
+   current shim around it)."
+  ([params]
+   (when (map? params)
+     (let [meta-map (or (:_meta params) (:meta params) (get params "_meta"))]
+       (when (map? meta-map)
+         (let [tp (or (get meta-map :traceparent) (get meta-map "traceparent"))
+               ts (or (get meta-map :tracestate) (get meta-map "tracestate"))]
+           (when (string? tp)
+             (cond-> {:traceparent tp}
+               (string? ts) (assoc :tracestate ts))))))))
+  ([_params arguments] arguments))
+
+(m/=> trace-meta->args [:function
+                        [:=> [:cat :any]
+                         [:maybe [:map [:traceparent :string]
+                                  [:tracestate {:optional true} :string]]]]
+                        [:=> [:cat :any :any] :any]])
+
+(defonce ^:private trace-random
+  (delay (tc/secure-random-fn)))
+
+(defn request-trace
+  "Trace context of a tools/call, in order:
+   1. a child of BOUND (the :trace already in the request context, i.e. a
+      nested or multi call): same trace-id and flags, new span id;
+   2. the parsed CARRIER ({:traceparent :tracestate} from params._meta) when
+      its traceparent is valid (an invalid tracestate is dropped);
+   3. a new root.
+   Total: any failure gives nil (\"no trace\") and the call proceeds. The
+   0-arity reads the bound trace, `*carrier*` and one shared SecureRandom."
+  ([]
+   (try (request-trace (:trace (ctx/request-ctx)) *carrier* @trace-random)
+        (catch Throwable _ nil)))
+  ([bound carrier random-fn]
+   (try
+     (or (when bound (tc/child bound (tc/new-span-id random-fn)))
+         (when (map? carrier) (tc/parse (:traceparent carrier) (:tracestate carrier)))
+         (tc/new-root random-fn))
+     (catch Throwable _ nil))))
+
+(m/=> request-trace [:function
+                     [:=> [:cat] [:maybe map?]]
+                     [:=> [:cat [:maybe map?] [:maybe map?] ifn?] [:maybe map?]]])
+
+(defn- carrier-shim?
+  "True when F is a `carry-trace-meta` shim of this build (::carrier-shim). A
+   568d12d6 shim (marked only ::trace-meta) is not: the current shim is
+   wrapped around it once, and it passes params through unchanged."
+  [f]
+  (boolean (::carrier-shim (meta f))))
+
+(defn- shim-inner
+  "The fn the carrier shim F wraps (its ::sdk-orig). F itself when F is not a
+   shim, or is a shim that did not record its inner fn (65f280f8)."
+  [f]
+  (if (carrier-shim? f) (or (::sdk-orig (meta f)) f) f))
+
+(defn- call-with-carrier
+  "Run (ORIG method context params) with `*carrier*` bound to PARAMS' _meta
+   carrier. PARAMS go on untouched, whatever their shape; a carrier that
+   cannot be read binds nothing."
+  [orig method context params]
+  (if-let [carrier (try (trace-meta->args params) (catch Throwable _ nil))]
+    (binding [*carrier* carrier]
+      (orig method context params))
+    (orig method context params)))
+
+(defn carry-trace-meta
+  "Wrap the tools/call request-method fn ORIG so it runs with params._meta's
+   traceparent and tracestate bound in `*carrier*`. PARAMS, arguments
+   included, pass on unchanged.
+
+   Never stacks: when ORIG is already a carrier shim, the fn it wraps (its
+   ::sdk-orig) is wrapped again instead, so the result is ONE shim built from
+   THIS namespace's vars. That matters after clj-reload (hot core-reload),
+   which removes the namespace: a shim built before it closes over orphaned
+   `call-with-carrier` / `*carrier*` vars, and re-wrapping is how
+   `install-trace-meta!` replaces it. ORIG's metadata is kept, so a
+   request-offload wrapper inside still reads as offloaded."
+  [orig]
+  (let [inner (shim-inner orig)]
+    (with-meta
+      (fn [method context params]
+        (#'call-with-carrier inner method context params))
+      (assoc (meta inner) ::trace-meta true ::carrier-shim true ::sdk-orig inner))))
+
+(m/=> carry-trace-meta [:=> [:cat ifn?] ifn?])
+
+(defn- rewrap-trace-meta
+  "The tools/call method INSTALLED with exactly one carrier shim built
+   from this namespace's current vars, in the same position as before:
+   - shim(x), x the SDK method or request-offload's wrapper of it: shim(x);
+   - offload(shim(sdk)) (boot order, offload attached after this ns loaded):
+     offload(shim(sdk)), with a fresh offload wrapper;
+   - anything else (the bare SDK method, offload(sdk), a 568d12d6 shim):
+     shim(INSTALLED).
+   Repeated calls never stack shims. request-offload is resolved at call
+   time (it is not a load-time dependency of this namespace); when it cannot
+   be resolved the shim goes outside the installed fn instead."
+  [installed]
+  (let [off-inner (:hive-mcp.server.request-offload/orig (meta installed))
+        wrap-off  (when (and (not (carrier-shim? installed)) (carrier-shim? off-inner))
+                    (try (requiring-resolve 'hive-mcp.server.request-offload/wrap-method)
+                         (catch Throwable _ nil)))]
+    (if wrap-off
+      (wrap-off (carry-trace-meta off-inner))
+      (carry-trace-meta installed))))
+
+(defn install-trace-meta!
+  "Install `carry-trace-meta` around the SDK's tools/call method. Every call
+   REPLACES the installed shim with one built from the current vars
+   (`rewrap-trace-meta`), so after a clj-reload of this namespace the shim
+   binds the live `*carrier*` again; it never stacks a second shim. Safe at
+   any moment, tool-table refresh or not: the shim only binds `*carrier*`
+   and never touches the arguments. Returns true when the method is wrapped
+   afterwards, nil when there is no such method or the install failed
+   (logged; tools/call then runs as installed before)."
+  []
+  (try
+    (when-let [installed (get (methods jsonrpc-server/receive-request) "tools/call")]
+      (.addMethod ^clojure.lang.MultiFn jsonrpc-server/receive-request "tools/call"
+                  (rewrap-trace-meta installed))
+      true)
+    (catch Throwable e
+      (log/warn "trace-meta install failed (tools/call runs untraced):" (ex-message e))
+      nil)))
+
+(m/=> install-trace-meta! [:=> [:cat] [:maybe [:= true]]])
+
+(install-trace-meta!)
+
 (defn wrap-handler-context
   "Bind request context: keywordize args, verify identity, resolve ids, bind
    ctx vars.
@@ -247,7 +428,9 @@
             [{:type "text" :isError true
               :text (agent-identity/refusal-text decision (:caller-id who))}])
         (binding [ctx/*request-cache* (atom {})]
-          (let [agent-id (id/extract-agent-id args nil)
+          (let [trace (request-trace)
+                args (if (map? args) (apply dissoc args trace-arg-keys) args)
+                agent-id (id/extract-agent-id args nil)
                 project-id (id/extract-project-id args)
                 directory (id/extract-directory args)]
             (crystal/record-session-start!
@@ -258,7 +441,8 @@
                                        :caller-id (:_caller_id args)
                                        :identity who
                                        :project-id project-id
-                                       :directory directory}
+                                       :directory directory
+                                       :trace trace}
               ((in-embed-lane :interactive #(handler args))))))))))
 
 (m/=> wrap-handler-context [:=> [:cat Handler] Handler])

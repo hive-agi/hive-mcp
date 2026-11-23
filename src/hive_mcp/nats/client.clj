@@ -16,10 +16,14 @@
             [taoensso.timbre :as log]
             [malli.core :as m]
             [clojure.string :as str]
-            [hive-mcp.resilience.swallow :as swallow])
+            [hive-mcp.resilience.swallow :as swallow]
+            [hive-ttracking.tracecontext :as tc]
+            [hive-mcp.context.request :as ctx])
   (:import [io.nats.client Nats Options$Builder Connection$Status
-            MessageHandler ErrorListener JetStreamSubscription]
-           [io.nats.client.impl ErrorListenerLoggerImpl]
+            MessageHandler ErrorListener JetStreamSubscription Message Connection
+            Dispatcher]
+           [io.nats.client.impl ErrorListenerLoggerImpl Headers NatsMessage]
+           [io.nats.client.api ServerInfo]
            [java.time Duration]
            [io.nats.client ConnectionListener]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
@@ -49,7 +53,8 @@
 (defn connected?
   "Return true if NATS connection is active and connected."
   []
-  (some-> @connection (.getStatus) (= Connection$Status/CONNECTED)))
+  (when-let [^Connection c @connection]
+    (= (.getStatus c) Connection$Status/CONNECTED)))
 
 (defn current-connection
   "The live jnats Connection when CONNECTED, else nil. For callers that need
@@ -106,7 +111,7 @@
 (defn- adopt-connection!
   "First CONNECTED: publish the Connection and a dispatcher. Reconnects
    reuse both (jnats heals the same Connection and its subscriptions)."
-  [conn]
+  [^Connection conn]
   (when-not (identical? conn @connection)
     (reset! dispatcher (.createDispatcher conn))
     (reset! connection conn)))
@@ -141,7 +146,7 @@
   "Close the current connection (if any) and invalidate its listener."
   []
   (swap! epoch-counter inc)
-  (when-let [conn @connection]
+  (when-let [^Connection conn @connection]
     (swallow/attempt-ex (.close conn)))
   (reset! connection nil)
   (reset! dispatcher nil)
@@ -348,6 +353,108 @@
      (doall (map #(clamp-depth % (dec depth)) data)))))
 
 ;; =============================================================================
+;; Trace context (STD-04 O1: W3C traceparent / tracestate as NATS headers)
+;; =============================================================================
+
+(defonce ^:private trace-random
+  ;; One SecureRandom for every fresh span id this namespace draws.
+  (delay (tc/secure-random-fn)))
+
+(defn- bound-trace
+  "The W3C trace context bound in the request context of the calling thread
+   (:trace of hive-mcp.context.request/*request-ctx*), or nil."
+  []
+  (:trace (ctx/request-ctx)))
+
+(defn- outbound-trace
+  "Context an outbound message carries: a child of CTX (default the bound
+   one) with the same trace-id, flags and tracestate and a fresh parent-id.
+   nil when CTX is nil or invalid, so nothing is invented outside a trace."
+  ([] (outbound-trace (bound-trace)))
+  ([trace-ctx]
+   (when trace-ctx
+     (tc/child trace-ctx (tc/new-span-id @trace-random)))))
+
+(defn trace-headers
+  "jnats Headers holding `traceparent` (and `tracestate` when non-empty) for
+   a valid TRACE-CTX; nil for nil or an invalid context."
+  ^Headers [trace-ctx]
+  (when-let [hs (tc/->headers trace-ctx)]
+    (let [h (Headers.)]
+      (doseq [[k v] hs]
+        (.add h ^String k ^"[Ljava.lang.String;" (into-array String [v])))
+      h)))
+
+(defn inbound-trace
+  "Trace context carried by the headers of an inbound jnats MSG, or nil when
+   it has no headers or a missing or malformed traceparent (an invalid
+   tracestate is dropped, it never invalidates the traceparent)."
+  [^Message msg]
+  (when (.hasHeaders msg)
+    (let [^Headers h (.getHeaders msg)]
+      (tc/parse (.getFirst h "traceparent") (.getFirst h "tracestate")))))
+
+(defn- safe-outbound-headers
+  "Headers for an outbound message of the bound trace (a child of it), or
+   nil when no trace is bound or building them fails in any way. Its own
+   guarded step: a trace failure never reaches the publish."
+  ^Headers []
+  (try (trace-headers (outbound-trace))
+       (catch Throwable e
+         (log/debug "[NATS] trace header build failed, publishing plain:" (.getMessage e))
+         nil)))
+
+(defn- headers-supported?
+  "False only when CONN's server info says the server takes no headers. Any
+   doubt (no server info yet, a Connection without it, a throw) is true: the
+   headers publish is then tried and a refusal still falls back."
+  [^Connection conn]
+  (try (if-let [^ServerInfo si (.getServerInfo conn)]
+         (.isHeadersSupported si)
+         true)
+       (catch Throwable _ true)))
+
+(defn- header-refusal?
+  "True when E is jnats refusing a headers publish BEFORE sending anything
+   (IllegalArgumentException \"Headers are not supported by the server...\")."
+  [e]
+  (and (instance? IllegalArgumentException e)
+       (boolean (re-find #"(?i)headers are not supported" (str (ex-message e))))))
+
+(defn- publish-traced!
+  "Publish BYTES on SUBJECT through CONN, with headers H when non-nil and the
+   server takes headers (`headers-supported?`, decided up front), else
+   plain. Exactly once: the plain resend happens ONLY on a header refusal,
+   which jnats raises before the message is enqueued (`header-refusal?`).
+   Any other throw of the headers publish propagates like a plain publish
+   failure (publish! logs it), never a second copy."
+  [^Connection conn ^String subject ^bytes bytes ^Headers h]
+  (if (and h (headers-supported? conn))
+    (try (.publish conn subject h bytes)
+         (catch IllegalArgumentException e
+           (if (header-refusal? e)
+             (do (log/debug "[NATS] headers refused on" subject ", publishing plain:" (.getMessage e))
+                 (.publish conn subject bytes))
+             (throw e))))
+    (.publish conn subject bytes)))
+
+(defn- call-with-trace
+  "Run (F) with TRACE-CTX bound as :trace in the request context; plain (F)
+   when TRACE-CTX is nil. Inbound carrier rules: a valid `traceparent` header
+   (plus `tracestate`, dropped when invalid) binds; anything else binds
+   nothing. Reading the headers is guarded: a failure there runs (F) plain."
+  [trace-ctx f]
+  (if trace-ctx
+    (let [bound (assoc (ctx/request-ctx) :trace trace-ctx)]
+      (ctx/with-request-context bound (f)))
+    (f)))
+
+(defn- safe-inbound-trace
+  "`inbound-trace` of MSG, or nil when reading it fails."
+  [msg]
+  (try (inbound-trace msg) (catch Throwable _ nil)))
+
+;; =============================================================================
 ;; Publish / Subscribe
 ;; =============================================================================
 
@@ -358,12 +465,12 @@
    Serialization failures and StackOverflow are logged and swallowed —
    one bad shout must not crash the publisher."
   [subject data]
-  (when-let [conn @connection]
+  (when-let [^Connection conn @connection]
     (when (connected?)
       (try
         (let [safe (clamp-depth data)
               bytes (.getBytes (json/write-str safe) "UTF-8")]
-          (.publish conn subject bytes))
+          (publish-traced! conn subject bytes (safe-outbound-headers)))
         (catch StackOverflowError _e
           (log/warn "[NATS] StackOverflow serializing payload for" subject
                     "— dropped (depth cap insufficient or cycle in scalar)"))
@@ -376,13 +483,14 @@
    from JSON using clojure.data.json with keyword keys. Logs warnings on
    handler exceptions. Tracks subscription in the subscriptions atom for cleanup."
   [subject handler-fn]
-  (when-let [disp @dispatcher]
-    (let [sub (.subscribe disp subject
+  (when-let [^Dispatcher disp @dispatcher]
+    (let [sub (.subscribe disp ^String subject ^MessageHandler
                           (reify MessageHandler
                             (onMessage [_ msg]
                               (try
                                 (let [data (json/read-str (String. (.getData msg) "UTF-8") :key-fn keyword)]
-                                  (handler-fn data))
+                                  (call-with-trace (safe-inbound-trace msg)
+                                                   #(handler-fn data)))
                                 (catch Exception e
                                   (log/warn "[NATS] Handler error on" subject ":" (.getMessage e)))))))]
       (swap! subscriptions assoc subject sub)
@@ -392,8 +500,8 @@
   "Unsubscribe from a subject. Safe to call when not subscribed."
   [subject]
   (when-let [_sub (get @subscriptions subject)]
-    (when-let [disp @dispatcher]
-      (.unsubscribe disp subject))
+    (when-let [^Dispatcher disp @dispatcher]
+      (.unsubscribe disp ^String subject))
     (swap! subscriptions dissoc subject)))
 ;; =============================================================================
 ;; Function Contracts (m16 coverage batch)
@@ -436,3 +544,49 @@
 (m/=> unsubscribe!
       [:=> [:cat :string]
        :any])
+
+;; Trace context (STD-04 O1). A trace context is the hive-ttracking
+;; tracecontext map; an invalid or nil one yields nil, never a throw.
+
+(def TraceCtx
+  "A W3C trace context as hive-ttracking.tracecontext builds it."
+  [:map
+   [:version [:= "00"]]
+   [:trace-id [:re {:gen/elements ["4bf92f3577b34da6a3ce929d0e0e4736"
+                                   "0af7651916cd43dd8448eb211c80319c"]}
+               #"^[0-9a-f]{32}$"]]
+   [:parent-id [:re {:gen/elements ["00f067aa0ba902b7" "b7ad6b7169203331"]}
+                #"^[0-9a-f]{16}$"]]
+   [:flags [:re {:gen/elements ["00" "01"]} #"^[0-9a-f]{2}$"]]
+   [:tracestate {:optional true} [:vector {:max 3} [:enum "a=b" "vendor=abc"]]]])
+
+(defn- sample-headers
+  "Generator sample: Headers carrying one valid traceparent."
+  ^Headers []
+  (doto (Headers.)
+    (.add "traceparent" ^"[Ljava.lang.String;"
+          (into-array String ["00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"]))))
+
+(defn- sample-message
+  "Generator sample: an inbound message, with H as headers when non-nil."
+  ^Message [^Headers h]
+  (let [^io.nats.client.impl.NatsMessage$Builder b
+        (-> (NatsMessage/builder) (.subject "s") (.data (.getBytes "{}" "UTF-8")))]
+    (.build (if h (.headers b h) b))))
+
+(def NatsHeaders
+  "jnats Headers."
+  [:fn {:gen/elements [(sample-headers) (Headers.)]} #(instance? Headers %)])
+
+(def InboundMessage
+  "An inbound jnats Message, with or without headers."
+  [:fn {:gen/elements [(sample-message nil) (sample-message (sample-headers))]}
+   #(instance? Message %)])
+
+(m/=> trace-headers
+      [:=> [:cat [:maybe TraceCtx]]
+       [:maybe NatsHeaders]])
+
+(m/=> inbound-trace
+      [:=> [:cat InboundMessage]
+       [:maybe TraceCtx]])
