@@ -267,7 +267,9 @@
                  [:=> [:cat [:maybe map?] ifn?] [:map-of :string :string]]])
 
 (defn build-child-env
-  "Build environment variable map for a child ling process (pure calculation).
+  "Build environment variable map for a child ling process. Not pure: it
+   reads the process environment, the bound request context (:trace) and a
+   SecureRandom (TRACEPARENT span id); it performs no writes.
 
    Merges (in priority order, later wins):
    1. Forwarded parent env vars (OPENROUTER_API_KEY, etc.)

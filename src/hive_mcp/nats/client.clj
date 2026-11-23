@@ -23,6 +23,7 @@
             MessageHandler ErrorListener JetStreamSubscription Message Connection
             Dispatcher]
            [io.nats.client.impl ErrorListenerLoggerImpl Headers]
+           [io.nats.client.api ServerInfo]
            [java.time Duration]
            [io.nats.client ConnectionListener]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
@@ -403,18 +404,38 @@
          (log/debug "[NATS] trace header build failed, publishing plain:" (.getMessage e))
          nil)))
 
+(defn- headers-supported?
+  "False only when CONN's server info says the server takes no headers. Any
+   doubt (no server info yet, a Connection without it, a throw) is true: the
+   headers publish is then tried and a refusal still falls back."
+  [^Connection conn]
+  (try (if-let [^ServerInfo si (.getServerInfo conn)]
+         (.isHeadersSupported si)
+         true)
+       (catch Throwable _ true)))
+
+(defn- header-refusal?
+  "True when E is jnats refusing a headers publish BEFORE sending anything
+   (IllegalArgumentException \"Headers are not supported by the server...\")."
+  [e]
+  (and (instance? IllegalArgumentException e)
+       (boolean (re-find #"(?i)headers are not supported" (str (ex-message e))))))
+
 (defn- publish-traced!
-  "Publish BYTES on SUBJECT through CONN, with headers H when non-nil. When
-   the headers publish throws (a build problem, or jnats refusing headers,
-   e.g. \"Headers are not supported by the server\"), the message is sent
-   again WITHOUT headers: a trace never costs a message. A failure of the
-   plain publish itself propagates to the caller as before."
+  "Publish BYTES on SUBJECT through CONN, with headers H when non-nil and the
+   server takes headers (`headers-supported?`, decided up front), else
+   plain. Exactly once: the plain resend happens ONLY on a header refusal,
+   which jnats raises before the message is enqueued (`header-refusal?`).
+   Any other throw of the headers publish propagates like a plain publish
+   failure (publish! logs it), never a second copy."
   [^Connection conn ^String subject ^bytes bytes ^Headers h]
-  (if h
+  (if (and h (headers-supported? conn))
     (try (.publish conn subject h bytes)
-         (catch Exception e
-           (log/debug "[NATS] headers refused on" subject ", publishing plain:" (.getMessage e))
-           (.publish conn subject bytes)))
+         (catch IllegalArgumentException e
+           (if (header-refusal? e)
+             (do (log/debug "[NATS] headers refused on" subject ", publishing plain:" (.getMessage e))
+                 (.publish conn subject bytes))
+             (throw e))))
     (.publish conn subject bytes)))
 
 (defn- call-with-trace

@@ -232,7 +232,11 @@
   "Argument keys a client may send that look like a trace carrier.
    `wrap-handler-context` strips them and never reads them: the trace comes
    only from params._meta (see `*carrier*`), so a client cannot set the trace
-   through an argument, nor reach a tool with one of these keys."
+   through an argument, nor reach a tool with one of these keys.
+
+   NOTE for addon authors: the argument names `_traceparent` and
+   `_tracestate` are RESERVED. Do not declare them in a tool's inputSchema;
+   they are stripped before your handler runs."
   [:_traceparent :_tracestate])
 
 (def ^:dynamic *carrier*
@@ -295,14 +299,18 @@
                      [:=> [:cat] [:maybe map?]]
                      [:=> [:cat [:maybe map?] [:maybe map?] ifn?] [:maybe map?]]])
 
-(defn- trace-wrapped?
-  "True when F, or the request-offload wrapper around it, is a CURRENT
-   `carry-trace-meta` wrapper (marked ::carrier-shim). A shim of the earlier
-   build (marked only ::trace-meta) does not count: the current shim is
+(defn- carrier-shim?
+  "True when F is a `carry-trace-meta` shim of this build (::carrier-shim). A
+   568d12d6 shim (marked only ::trace-meta) is not: the current shim is
    wrapped around it once, and it passes params through unchanged."
   [f]
-  (boolean (or (::carrier-shim (meta f))
-               (some-> (:hive-mcp.server.request-offload/orig (meta f)) meta ::carrier-shim))))
+  (boolean (::carrier-shim (meta f))))
+
+(defn- shim-inner
+  "The fn the carrier shim F wraps (its ::sdk-orig). F itself when F is not a
+   shim, or is a shim that did not record its inner fn (65f280f8)."
+  [f]
+  (if (carrier-shim? f) (or (::sdk-orig (meta f)) f) f))
 
 (defn- call-with-carrier
   "Run (ORIG method context params) with `*carrier*` bound to PARAMS' _meta
@@ -317,34 +325,58 @@
 (defn carry-trace-meta
   "Wrap the tools/call request-method fn ORIG so it runs with params._meta's
    traceparent and tracestate bound in `*carrier*`. PARAMS, arguments
-   included, pass on unchanged. Idempotent. The wrapper calls through the
-   `call-with-carrier` var, so a reload of this namespace takes effect in the
-   installed wrapper without wrapping again. ORIG's metadata is kept, so a
+   included, pass on unchanged.
+
+   Never stacks: when ORIG is already a carrier shim, the fn it wraps (its
+   ::sdk-orig) is wrapped again instead, so the result is ONE shim built from
+   THIS namespace's vars. That matters after clj-reload (hot core-reload),
+   which removes the namespace: a shim built before it closes over orphaned
+   `call-with-carrier` / `*carrier*` vars, and re-wrapping is how
+   `install-trace-meta!` replaces it. ORIG's metadata is kept, so a
    request-offload wrapper inside still reads as offloaded."
   [orig]
-  (if (trace-wrapped? orig)
-    orig
+  (let [inner (shim-inner orig)]
     (with-meta
       (fn [method context params]
-        (#'call-with-carrier orig method context params))
-      (assoc (meta orig) ::trace-meta true ::carrier-shim true))))
+        (#'call-with-carrier inner method context params))
+      (assoc (meta inner) ::trace-meta true ::carrier-shim true ::sdk-orig inner))))
 
 (m/=> carry-trace-meta [:=> [:cat ifn?] ifn?])
 
+(defn- rewrap-trace-meta
+  "The tools/call method INSTALLED with exactly one carrier shim built
+   from this namespace's current vars, in the same position as before:
+   - shim(x), x the SDK method or request-offload's wrapper of it: shim(x);
+   - offload(shim(sdk)) (boot order, offload attached after this ns loaded):
+     offload(shim(sdk)), with a fresh offload wrapper;
+   - anything else (the bare SDK method, offload(sdk), a 568d12d6 shim):
+     shim(INSTALLED).
+   Repeated calls never stack shims. request-offload is resolved at call
+   time (it is not a load-time dependency of this namespace); when it cannot
+   be resolved the shim goes outside the installed fn instead."
+  [installed]
+  (let [off-inner (:hive-mcp.server.request-offload/orig (meta installed))
+        wrap-off  (when (and (not (carrier-shim? installed)) (carrier-shim? off-inner))
+                    (try (requiring-resolve 'hive-mcp.server.request-offload/wrap-method)
+                         (catch Throwable _ nil)))]
+    (if wrap-off
+      (wrap-off (carry-trace-meta off-inner))
+      (carry-trace-meta installed))))
+
 (defn install-trace-meta!
-  "Install `carry-trace-meta` around the SDK's tools/call method. Idempotent:
-   an installed wrapper (bare, or inside or around request-offload's) is left
-   in place, so loading this namespace twice wraps once. Safe at any moment,
-   tool-table refresh or not: the shim only binds `*carrier*` and never
-   touches the arguments. Returns true when the method is wrapped afterwards,
-   nil when there is no such method or the install failed (logged; tools/call
-   then runs untraced)."
+  "Install `carry-trace-meta` around the SDK's tools/call method. Every call
+   REPLACES the installed shim with one built from the current vars
+   (`rewrap-trace-meta`), so after a clj-reload of this namespace the shim
+   binds the live `*carrier*` again; it never stacks a second shim. Safe at
+   any moment, tool-table refresh or not: the shim only binds `*carrier*`
+   and never touches the arguments. Returns true when the method is wrapped
+   afterwards, nil when there is no such method or the install failed
+   (logged; tools/call then runs as installed before)."
   []
   (try
-    (when-let [orig (get (methods jsonrpc-server/receive-request) "tools/call")]
-      (when-not (trace-wrapped? orig)
-        (.addMethod ^clojure.lang.MultiFn jsonrpc-server/receive-request "tools/call"
-                    (carry-trace-meta orig)))
+    (when-let [installed (get (methods jsonrpc-server/receive-request) "tools/call")]
+      (.addMethod ^clojure.lang.MultiFn jsonrpc-server/receive-request "tools/call"
+                  (rewrap-trace-meta installed))
       true)
     (catch Throwable e
       (log/warn "trace-meta install failed (tools/call runs untraced):" (ex-message e))
