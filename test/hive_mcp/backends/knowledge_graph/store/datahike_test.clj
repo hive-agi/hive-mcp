@@ -13,6 +13,7 @@
    - it satisfies IPersistentKGStore
    - temporal queries: history-db, query-history, as-of-db"
   (:require [clojure.test :refer [deftest is testing use-fixtures]]
+            [hive-mcp.knowledge-graph.connection :as conn]
             [hive-mcp.knowledge-graph.protocol :as proto]
             [hive-mcp.knowledge-graph.store.fixtures :as fixtures]))
 
@@ -81,23 +82,19 @@
 
 (deftest history-db-available-test
   (testing "history-db returns a database value [datahike]"
-    (require 'hive-datahike.kg.store)
-    (let [history-db-fn (resolve 'hive-datahike.kg.store/history-db)
-          store (proto/get-store)]
+    (let [store (proto/get-store)]
       ;; Add some data first
       (proto/transact! store [{:kg-edge/id "hist-test"
                                :kg-edge/from "a"
                                :kg-edge/to "b"
                                :kg-edge/relation :implements
                                :kg-edge/confidence 1.0}])
-      (let [hist-db (history-db-fn store)]
+      (let [hist-db (proto/history-db store)]
         (is (some? hist-db))))))
 
 (deftest query-history-returns-results-test
   (testing "query-history queries historical data [datahike]"
-    (require 'hive-datahike.kg.store)
-    (let [query-history-fn (resolve 'hive-datahike.kg.store/query-history)
-          store (proto/get-store)
+    (let [store (proto/get-store)
           edge-id (str "hist-edge-" (random-uuid))]
       ;; Add and then update an edge
       (proto/transact! store [{:kg-edge/id edge-id
@@ -105,12 +102,13 @@
                                :kg-edge/to "b"
                                :kg-edge/relation :implements
                                :kg-edge/confidence 0.5}])
-      ;; History should include the entity
-      (let [hist-results (query-history-fn store
-                                           '[:find ?e
-                                             :in $ ?eid
-                                             :where [?e :kg-edge/id ?eid]]
-                                           edge-id)]
+      ;; History should include the entity; the temporal facade resolves the
+      ;; store's own history db and queries it through the backend's q.
+      (let [hist-results (conn/query-history
+                          '[:find ?e
+                            :in $ ?eid
+                            :where [?e :kg-edge/id ?eid]]
+                          edge-id)]
         (is (pos? (count hist-results)))))))
 
 (deftest as-of-db-returns-past-state-test
