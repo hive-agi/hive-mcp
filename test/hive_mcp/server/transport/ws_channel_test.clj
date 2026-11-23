@@ -155,8 +155,10 @@
 
 (deftest server-transport-gate-is-not-vacuous
   (let [report (coverage/coverage {:paths ["src/hive_mcp/server/transport"]})]
-    (is (= 10 (count (:universe report))))
-    (is (= 10 (count (:covered report))))))
+    ;; 14 = 10 + nrepl's STD-04 socket API (socket-path-for, admit-socket-path,
+    ;; start-socket-nrepl!, stop-socket-nrepl!), each with an m/=> contract
+    (is (= 14 (count (:universe report))))
+    (is (= 14 (count (:covered report))))))
 
 (deftest every-transport-contract-generates-both-sides
   (doseq [ns-sym transport-nss
