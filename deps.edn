@@ -106,7 +106,7 @@
         ;; 0.5.10 publishes the router registry API (get-event, get-interceptors,
         ;; append-interceptor!, get-fx) that hive-mcp.events.registry delegates to.
         io.github.hive-agi/hive-events
-        {:mvn/version "0.6.1"}
+        {:mvn/version "0.6.2"}
 
         ;; hive-hot - unified hot-reload with events integration
         io.github.hive-agi/hive-hot

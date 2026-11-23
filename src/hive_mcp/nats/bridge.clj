@@ -49,6 +49,14 @@
   [payload]
   (= (:nats/source-node payload) node-id))
 
+(defn source-node-id
+  "This process's node id, the value stamped on outbound payloads as
+   :nats/source-node."
+  []
+  node-id)
+
+(m/=> source-node-id [:=> [:cat] :string])
+
 ;; =============================================================================
 ;; Subject Hierarchy — Canonical Subject Definitions
 ;; =============================================================================
