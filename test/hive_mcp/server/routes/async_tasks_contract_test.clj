@@ -200,9 +200,10 @@
 ;;; ---------------------------------------------------------------------------
 ;;; Coverage gate
 ;;; ---------------------------------------------------------------------------
-;;; guards.clj holds only def re-exports and a macro, so on its own the scan
-;;; would be vacuous; it is gated together with async_tasks.clj. Its
-;;; contracts are asserted directly below instead.
+;;; guards.clj re-exports hive-spi.swarm.guards as delegating defns (they call
+;;; through the var, so a reload of the owner is seen; card
+;;; 20261116190025-31139c15). It is gated together with async_tasks.clj, and
+;;; its contracts are also asserted by name below.
 
 (def ^:private gated-paths
   ["src/hive_mcp/server/routes/async_tasks.clj" "src/hive_mcp/server/guards.clj"])
@@ -211,10 +212,10 @@
   {:paths gated-paths})
 
 (deftest async-tasks-gate-is-not-vacuous
-  (testing "nine public fns, runner-for included since lanes landed"
+  (testing "nine async-tasks fns (runner-for included since lanes landed) plus the twelve guards re-exports"
     (let [report (coverage/coverage {:paths gated-paths})]
-      (is (= 9 (count (:universe report))))
-      (is (= 9 (count (:covered report)))))))
+      (is (= 21 (count (:universe report))))
+      (is (= 21 (count (:covered report)))))))
 
 (deftest every-guards-reexport-is-contracted
   (is (= '#{child-ling? coordinator? get-role ling-depth child-ling-env
