@@ -59,6 +59,18 @@
 ;; Datalevin (hive-agent layout)
 ;; =============================================================================
 
+(def unopened-errors
+  "Errors of a run whose store was deliberately NOT opened: a writer of this
+   process holds it (busy), or nothing can establish that none does (unknown)."
+  #{:transcript/store-busy :transcript/store-unknown})
+
+(defn unopened?
+  "True when `res` is an err for a store that was not opened."
+  [res]
+  (contains? unopened-errors (when (map? res) (:error res))))
+
+(m/=> unopened? [:=> [:cat :any] :boolean])
+
 (def ^:private skipped-project-dirs
   "Segments under the root that are not <project-id> partitions."
   #{"datahike" "tmp"})
@@ -94,25 +106,29 @@
     (let [dirs (filter #(= agent-id (:agent-id %)) (store-dirs root))]
       (if (empty? dirs)
         (not-found agent-id :datalevin)
-        (r/try-effect
-         (->> dirs
-              (mapcat (fn [{:keys [dir]}]
-                        (let [res (read-dir (str dir) agent-id)]
-                          (if (r/ok? res)
-                            (:ok res)
-                            (throw (ex-info (str "Datalevin read failed: " (pr-str res))
-                                            {:dir (str dir) :result res}))))))
-              (sort-by entry-turn)
-              vec))))))
+        ;; A store that was not opened answers its own err, never a throw, so
+        ;; callers can show the run as busy/unknown instead of dropping it.
+        (let [read (r/try-effect (mapv (fn [{:keys [dir]}] [dir (read-dir (str dir) agent-id)]) dirs))]
+          (if-not (r/ok? read)
+            read
+            (or (some (fn [[_ res]] (when (unopened? res) res)) (:ok read))
+                (r/try-effect
+                 (->> (:ok read)
+                      (mapcat (fn [[dir res]]
+                                (if (r/ok? res)
+                                  (:ok res)
+                                  (throw (ex-info (str "Datalevin read failed: " (pr-str res))
+                                                  {:dir (str dir) :result res})))))
+                      (sort-by entry-turn)
+                      vec)))))))))
 
 (defn- canonical [path]
   (.getCanonicalPath (io/file (str path))))
 
-(defn- held-count-fn
-  "(fn [dir]) -> live holders of `dir` in hive-agent's per-path handle
-   counts, matched by CANONICAL path: those counts are keyed by the writer's
-   path string, and the listing spells the same dir its own way. nil when
-   hive-agent exposes no counts."
+(defn- legacy-holds-fn
+  "(fn [dir]) -> holders of `dir` in a pre-registry hive-agent's per-path
+   handle counts, matched by CANONICAL path (they are keyed by the writer's
+   own spelling). nil when that hive-agent exposes no counts."
   []
   (when-let [counts (swallow/attempt
                      (some-> (requiring-resolve 'hive-agent.loop.transcript.datalevin-store/handle-counts) deref))]
@@ -122,43 +138,104 @@
           (reduce-kv (fn [n path c] (if (= k (canonical path)) (+ n (long c)) n))
                      0 @counts))))))
 
-(defn read-dir-with
-  "Read one store dir with hive-agent's store fns `ops`
-   {:make :query :close :held-count :shared?}.
+(defn- registry-holds-fn
+  "(fn [dir]) -> holders of `dir` in hive-agent's shared connection registry
+   (keyed by canonical dir), or nil when the loaded hive-agent has none:
+   `acquire-conn!` is how a registry-era hive-agent is recognised."
+  []
+  (when (swallow/attempt (requiring-resolve 'hive-agent.loop.transcript.datalevin-store/acquire-conn!))
+    (when-let [count-fn (swallow/attempt (requiring-resolve 'hive-agent.loop.transcript.datalevin-store/open-handle-count))]
+      (fn [dir] (long (count-fn (str dir)))))))
 
-   Without a shared connection registry in hive-agent (`:shared?` false),
-   opening a dir another holder in this process already has open re-runs
-   Datalevin's DBI-open commit on the live env, which segfaulted the host
-   JVM. That read is refused as :transcript/store-busy and never opened."
-  [{:keys [make query close held-count shared?]} dir agent-id]
-  (if (and (not shared?) held-count (pos? (long (held-count dir))))
-    (r/err :transcript/store-busy
-           {:dir dir :agent-id agent-id
-            :message "Store is held open by a live writer; hive-agent cannot share it yet"})
-    (let [opened (make {:agent-id agent-id :dir dir})]
-      (if-not (r/ok? opened)
-        opened
-        (let [store (:ok opened)]
-          (try (query store agent-id)
-               (finally (close store))))))))
+(defn- live-writers-fn
+  "(fn [agent-id]) -> the swarm registry rows of this process whose agent
+   writes the store of `agent-id` (hive-agent names a store dir
+   <root>/<project-id>/<agent-id>, so the dir's last segment is its writer),
+   or nil when the swarm registry cannot be read. Every row the registry
+   still returns counts as a writer, finished or not: a false 'busy' only
+   hides a row, a false 'free' crashes the server."
+  []
+  (fn [agent-id]
+    (when-let [slaves (swallow/attempt
+                       (vec ((requiring-resolve 'hive-mcp.swarm.datascript.queries/get-all-slaves))))]
+      (filterv #(= agent-id (:slave/id %)) slaves))))
+
+(defn store-decision
+  "Whether the store at `dir` may be opened, from the probes in `ops`:
+     :registry-holds (fn [dir]) -> holders in hive-agent's shared registry, or absent
+     :legacy-holds   (fn [dir]) -> holders in a pre-registry hive-agent, or absent
+     :live-writers   (fn [agent-id]) -> swarm rows writing that store, nil = unknown
+
+   :shared  the registry holds the dir: reading shares the writer's connection.
+   :free    no live agent of this process writes the dir (the swarm registry
+            answered and names none, and no hive-agent count holds it).
+   :busy    a holder or a live writer is known.
+   :unknown nothing can establish that no writer holds it.
+
+   Opening a dir a writer of this process holds, without the registry,
+   re-runs Datalevin's DBI-open commit on the live env: the SIGSEGV. A
+   registry with NO holder for a dir a live agent writes (a hot reload left
+   old writers outside it) is not trusted: :busy."
+  [{:keys [registry-holds legacy-holds live-writers]} dir]
+  (let [agent-id (.getName (io/file (str dir)))
+        writers  (when live-writers (live-writers agent-id))]
+    (cond
+      ;; A pre-registry count outranks the registry: after a hot reload an
+      ;; old writer may sit in it beside a fresh registry entry.
+      (and legacy-holds (pos? (long (legacy-holds dir))))     :busy
+      (and registry-holds (pos? (long (registry-holds dir)))) :shared
+      (nil? writers)                                          :unknown
+      (seq writers)                                           :busy
+      :else                                                   :free)))
+
+(defn read-dir-with
+  "Read one store dir with hive-agent's store fns `ops` {:make :query :close}
+   plus the probes of `store-decision`. Opens ONLY on :shared or :free,
+   decided twice, the second time right before the open; otherwise answers
+   (err :transcript/store-busy) or (err :transcript/store-unknown) and opens
+   nothing. The window between that last check and the open stays until a
+   hive-agent with the shared registry is loaded."
+  [{:keys [make query close] :as ops} dir agent-id]
+  (let [refuse  (fn [d]
+                  (r/err (if (= d :busy) :transcript/store-busy :transcript/store-unknown)
+                         {:dir dir :agent-id agent-id
+                          :message (if (= d :busy)
+                                     "Store is held by a live writer; not opened"
+                                     "Cannot establish that no writer holds this store; not opened")}))
+        safe?   #{:shared :free}
+        d       (store-decision ops dir)]
+    (if-not (safe? d)
+      (refuse d)
+      (let [d (store-decision ops dir)]
+        (if-not (safe? d)
+          (refuse d)
+          (let [opened (make {:agent-id agent-id :dir dir})]
+            (if-not (r/ok? opened)
+              opened
+              (let [store (:ok opened)]
+                (try (query store agent-id)
+                     (finally (close store)))))))))))
 
 (defn hive-agent-read-dir
   "Read one hive-agent Datalevin store dir through hive-agent's own store.
-   Result<[entry]>; an err when hive-agent is not on the classpath, or
-   :transcript/store-busy when a writer holds the dir and this hive-agent
-   has no shared connection registry (see `read-dir-with`)."
+   Result<[entry]>; an err when hive-agent is not on the classpath, and
+   :transcript/store-busy or :transcript/store-unknown when the dir is not
+   safe to open (see `store-decision`)."
   [dir agent-id]
   (if-let [make (swallow/attempt (requiring-resolve 'hive-agent.loop.transcript.datalevin-store/make-store))]
-    (read-dir-with {:make       make
-                    :query      (requiring-resolve 'hive-agent.loop.transcript.store/query-by-agent)
-                    :close      (requiring-resolve 'hive-agent.loop.transcript.store/close!)
-                    :held-count (held-count-fn)
-                    :shared?    (some? (swallow/attempt (requiring-resolve 'hive-agent.loop.transcript.datalevin-store/acquire-conn!)))}
+    (read-dir-with {:make           make
+                    :query          (requiring-resolve 'hive-agent.loop.transcript.store/query-by-agent)
+                    :close          (requiring-resolve 'hive-agent.loop.transcript.store/close!)
+                    :registry-holds (registry-holds-fn)
+                    :legacy-holds   (legacy-holds-fn)
+                    :live-writers   (live-writers-fn)}
                    dir agent-id)
     (r/err :transcript/hive-agent-absent
            {:message "hive-agent is not on the classpath; Datalevin transcripts are unreadable"})))
 
 (m/=> read-dir-with [:=> [:cat [:map-of :any :any] :any :any] [:map-of :any :any]])
+
+(m/=> store-decision [:=> [:cat [:map-of :any :any] :any] [:enum :shared :free :busy :unknown]])
 
 (defn hive-agent-datalevin-root
   "hive-agent's configured transcript root, or its documented default."

@@ -29,26 +29,47 @@
 ;; read-dir-with: never open a store a writer holds (the `transcript list`
 ;; SIGSEGV). The store fns are injected and the opener counted.
 
-(defn- counting-ops [held shared?]
+(defn- counting-ops
+  "Store fns with a counted opener, plus the probes of `store-decision`."
+  [probes]
   (let [opens (atom 0)]
     {:opens opens
-     :ops   {:make       (fn [_] (swap! opens inc) (r/ok ::store))
-             :query      (fn [_ _] (r/ok [{:turn 1}]))
-             :close      (fn [_] nil)
-             :held-count (fn [_] held)
-             :shared?    shared?}}))
+     :ops   (merge {:make  (fn [_] (swap! opens inc) (r/ok ::store))
+                    :query (fn [_ _] (r/ok [{:turn 1}]))
+                    :close (fn [_] nil)}
+                   probes)}))
 
-(deftest read-dir-with-refuses-a-held-store-test
-  (let [{:keys [opens ops]} (counting-ops 1 false)
-        res (ts/read-dir-with ops "/tmp/x" "ag")]
-    (is (= :transcript/store-busy (:error res)))
-    (is (zero? @opens) "a listing while a writer holds the store must not open it")))
+(def ^:private tmp-store (str (System/getProperty "java.io.tmpdir") "/tsrc-x/global/ag"))
 
-(deftest read-dir-with-opens-when-free-or-shared-test
-  (doseq [[held shared?] [[0 false] [1 true]]]
-    (let [{:keys [opens ops]} (counting-ops held shared?)]
-      (is (= [{:turn 1}] (:ok (ts/read-dir-with ops "/tmp/x" "ag"))))
-      (is (= 1 @opens)))))
+(deftest unknown-or-held-stores-are-never-opened-test
+  (doseq [[why probes err]
+          [["no counts, no swarm registry" {} :transcript/store-unknown]
+           ["no counts, swarm registry unreadable" {:live-writers (fn [_] nil)} :transcript/store-unknown]
+           ["no counts, a running writer on the dir" {:live-writers (fn [_] [{:slave/id "ag"}])} :transcript/store-busy]
+           ["legacy counts hold the dir" {:legacy-holds (fn [_] 1) :live-writers (fn [_] [])} :transcript/store-busy]
+           ["hot reload: empty registry beside a live writer"
+            {:registry-holds (fn [_] 0) :live-writers (fn [_] [{:slave/id "ag"}])} :transcript/store-busy]
+           ["hot reload: old writer counted beside a registry entry"
+            {:registry-holds (fn [_] 1) :legacy-holds (fn [_] 1)} :transcript/store-busy]]]
+    (let [{:keys [opens ops]} (counting-ops probes)
+          res (ts/read-dir-with ops tmp-store "ag")]
+      (is (= err (:error res)) why)
+      (is (zero? @opens) why))))
+
+(deftest free-or-shared-stores-open-once-test
+  (doseq [[why probes want]
+          [["no running writer" {:live-writers (fn [aid] (filterv #(= aid (:slave/id %)) [{:slave/id "other"}]))} :free]
+           ["registry holds the dir" {:registry-holds (fn [_] 1) :live-writers (fn [_] [{:slave/id "ag"}])} :shared]]]
+    (let [{:keys [opens ops]} (counting-ops probes)]
+      (is (= want (ts/store-decision ops tmp-store)) why)
+      (is (= [{:turn 1}] (:ok (ts/read-dir-with ops tmp-store "ag"))) why)
+      (is (= 1 @opens) why))))
+
+(deftest a-writer-starting-before-the-open-is-caught-test
+  (let [calls (atom 0)
+        {:keys [opens ops]} (counting-ops {:live-writers (fn [_] (if (> (swap! calls inc) 1) [{:slave/id "ag"}] []))})]
+    (is (= :transcript/store-busy (:error (ts/read-dir-with ops tmp-store "ag"))))
+    (is (zero? @opens) "the re-check right before the open refuses")))
 
 (defrecord StubSource [label listing entries]
   ts/TranscriptSource
