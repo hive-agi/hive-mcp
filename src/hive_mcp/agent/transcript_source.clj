@@ -105,21 +105,60 @@
               (sort-by entry-turn)
               vec))))))
 
-(defn hive-agent-read-dir
-  "Read one hive-agent Datalevin store dir through hive-agent's own store.
-   Result<[entry]>; an err when hive-agent is not on the classpath."
-  [dir agent-id]
-  (if-let [make (swallow/attempt (requiring-resolve 'hive-agent.loop.transcript.datalevin-store/make-store))]
-    (let [query (requiring-resolve 'hive-agent.loop.transcript.store/query-by-agent)
-          close (requiring-resolve 'hive-agent.loop.transcript.store/close!)
-          opened (make {:agent-id agent-id :dir dir})]
+(defn- canonical [path]
+  (.getCanonicalPath (io/file (str path))))
+
+(defn- held-count-fn
+  "(fn [dir]) -> live holders of `dir` in hive-agent's per-path handle
+   counts, matched by CANONICAL path: those counts are keyed by the writer's
+   path string, and the listing spells the same dir its own way. nil when
+   hive-agent exposes no counts."
+  []
+  (when-let [counts (swallow/attempt
+                     (some-> (requiring-resolve 'hive-agent.loop.transcript.datalevin-store/handle-counts) deref))]
+    (when (instance? clojure.lang.IDeref counts)
+      (fn [dir]
+        (let [k (canonical dir)]
+          (reduce-kv (fn [n path c] (if (= k (canonical path)) (+ n (long c)) n))
+                     0 @counts))))))
+
+(defn read-dir-with
+  "Read one store dir with hive-agent's store fns `ops`
+   {:make :query :close :held-count :shared?}.
+
+   Without a shared connection registry in hive-agent (`:shared?` false),
+   opening a dir another holder in this process already has open re-runs
+   Datalevin's DBI-open commit on the live env, which segfaulted the host
+   JVM. That read is refused as :transcript/store-busy and never opened."
+  [{:keys [make query close held-count shared?]} dir agent-id]
+  (if (and (not shared?) held-count (pos? (long (held-count dir))))
+    (r/err :transcript/store-busy
+           {:dir dir :agent-id agent-id
+            :message "Store is held open by a live writer; hive-agent cannot share it yet"})
+    (let [opened (make {:agent-id agent-id :dir dir})]
       (if-not (r/ok? opened)
         opened
         (let [store (:ok opened)]
           (try (query store agent-id)
-               (finally (close store))))))
+               (finally (close store))))))))
+
+(defn hive-agent-read-dir
+  "Read one hive-agent Datalevin store dir through hive-agent's own store.
+   Result<[entry]>; an err when hive-agent is not on the classpath, or
+   :transcript/store-busy when a writer holds the dir and this hive-agent
+   has no shared connection registry (see `read-dir-with`)."
+  [dir agent-id]
+  (if-let [make (swallow/attempt (requiring-resolve 'hive-agent.loop.transcript.datalevin-store/make-store))]
+    (read-dir-with {:make       make
+                    :query      (requiring-resolve 'hive-agent.loop.transcript.store/query-by-agent)
+                    :close      (requiring-resolve 'hive-agent.loop.transcript.store/close!)
+                    :held-count (held-count-fn)
+                    :shared?    (some? (swallow/attempt (requiring-resolve 'hive-agent.loop.transcript.datalevin-store/acquire-conn!)))}
+                   dir agent-id)
     (r/err :transcript/hive-agent-absent
            {:message "hive-agent is not on the classpath; Datalevin transcripts are unreadable"})))
+
+(m/=> read-dir-with [:=> [:cat [:map-of :any :any] :any :any] [:map-of :any :any]])
 
 (defn hive-agent-datalevin-root
   "hive-agent's configured transcript root, or its documented default."

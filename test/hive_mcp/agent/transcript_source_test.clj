@@ -26,6 +26,30 @@
    :n-cases     12
    :golden-path "test/golden/agent/transcript-source-entry-turn.edn"})
 
+;; read-dir-with: never open a store a writer holds (the `transcript list`
+;; SIGSEGV). The store fns are injected and the opener counted.
+
+(defn- counting-ops [held shared?]
+  (let [opens (atom 0)]
+    {:opens opens
+     :ops   {:make       (fn [_] (swap! opens inc) (r/ok ::store))
+             :query      (fn [_ _] (r/ok [{:turn 1}]))
+             :close      (fn [_] nil)
+             :held-count (fn [_] held)
+             :shared?    shared?}}))
+
+(deftest read-dir-with-refuses-a-held-store-test
+  (let [{:keys [opens ops]} (counting-ops 1 false)
+        res (ts/read-dir-with ops "/tmp/x" "ag")]
+    (is (= :transcript/store-busy (:error res)))
+    (is (zero? @opens) "a listing while a writer holds the store must not open it")))
+
+(deftest read-dir-with-opens-when-free-or-shared-test
+  (doseq [[held shared?] [[0 false] [1 true]]]
+    (let [{:keys [opens ops]} (counting-ops held shared?)]
+      (is (= [{:turn 1}] (:ok (ts/read-dir-with ops "/tmp/x" "ag"))))
+      (is (= 1 @opens)))))
+
 (defrecord StubSource [label listing entries]
   ts/TranscriptSource
   (list-transcripts [_] listing)
