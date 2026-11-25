@@ -160,6 +160,24 @@
       :source-type :manual
       :created-by (str "plan_to_kanban" (when agent-id (str ":" agent-id)))})))
 
+(defn plan-task-edge-specs
+  "The plan --depends-on--> task edges a conversion writes, as
+   {:from :to :relation} specs, in task order."
+  [plan-id task-ids]
+  (mapv (fn [task-id] {:from plan-id :to task-id :relation :depends-on}) task-ids))
+
+(defn task-dependency-edge-specs
+  "The task-B --depends-on--> task-A edges the steps' :depends-on ask for, as
+   {:from :to :relation} specs. A dependency on a step with no task is skipped."
+  [step-id-to-task-id steps]
+  (vec
+   (for [step steps
+         dep-id (:depends-on step)
+         :when (and dep-id (contains? step-id-to-task-id dep-id))]
+     {:from (get step-id-to-task-id (:id step))
+      :to (get step-id-to-task-id dep-id)
+      :relation :depends-on})))
+
 (defn- create-plan-task-edges!
   "Create KG edges from plan to its tasks.
    plan --depends-on--> task (plan depends on task completion)
@@ -181,15 +199,12 @@
    write them."
   [plan-id task-ids scope agent-id _waves _step-id-to-task-id]
   (kg-edges/add-edges!
-   (mapv (fn [task-id]
-           {:from plan-id
-            :to task-id
-            :relation :depends-on
-            :scope scope
-            :confidence 1.0
-            :source-type :automated
-            :created-by (str "plan_to_kanban" (when agent-id (str ":" agent-id)))})
-         task-ids)))
+   (mapv #(assoc %
+                 :scope scope
+                 :confidence 1.0
+                 :source-type :automated
+                 :created-by (str "plan_to_kanban" (when agent-id (str ":" agent-id))))
+         (plan-task-edge-specs plan-id task-ids))))
 
 (defn- create-task-dependency-edges!
   "Create KG edges for task-to-task dependencies.
@@ -200,17 +215,12 @@
    `add-edges!` call for the reason given on `create-plan-task-edges!`."
   [step-id-to-task-id steps scope agent-id _waves]
   (kg-edges/add-edges!
-   (vec
-    (for [step steps
-          dep-id (:depends-on step)
-          :when (and dep-id (contains? step-id-to-task-id dep-id))]
-      {:from (get step-id-to-task-id (:id step))
-       :to (get step-id-to-task-id dep-id)
-       :relation :depends-on
-       :scope scope
-       :confidence 1.0
-       :source-type :automated
-       :created-by (str "plan_to_kanban" (when agent-id (str ":" agent-id)))}))))
+   (mapv #(assoc %
+                 :scope scope
+                 :confidence 1.0
+                 :source-type :automated
+                 :created-by (str "plan_to_kanban" (when agent-id (str ":" agent-id))))
+         (task-dependency-edge-specs step-id-to-task-id steps))))
 
 (defn- create-step-cards!
   "Create one kanban card per plan step, in wave order so a step's
@@ -280,17 +290,23 @@
             ;; hard timeout + rescue via hive-weave (see kg-degraded ns).
             ;; A wedged KG store cannot block kanban task creation —
             ;; tasks are load-bearing, edges are backfillable.
+            ;; Each call carries the specs of the edges it writes, so a
+            ;; call that degrades names exactly which edges did not land.
             kg-result (kg-degraded/apply-kg-calls
                        [["decision-edge"
                          #(create-plan-decision-edge!
-                           plan-memory-id decision-id project-id agent-id)]
+                           plan-memory-id decision-id project-id agent-id)
+                         (when decision-id
+                           [{:from plan-memory-id :to decision-id :relation :derived-from}])]
                         ["plan-task-edges"
                          #(create-plan-task-edges!
                            plan-memory-id task-ids project-id agent-id
-                           waves step-id-to-task-id)]
+                           waves step-id-to-task-id)
+                         (plan-task-edge-specs plan-memory-id task-ids)]
                         ["task-dep-edges"
                          #(create-task-dependency-edges!
-                           step-id-to-task-id steps project-id agent-id waves)]])
+                           step-id-to-task-id steps project-id agent-id waves)
+                         (task-dependency-edge-specs step-id-to-task-id steps)]])
             ;; The edge calls only enqueue: wait, bounded, until the edges
             ;; read back so the response says readable or still queued.
             kg-result (kg-degraded/with-durability kg-result kg-edges/get-edge)]
@@ -306,7 +322,9 @@
          :decision-id decision-id
          :kg-degraded? (:degraded? kg-result)
          :kg-pending? (:pending? kg-result)
-         :kg-warnings (:warnings kg-result)}))))
+         :kg-warnings (:warnings kg-result)
+         :kg-missing-edges (:missing-edges kg-result)
+         :kg-pending-edges (:pending-edges kg-result)}))))
 
 (def ^:private terminal-plan-statuses
   "Statuses a plan is spent at: converting again would duplicate a board that
@@ -482,8 +500,14 @@
      :kg-edges kg-edges
      :edge-count (count kg-edges)
      :kg-degraded? (boolean (:kg-degraded? result))
-     :kg-pending? (boolean (:pending? result))
+     :kg-pending? (boolean (:kg-pending? result))
      :kg-warnings (:kg-warnings result)
+     ;; Exactly which edges did not land ({:from :to :relation :label
+     ;; :reason}) and which are queued but unconfirmed, so a caller
+     ;; counting through these edges can re-link or re-check just those.
+     :kg-missing-edges (vec (:kg-missing-edges result))
+     :kg-pending-edges (vec (:kg-pending-edges result))
+     :kg-relink (kg-degraded/missing-edges-hint (:kg-missing-edges result))
      :step-mapping (:step-mapping result)}))
 
 (m/=> conversion-response [:=> [:cat [:maybe :string] [:enum :file :memory] :map] :map])

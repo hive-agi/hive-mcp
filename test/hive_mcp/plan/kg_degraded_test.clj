@@ -302,7 +302,7 @@
 
 (deftest with-durability-test
   (testing "edges read back: not pending, not degraded, no warning"
-    (is (= (assoc ok-result :pending? false)
+    (is (= (assoc ok-result :pending? false :pending-edges [])
            (sut/with-durability ok-result (constantly true)))))
 
   (testing "edges not readable within the budget: pending with a kg-pending
@@ -332,7 +332,7 @@
   (testing "no edges: nothing to wait for, the check is not called"
     (let [called? (atom false)
           empty-result {:edges [] :warnings ["kg-timeout:a:200ms"] :degraded? true}]
-      (is (= (assoc empty-result :pending? false)
+      (is (= (assoc empty-result :pending? false :pending-edges [])
              (sut/with-durability empty-result (fn [_] (reset! called? true)))))
       (is (false? @called?)))))
 
@@ -360,8 +360,7 @@
     (with-redefs [sut/kg-call-timeout-ms (constantly 5000)
                   sut/with-durability
                   (let [real sut/with-durability]
-                    (fn [kg-result _] (with-redefs [sut/kg-call-timeout-ms (constantly 50)]
-                                        (real kg-result (constantly nil)))))]
+                    (fn [kg-result _ & _] (real kg-result (constantly nil) {:timeout-ms 50})))]
       (let [execute-fn (#'plan-tool/build-execute-fn
                         "/tmp/nodir" "plan-id" "test-project" "test-agent")
             plan      (plan-with [{:id "s1" :title "T1" :depends-on []}
@@ -389,5 +388,9 @@
         (is (true? (:kg-degraded? result)))
         (is (= 1 (count (:kg-warnings result))))
         (is (re-find #"plan-task-edges" (first (:kg-warnings result))))
+        (is (= [{:from "plan-id" :to (get-in rows ["T1" :id]) :relation "depends-on"
+                 :label "plan-task-edges" :reason "kg-timeout:plan-task-edges:200ms"}]
+               (:kg-missing-edges result))
+            "the response names exactly the edge that did not land")
         ;; ok batches still contribute.
         (is (= #{:ok-decision :dep-edge} (set (:kg-edges result))))))))

@@ -638,7 +638,8 @@
           (edge-outcome/attempt-edges
            #(run-stage! progress :kg-edges
                         (fn [] (create-kg-edges! entry-id kg-params project-id agent-id)))
-           requests)
+           requests
+           entry-id)
           {:edge-ids [] :edge-errors []})
         pending (if (and pending (seq edge-ids))
                   (do (deferred/amend! entry-id {:kg-outgoing edge-ids})
@@ -646,7 +647,7 @@
                   pending)
         link-pending (when (and (seq edge-ids) (not pending))
                        (link-outgoing! progress store entry-id edge-ids))
-        kg-check (edge-outcome/outcome-check entry-id edge-errors link-pending)
+        kg-check (edge-outcome/outcome-check entry-id edge-errors link-pending requests)
         created (or pending
                     (canonical-receipt entry-id requests receipt)
                     (run-stage! progress :fetch #(fetch-with-retry store entry-id)))
