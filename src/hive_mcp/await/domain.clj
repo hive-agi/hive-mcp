@@ -325,5 +325,48 @@
        "\n\nWake payload (awaiter " (:id awaiter) "):\n"
        (pr-str payload)))
 
+(def WakeEntry
+  "One resume attempt as the registry's wake observer records it
+   (ports/IWakeJournal): which awaiter, which owner kind, which attempt,
+   when, and how it went. Plain EDN: keywords, strings, numbers, maps."
+  [:map
+   [:awaiter-id :string]
+   [:owner-kind :keyword]
+   [:attempt :int]
+   [:at :int]
+   [:ok? :boolean]
+   [:reason {:optional true} [:maybe :keyword]]
+   [:label {:optional true} [:maybe :string]]
+   [:inbox {:optional true} [:maybe :string]]
+   [:error {:optional true} [:maybe :string]]
+   [:error-kind {:optional true} [:maybe :keyword]]
+   [:deferred? {:optional true} :boolean]
+   [:payload {:optional true} [:maybe :map]]
+   [:value {:optional true} [:maybe :map]]])
+
+(defn wake-entry
+  "The WakeEntry for one resume attempt of `awaiter` (as it was handed to
+   its resumer: :waking, its :wake payload and :attempt) whose outcome was
+   `result` ({:ok? :value :error :data :deferred}), at `now`. Pure."
+  [awaiter result now]
+  (let [owner   (:owner awaiter)
+        payload (:wake awaiter)
+        kind    (get-in result [:data :error])]
+    (cond-> {:awaiter-id (str (:id awaiter))
+             :owner-kind (:kind owner)
+             :attempt    (long (or (:attempt awaiter) 1))
+             :at         (long now)
+             :ok?        (boolean (:ok? result))
+             :reason     (:reason payload)
+             :payload    payload}
+      (string? (:label owner))     (assoc :label (:label owner))
+      (string? (:inbox owner))     (assoc :inbox (:inbox owner))
+      (:error result)              (assoc :error (str (:error result)))
+      (keyword? kind)              (assoc :error-kind kind)
+      (:deferred result)           (assoc :deferred? true)
+      (map? (:value result))       (assoc :value (:value result)))))
+
+(m/=> wake-entry [:=> [:cat Awaiter :map :int] WakeEntry])
+
 (m/=> new-awaiter [:=> [:cat :map [:maybe :int]] Awaiter])
 (m/=> resume-prompt [:=> [:cat Awaiter [:maybe :map]] :string])

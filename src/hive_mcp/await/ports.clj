@@ -59,6 +59,28 @@
 
 (defmethod arm-on-create? :default [_owner] false)
 
+(defprotocol IWakeInbox
+  "Where a :session owner's wake is sent. Adapters live under
+   hive-mcp.await.adapters (nats-inbox is the default)."
+  (valid-address? [inbox address]
+    "True when `address` is an inbox id this adapter can deliver to. Asked
+     at create, so an address that can never be delivered is refused before
+     an awaiter is recorded.")
+  (send-wake! [inbox message]
+    "Send `message` {:to :from :id :body}; answer a map describing the
+     delivery. Throw when it cannot be delivered now (the registry re-drives
+     the wake). A message with an :id already sent must be stored once."))
+
+(defprotocol IWakeJournal
+  "The registry's wake observer: every resume attempt of every owner kind is
+   appended here (domain/WakeEntry) before its outcome is persisted.
+
+   Reader contract: an entry may repeat under crash recovery (the same
+   :awaiter-id and :attempt), so a reader dedups on that pair; a durable
+   adapter may leave a torn last line after a crash, which a reader skips."
+  (append-wake! [journal entry]
+    "Record `entry` durably before answering it. Throw when it cannot."))
+
 (def deferred-owner-kinds
   "Owner kinds whose resumer cannot be resolved at create time because the
    owner needs a value the caller does not have yet. `:hive-agent-run` is

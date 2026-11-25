@@ -26,6 +26,7 @@
   (:require [clojure.edn :as edn]
             [clojure.java.io :as io]
             [clojure.string :as str]
+            [hive-mcp.await.adapters.ednl-journal :as ednl-journal]
             [hive-mcp.await.domain :as domain]
             [hive-mcp.await.ports :as ports]
             [malli.core :as m]
@@ -92,6 +93,7 @@
    :state atom."
   [:map
    [:path :string]
+   [:journal {:optional true} [:maybe [:fn #(satisfies? ports/IWakeJournal %)]]]
    [:now-fn [:fn ifn?]]
    [:executor [:fn some?]]
    [:resume-executor [:fn some?]]
@@ -283,8 +285,9 @@
    System/currentTimeMillis), :pending-ttl-ms, :max-attempts. Nothing is
    armed and no lock is taken until `init!`."
   ([path] (make-registry path {}))
-  ([path {:keys [now-fn pending-ttl-ms max-attempts]}]
+  ([path {:keys [now-fn pending-ttl-ms max-attempts journal]}]
    {:path            path
+    :journal         (or journal (ednl-journal/journal (ednl-journal/path-beside path)))
     :now-fn          (or now-fn #(System/currentTimeMillis))
     :pending-ttl-ms  (long (or pending-ttl-ms default-pending-ttl-ms))
     :max-attempts    (long (or max-attempts default-max-attempts))
@@ -301,7 +304,8 @@
                      [:=> [:cat :string [:map {:closed true}
                                          [:now-fn {:optional true} [:maybe [:fn ifn?]]]
                                          [:pending-ttl-ms {:optional true} [:maybe :int]]
-                                         [:max-attempts {:optional true} [:maybe :int]]]]
+                                         [:max-attempts {:optional true} [:maybe :int]]
+                                         [:journal {:optional true} [:maybe [:fn #(satisfies? ports/IWakeJournal %)]]]]]
                       Registry]])
 
 (defn- now [reg] ((:now-fn reg)))
@@ -368,6 +372,19 @@
     (when-let [^ScheduledFuture t (get-in old [:timers id])]
       (.cancel t false))))
 
+(defn- observe!
+  "Hand one resume attempt of `a` with `result` to the registry's wake
+   journal (ports/IWakeJournal), before its outcome is persisted. A journal
+   that fails is logged and NEVER changes the outcome: a wake already
+   delivered must not be re-driven because its record could not be written
+   (review B1)."
+  [reg a result]
+  (when-let [j (:journal reg)]
+    (try (ports/append-wake! j (domain/wake-entry a result (now reg)))
+         (catch Throwable t
+           (log/error t "await: wake journal append failed; the outcome stands"
+                      {:id (:id a) :attempt (:attempt a) :ok? (:ok? result)})))))
+
 (defn- record-result!
   [reg id result]
   (swap! (:state reg) assoc-in [:resumes id] result)
@@ -423,7 +440,8 @@
                           (log/warn e "await: resumer failed" {:id id :owner (:owner a)})
                           {:ok? false :error (.getMessage e) :data (ex-data e)}))
               attempt (or (:attempt a) 1)
-              result  (assoc result :attempt attempt)]
+              result  (assoc result :attempt attempt)
+              _       (observe! reg a result)]
           (if (:ok? result)
             (do (swap! (:state reg) #(-> % (update-in [:awaiters id] domain/mark-woken)
                                          (update :resumers dissoc id)))
@@ -444,24 +462,56 @@
 
 (m/=> resume! [:=> [:cat Registry domain/AwaiterId] [:maybe ResumeResult]])
 
+(defn- launch-wake!
+  "The effects of a wake THIS thread started (its swap moved the row to
+   :waking): persist it, drop the source and the deadline timer, then
+   resume on the resume executor. Runs once per wake, because only one swap
+   can make that move."
+  [reg id]
+  (persist! reg)
+  (release! reg id)
+  (.execute ^ExecutorService (:resume-executor reg)
+            ^Runnable (fn [] (try (resume! reg id)
+                                  (catch Throwable t
+                                    (log/error t "await: resume crashed" {:id id})))))
+  id)
+
+(def ^:private wakeable-statuses
+  "The statuses a wake may start from: an awaiter already :waking, :woken or
+   :cancelled is never handed over a second time (review B3)."
+  #{:pending :armed})
+
+(defn- begin-wake-in
+  "Pure over the state map: `st` with awaiter `id` moved to :waking on
+   `payload` (default its recorded wake), when its status allows a wake;
+   `st` unchanged otherwise."
+  [st id payload]
+  (let [a (get-in st [:awaiters id])
+        p (or payload (:wake a) (:pending-wake a))]
+    (if (and a p (contains? wakeable-statuses (:status a)))
+      (assoc-in st [:awaiters id] (domain/begin-wake a p))
+      st)))
+
+(defn- started-wake?
+  "True when the swap old -> new moved awaiter `id` into :waking."
+  [old new id]
+  (let [o (get-in old [:awaiters id]) n (get-in new [:awaiters id])]
+    (and (not (identical? o n)) (= :waking (:status n)) (not= :waking (:status o)))))
+
 (defn deliver!
-  "Hand the woken awaiter `id` to its resumer: persist :waking with
-   `payload` (default: the wake the step already recorded), drop the source
-   and the deadline timer, then resume on the resume executor. This is the
-   one place a wake leaves the registry."
+  "Hand the awaiter `id` to its resumer with `payload` (default: the wake it
+   recorded). The move to :waking happens inside ONE swap and only from
+   :pending or :armed, so of two racing deliveries exactly one starts the
+   wake; the other answers nil. The starter persists :waking, drops the
+   source and the deadline timer, then resumes on the resume executor. This
+   is the one place a wake leaves the registry. Answers `id` when this call
+   started the wake, else nil."
   ([reg id] (deliver! reg id nil))
   ([reg id payload]
-   (let [a       (lookup reg id)
-         payload (or payload (:wake a))]
-     (when (and a payload)
-       (swap! (:state reg) assoc-in [:awaiters id] (domain/begin-wake a payload))
-       (persist! reg)
-       (release! reg id)
-       (.execute ^ExecutorService (:resume-executor reg)
-                 ^Runnable (fn [] (try (resume! reg id)
-                                       (catch Throwable t
-                                         (log/error t "await: resume crashed" {:id id})))))
-       id))))
+   (let [id (str id)
+         [old new] (swap-vals! (:state reg) begin-wake-in id payload)]
+     (when (started-wake? old new id)
+       (launch-wake! reg id)))))
 
 (m/=> deliver! [:function
                 [:=> [:cat Registry domain/AwaiterId] [:maybe [:string {:min 1}]]]
@@ -470,28 +520,31 @@
 (defn offer!
   "Offer `event` (nil for a clock tick) to awaiter `id`: run the pure step
    and persist the result. A :pending awaiter records the wake and is NOT
-   resumed; an :armed one that woke is handed to deliver!.
+   resumed; an :armed one that woke is moved to :waking IN THE SAME SWAP
+   and handed to its resumer.
 
-   The wake is decided inside one swap, so two racing events wake an
-   awaiter at most once. Answers the step result, or nil when no such
-   awaiter exists."
+   Because the step and the move to :waking are one swap, two racing events
+   (or an event racing arm!) start a wake at most once. Answers the step
+   result, or nil when no such awaiter exists."
   [reg id event]
   (let [id      (str id)
         t       (now reg)
-        result* (volatile! nil)]
-    (swap! (:state reg)
-           (fn [st]
-             (if-let [a (get-in st [:awaiters id])]
-               (let [r (domain/step a event t)]
-                 (vreset! result* (assoc r ::changed? (not= a (:awaiter r))))
-                 (assoc-in st [:awaiters id] (:awaiter r)))
-               (do (vreset! result* nil) st))))
-    (let [r (some-> @result* (dissoc ::changed?))]
-      (when (::changed? @result*)
-        (persist! reg))
-      (when (:wake? r)
-        (deliver! reg id))
-      r)))
+        result* (volatile! nil)
+        [old new] (swap-vals! (:state reg)
+                              (fn [st]
+                                (if-let [a (get-in st [:awaiters id])]
+                                  (let [r  (domain/step a event t)
+                                        a' (if (:wake? r)
+                                             (domain/begin-wake (:awaiter r) (:payload r))
+                                             (:awaiter r))]
+                                    (vreset! result* r)
+                                    (assoc-in st [:awaiters id] a'))
+                                  (do (vreset! result* nil) st))))
+        r (when (get-in old [:awaiters id]) @result*)]
+    (cond
+      (started-wake? old new id) (launch-wake! reg id)
+      (not= (get-in old [:awaiters id]) (get-in new [:awaiters id])) (persist! reg))
+    r))
 
 (m/=> offer! [:=> [:cat Registry domain/AwaiterId [:maybe domain/Event]] [:maybe domain/StepResult]])
 
@@ -538,12 +591,21 @@
       (swap! (:state reg) #(-> % (update :timers dissoc id) (assoc-in [:timers id] fut))))))
 
 (defn- open-source!
-  "Open the source for `a`, so its events reach offer! for `id`."
+  "Open the source for `a`, so its events reach offer! for `id`.
+
+   A source may emit from INSIDE open-source (a burst at subscribe: a log
+   tail that already matches, a predicate already true). Such a wake runs
+   release! before the closer exists, so when the awaiter is no longer
+   listening (:waking, :woken, :cancelled) by the time open-source answers,
+   the closer is called at once instead of being kept."
   [reg a]
   (let [id    (:id a)
         close (ports/open-source (:subscription a) a #(offer! reg id %))]
     (when close
-      (swap! (:state reg) assoc-in [:closers id] close))
+      (if (contains? #{:pending :armed} (:status (lookup reg id)))
+        (swap! (:state reg) assoc-in [:closers id] close)
+        (try (close) (catch Exception e
+                       (log/warn e "await: source close failed" {:id id})))))
     a))
 
 (defn- resolve-resumer
@@ -558,30 +620,40 @@
   a)
 
 (defn- subscribe!
-  "Open the source and schedule the deadline of `a`."
+  "Open the source and schedule the deadline of `a`. No deadline is
+   scheduled for an awaiter that already woke while its source opened."
   [reg a]
   (resolve-resumer reg a)
   (open-source! reg a)
-  (schedule-deadline! reg a)
+  (when (contains? #{:pending :armed} (:status (lookup reg (:id a))))
+    (schedule-deadline! reg a))
   a)
 
 (defn create!
-  "Register a new :pending awaiter from `request` {:id :owner :subscription
-   :deadline :prompt}; :id defaults to a random uuid, and :timeout-ms sets
-   :deadline relative to now. Validated against domain/Awaiter. Its source
-   opens at once, so an event that arrives before the ling parks is recorded
-   rather than lost, but nothing is resumed until `arm!`.
+  "Register a new awaiter from `request` {:id :owner :subscription :deadline
+   :prompt}; :id defaults to a random uuid, and :timeout-ms sets :deadline
+   relative to now. Validated against domain/Awaiter.
+
+   An owner that parks (:hive-agent-run) is inserted :pending: its source
+   opens at once, so an event that arrives before the ling parks is
+   recorded rather than lost, but nothing is resumed until `arm!`. An owner
+   that never parks (ports/arm-on-create?: :session, :journal) is inserted
+   ALREADY :armed (review B3): there is no pending phase to race, so a
+   source that emits from inside open-source (a burst at subscribe, the
+   RUN-LEDGER-4 case) wakes it exactly once.
 
    The duplicate check and the insert are one swap, so two concurrent
    creates of one id cannot both succeed. Persisted before the source opens,
-   so a crash between the two re-subscribes it on boot. Answers the awaiter."
+   so a crash between the two re-subscribes it on boot. Answers the awaiter
+   as it stands after the subscribe (it may already be :waking)."
   [reg request]
   (let [t   (now reg)
         req (cond-> request
               (nil? (:id request)) (assoc :id (str (random-uuid)))
               (and (nil? (:deadline request)) (number? (:timeout-ms request)))
               (assoc :deadline (+ t (long (:timeout-ms request)))))
-        a   (domain/new-awaiter req t)]
+        a   (cond-> (domain/new-awaiter req t)
+              (ports/arm-on-create? (:owner req)) (assoc :status :armed))]
     (when-let [err (m/explain domain/Awaiter a)]
       (throw (ex-info "await: invalid awaiter"
                       {:error :await/invalid :explain (pr-str (:errors err))})))
@@ -589,7 +661,8 @@
     ;; or source type leaves no awaiter behind.
     (ports/require-ports! a)
     ;; A resumer that resolves now is OPENED now, before the insert: an
-    ;; owner its kind refuses (a :session with no :inbox) leaves no row.
+    ;; owner its kind refuses (a :session with no or a bad :inbox) leaves no
+    ;; row.
     (let [resumer (when-not (contains? ports/deferred-owner-kinds (get-in a [:owner :kind]))
                     (ports/open-resumer (:owner a)))
           ins (volatile! nil)]
@@ -605,11 +678,6 @@
                         {:error :await/duplicate :id (:id a)}))))
     (persist! reg)
     (subscribe! reg a)
-    ;; An owner that never parks (ports/arm-on-create?) is armed here: no
-    ;; :parked event will ever come for it, and a wake recorded between the
-    ;; subscribe and this arm is fired by the arm itself.
-    (when (ports/arm-on-create? (:owner a))
-      (arm! reg (:id a) nil))
     (lookup reg (:id a))))
 
 (m/=> create! [:=> [:cat Registry CreateRequest] domain/Awaiter])
@@ -618,20 +686,32 @@
   "Promote a :pending awaiter to :armed, binding `run-id` as the parked
    run's chat-point id, and fire the wake it recorded while pending.
 
+   Arming and starting the recorded wake are ONE swap (review B3): an event
+   recorded between a read and a write can no longer be lost, and an event
+   that wakes the freshly armed row cannot race arm! into a second resume.
+
    Called on the :parked event (via hive-agent-run's owner kind) or by
    `swarm await arm`. Idempotent: arming an already armed (or woken)
    awaiter changes nothing and delivers nothing twice. Answers
    {:awaiter a :pending-wake w :fired? bool}, or nil when `id` is unknown."
   [reg id run-id]
-  (let [id (str id)]
-    (when-let [a (lookup reg id)]
-      (let [{a' :awaiter w :pending-wake} (domain/arm a run-id)]
-        (when (not= a a')
-          (swap! (:state reg) assoc-in [:awaiters id] a')
-          (persist! reg))
-        (when w
-          (deliver! reg id w))
-        {:awaiter a' :pending-wake w :fired? (boolean w)}))))
+  (let [id     (str id)
+        armed* (volatile! nil)
+        [old new] (swap-vals! (:state reg)
+                              (fn [st]
+                                (if-let [a (get-in st [:awaiters id])]
+                                  (let [{a' :awaiter w :pending-wake :as res} (domain/arm a run-id)]
+                                    (vreset! armed* res)
+                                    (assoc-in st [:awaiters id]
+                                              (if w (domain/begin-wake a' w) a')))
+                                  (do (vreset! armed* nil) st))))]
+    (when (get-in old [:awaiters id])
+      (let [{a' :awaiter w :pending-wake} @armed*
+            fired? (started-wake? old new id)]
+        (cond
+          fired? (launch-wake! reg id)
+          (not= (get-in old [:awaiters id]) (get-in new [:awaiters id])) (persist! reg))
+        {:awaiter a' :pending-wake w :fired? fired?}))))
 
 (m/=> arm! [:=> [:cat Registry domain/AwaiterId [:maybe :any]]
             [:maybe [:map [:awaiter domain/Awaiter] [:pending-wake [:maybe :map]] [:fired? :boolean]]]])
