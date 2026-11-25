@@ -41,6 +41,16 @@
     (is (= :body-failure
            (:kind (oo/op-outcome {:type "text" :text (pr-str {:success false :error "nope"})}))))))
 
+(deftest error-key-reads-the-parsed-body
+  (is (= {:failed? true :kind :error-key :message "x"}
+         (oo/op-outcome {:type "text" :text (pr-str {:error "x"})})))
+  (is (= {:failed? true :kind :error-key :message "y"}
+         (oo/op-outcome {:type "text" :text (json/write-str {:error "y"})})))
+  (is (= {:failed? false}
+         (oo/op-outcome {:type "text" :text (pr-str {:success true :error "stray"})})))
+  (is (= {:failed? false}
+         (oo/op-outcome {:type "text" :text (pr-str {:error nil :value 1})}))))
+
 (deftest ok-statuses-are-not-failed
   (doseq [r [{:status :ok} {:status :resolved} {:status "recorded"}
              {:type "text" :text (pr-str {:status :recorded :id "x"})}

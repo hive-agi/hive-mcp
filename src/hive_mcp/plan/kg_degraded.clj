@@ -198,9 +198,10 @@
      true, [..] - not confirmed within the budget. The edges are queued and
              land when the writer drains, so the caller must not create them
              again; a `kg-pending:` warning says so, and :pending-edges names
-             each queued edge {:from :to :relation :label} (the :specs of the
-             calls that landed) so the caller can check exactly those. Not
-             degraded: nothing is lost.
+             each queued edge {:from :to :relation :label}. Only the LAST id
+             is polled, so this is every spec of every call that returned ids
+             (`apply-kg-calls` :specs): unconfirmed, not known-missing; some
+             may already read back. Not degraded: nothing is lost.
 
    A throwing `readable?` counts as not readable yet. Never throws."
   ([kg-result readable?] (with-durability kg-result readable? nil))
@@ -230,12 +231,29 @@
   (log/warn "plan_to_kanban: KG enrichment degraded — tasks created, edges skipped"
             (merge {:warnings warnings} ctx)))
 
+(def max-listed-edges
+  "Most edge rows a response lists per list; the full count rides beside it."
+  50)
+
+(defn cap-edges
+  "The first `max-listed-edges` rows of EDGES, as a vector."
+  [edges]
+  (into [] (take max-listed-edges) edges))
+
+(defn truncated?
+  "True when any of EDGE-LISTS holds more rows than a response lists."
+  [& edge-lists]
+  (boolean (some #(> (count %) max-listed-edges) edge-lists)))
+
 (defn missing-edges-hint
   "How to re-link the edges a degraded call names, or nil when none."
   [missing-edges]
   (when (seq missing-edges)
     (str (count missing-edges) " edge(s) did not land; re-link each with"
-         " kg edge from=<from> to=<to> relation=<relation> (see kg-missing-edges)")))
+         " kg edge from=<from> to=<to> relation=<relation> (see kg-missing-edges"
+         (when (> (count missing-edges) max-listed-edges)
+           (str ", first " max-listed-edges " listed"))
+         ")")))
 
 ;; =============================================================================
 ;; Function Contracts (m16 coverage batch)
@@ -286,6 +304,10 @@
         DurabilityOut]])
 
 (m/=> missing-edges-hint [:=> [:cat [:maybe [:sequential :map]]] [:maybe :string]])
+
+(m/=> cap-edges [:=> [:cat [:maybe [:sequential :map]]] [:vector {:max 50} :map]])
+
+(m/=> truncated? [:=> [:cat [:* [:maybe [:sequential :map]]]] :boolean])
 
 (m/=> log-degradation!
       [:=> [:cat :map :map]

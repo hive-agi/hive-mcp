@@ -15,8 +15,9 @@
    - :ok-false       :ok false
    - :status-failure a :status of invalid or error (keyword or string), on
                      the map itself or on its text body
-   - :error-key      a non-nil :error on a map with no :success key (an
-                     explicit :success true wins over a stray :error)
+   - :error-key      a non-nil :error on a map with no :success key, on the
+                     map itself or on its text body (an explicit :success
+                     true wins over a stray :error)
    - :null-id        opts {:null-id-key K} given, and the map holds K
                      with a nil value
 
@@ -56,6 +57,11 @@
   "The :status values that mean the handler refused or failed the op."
   #{"invalid" "error"})
 
+(defn- error-only?
+  "True when map `m` carries a non-nil :error and no :success key."
+  [m]
+  (and (map? m) (some? (:error m)) (not (contains? m :success))))
+
 (defn- failed-status
   "The failed :status of map `m` as a string, or nil."
   [m]
@@ -89,8 +95,8 @@
       (false? (:ok result))              :ok-false
       (or (failed-status result)
           (failed-status status-body))   :status-failure
-      (and (some? (:error result))
-           (not (contains? result :success))) :error-key
+      (error-only? result)               :error-key
+      (error-only? status-body)          :error-key
       (and null-id-key
            (contains? result null-id-key)
            (nil? (get result null-id-key))) :null-id)))
@@ -110,7 +116,7 @@
     :status-failure (let [m (if (failed-status result) result status-body)]
                       (or (reported-reason m)
                           (str "tool reported :status " (failed-status m))))
-    :error-key     (str (:error result))
+    :error-key     (str (:error (if (error-only? result) result status-body)))
     :null-id       "creation tool returned nil id, degraded backend?"))
 
 (defn op-outcome

@@ -22,6 +22,7 @@
    [:map [:text [:enum "{\"success\":false,\"error\":\"boom\"}" "[1,2]" "{\"success\":true}" "plain"]]]
    [:map [:isError :boolean]]
    [:map [:ok :boolean]]
+   [:map [:status [:enum :invalid :error :ok "invalid" "Error" "recorded"]]]
    [:map [:error [:maybe [:enum "e1" "e2"]]]]])
 
 (defn- expected-kind
@@ -33,6 +34,7 @@
       (= body-failure-text (:text r))     :body-failure
       (true? (:isError r))                :is-error
       (false? (:ok r))                    :ok-false
+      (#{:invalid :error "invalid" "Error"} (:status r)) :status-failure
       (and (some? (:error r))
            (not (contains? r :success)))  :error-key)))
 
@@ -55,6 +57,10 @@
    :body-failure  (oo/op-outcome {:type "text" :text body-failure-text})
    :is-error      (oo/op-outcome {:isError true :text "bad"})
    :ok-false      (oo/op-outcome {:ok false})
+   :status-failure [(oo/op-outcome {:status :invalid :errors {"origin" ["bad"]}})
+                    (oo/op-outcome {:type "text" :text "{:status :invalid, :errors {\"kind\" [\"required\"]}}"})
+                    (oo/op-outcome {:type "text" :text "{\"status\":\"error\",\"error\":\"boom\"}"})
+                    (oo/op-outcome {:status :recorded})]
    :error-key     (oo/op-outcome {:error "e"})
    :success-wins  (oo/op-outcome {:success true :error "stray"})
    :null-id       (oo/op-outcome {:id nil} {:null-id-key :id})

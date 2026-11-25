@@ -52,7 +52,11 @@
            :full    ["file:/x.edn" :file {:plan {:title "T"} :decision-id "d1"
                                          :task-ids ["t1" "t2"] :waves {"s1" 0 "s2" 2}
                                          :kg-edges [{:id "e"}] :kg-degraded? nil
-                                         :pending? true :kg-warnings ["w"]
+                                         :kg-pending? true :kg-warnings ["w"]
+                                         :kg-missing-edges [{:from "p" :to "t2" :relation "depends-on"
+                                                             :label "plan-task-edges" :reason "kg-timeout:plan-task-edges:5000ms"}]
+                                         :kg-pending-edges [{:from "p" :to "t1" :relation "depends-on"
+                                                             :label "plan-task-edges"}]
                                          :step-mapping {"s1" "t1"}}]}
    :gen (gen/tuple (gen/return "p") (gen/elements [:file :memory])
                    (gen/hash-map :task-ids (gen/vector gen/string-alphanumeric 0 4)

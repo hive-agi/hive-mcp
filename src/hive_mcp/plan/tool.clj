@@ -178,6 +178,17 @@
       :to (get step-id-to-task-id dep-id)
       :relation :depends-on})))
 
+(def ^:private EdgeSpec
+  "One edge a conversion writes, before scope and provenance are added."
+  [:map [:from :any] [:to :any] [:relation :keyword]])
+
+(m/=> plan-task-edge-specs [:=> [:cat :any [:sequential :any]] [:vector EdgeSpec]])
+
+(m/=> task-dependency-edge-specs
+      [:=> [:cat [:map-of :any :any]
+            [:sequential [:map [:id :any] [:depends-on {:optional true} [:maybe [:sequential :any]]]]]]
+       [:vector EdgeSpec]])
+
 (defn- create-plan-task-edges!
   "Create KG edges from plan to its tasks.
    plan --depends-on--> task (plan depends on task completion)
@@ -505,8 +516,12 @@
      ;; Exactly which edges did not land ({:from :to :relation :label
      ;; :reason}) and which are queued but unconfirmed, so a caller
      ;; counting through these edges can re-link or re-check just those.
-     :kg-missing-edges (vec (:kg-missing-edges result))
-     :kg-pending-edges (vec (:kg-pending-edges result))
+     :kg-missing-edges (kg-degraded/cap-edges (:kg-missing-edges result))
+     :kg-missing-edges-count (count (:kg-missing-edges result))
+     :kg-pending-edges (kg-degraded/cap-edges (:kg-pending-edges result))
+     :kg-pending-edges-count (count (:kg-pending-edges result))
+     :kg-edges-truncated? (kg-degraded/truncated? (:kg-missing-edges result)
+                                                  (:kg-pending-edges result))
      :kg-relink (kg-degraded/missing-edges-hint (:kg-missing-edges result))
      :step-mapping (:step-mapping result)}))
 
