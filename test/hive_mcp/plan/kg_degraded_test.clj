@@ -357,19 +357,25 @@
 
   (testing "a store slower than the budget leaves the edges queued: every edge
             id is still returned and nothing is reported skipped"
-    (with-redefs [sut/kg-call-timeout-ms (constantly 5000)
-                  sut/with-durability
-                  (let [real sut/with-durability]
-                    (fn [kg-result _ & _] (real kg-result (constantly nil) {:timeout-ms 50})))]
-      (let [execute-fn (#'plan-tool/build-execute-fn
-                        "/tmp/nodir" "plan-id" "test-project" "test-agent")
-            plan      (plan-with [{:id "s1" :title "T1" :depends-on []}
-                                  {:id "s2" :title "T2" :depends-on ["s1"]}])
-            result    (execute-fn {:plan plan})]
-        (is (= 4 (count (:kg-edges result))))
-        (is (false? (:kg-degraded? result)))
-        (is (true? (:kg-pending? result)))
-        (is (= ["kg-pending:edges-queued:50ms"] (:kg-warnings result)))))))
+    ;; No redef: the queued edges come from real apply-kg-calls thunks, and
+    ;; the never-readable store is the injected readable? port, its budget
+    ;; the opts arity.
+    (let [kg     (sut/apply-kg-calls
+                  [{:label "plan-task-edges" :thunk (constantly ["e1" "e2"])
+                    :specs [{:from "plan-id" :to "t1" :relation :depends-on}
+                            {:from "plan-id" :to "t2" :relation :depends-on}]
+                    :timeout-ms 5000}
+                   {:label "task-dep-edges" :thunk (constantly ["e3"])
+                    :specs [{:from "t2" :to "t1" :relation :depends-on}]
+                    :timeout-ms 5000}])
+          result (sut/with-durability kg (constantly nil) {:timeout-ms 50})]
+      (is (= ["e1" "e2" "e3"] (:edges result)))
+      (is (false? (:degraded? result)))
+      (is (true? (:pending? result)))
+      (is (= ["kg-pending:edges-queued:50ms"] (:warnings result)))
+      (is (= 3 (count (:pending-edges result)))
+          "every queued edge is named as pending, none as missing")
+      (is (= [] (:missing-edges result))))))
 
 (deftest integration-build-execute-fn-kg-partial-test
   (testing "one batch hangs, others ok → partial edges + 1 warning"
