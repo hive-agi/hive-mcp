@@ -224,9 +224,80 @@
     (spit path "{:awaiter-id \"b\" :attem" :append true)
     (let [{:keys [entries skipped]} (ednl/read-journal path)]
       (is (= [["a" 1] ["a" 2]] (mapv (juxt :awaiter-id :attempt) entries))
-          "a repeated [awaiter-id attempt] is deduped")
+          "a repeated [awaiter-id attempt] collapses to one entry")
       (is (= 1 skipped) "the torn last line is skipped, not fatal"))
+    (testing "N2: an append AFTER the torn fragment is not glued onto it"
+      (ports/append-wake! j {:awaiter-id "b" :attempt 1 :ok? true})
+      (let [{:keys [entries skipped]} (ednl/read-journal path)]
+        (is (= [["a" 1] ["a" 2] ["b" 1]] (mapv (juxt :awaiter-id :attempt) entries))
+            "the recovered entry is read")
+        (is (= 1 skipped) "only the torn fragment is skipped")))
     (is (= {:entries [] :skipped 0} (ednl/read-journal (str path ".none"))))))
+
+(deftest n1-a-repeated-pair-never-reads-as-failed-when-it-succeeded
+  (testing "{a 1 false} then {a 1 true}: attempt 1 reads as ok"
+    (is (= [true] (mapv :ok? (:entries (ednl/parse-lines
+                                         (str (pr-str {:awaiter-id "a" :attempt 1 :ok? false}) "\n"
+                                              (pr-str {:awaiter-id "a" :attempt 1 :ok? true}) "\n")))))))
+  (testing "a success is never replaced by a later failed line of the same pair"
+    (is (= [true] (mapv :ok? (:entries (ednl/parse-lines
+                                         (str (pr-str {:awaiter-id "a" :attempt 1 :ok? true}) "\n"
+                                              (pr-str {:awaiter-id "a" :attempt 1 :ok? false}) "\n"))))))))
+
+(deftest n1-a-crash-after-a-failed-attempt-never-reuses-its-number
+  (testing "attempt k fails and is journaled, the JVM dies before anything else is written;
+            the restore runs a NEW attempt number, so [id k] keeps one outcome"
+    (let [dir     (temp-dir)
+          path    (str (io/file dir "registry.edn"))
+          entries (atom [])
+          sent    (atom [])
+          calls   (atom 0)
+          ;; Life 1: the first send fails. The registry is shut down from
+          ;; the journal append itself, i.e. right after the journal fsync
+          ;; and before the registry could write its post-attempt state.
+          reg1*   (promise)
+          crash-j (reify ports/IWakeJournal
+                    (append-wake! [_ e]
+                      ;; die first (lock released, nothing more written),
+                      ;; then let the test see the fsynced entry
+                      (registry/shutdown! @reg1*)
+                      (swap! entries conj e)
+                      (throw (ex-info "jvm died" {}))))
+          reg1    (registry/make-registry path {:journal crash-j :max-attempts 5})]
+      (deliver reg1* reg1)
+      (registry/init! reg1)
+      (binding [session/*inbox* (recording-inbox
+                                 sent (fn [_] (when (= 1 (swap! calls inc))
+                                                (throw (ex-info "bus down" {:error :await/no-bus})))))]
+        (registry/create! reg1 {:id "c1" :owner session-owner :subscription {:type :manual}})
+        (manual/fire! {} "c1")
+        (is (wait-until 2000 #(= 1 (count @entries))) "attempt 1 failed and was journaled")
+        (is (= 1 (:attempt (get (registry/read-awaiters path) "c1")))
+            "attempt 1 was claimed on disk BEFORE it ran")
+        ;; Life 2: restore over the same file.
+        (let [reg2 (registry/make-registry path {:journal (recording-journal entries) :max-attempts 5})]
+          (try
+            (registry/init! reg2)
+            (is (wait-until 4000 #(= :woken (:status (registry/lookup reg2 "c1")))))
+            (is (= [[1 false] [2 true]] (mapv (juxt :attempt :ok?) @entries))
+                "the restore ran attempt 2: no [id attempt] pair holds two outcomes")
+            (is (= #{"c1-wake"} (set (map :id @sent))))
+            (finally (registry/shutdown! reg2))))))))
+
+(deftest n1-attempts-spent-before-a-restart-are-not-run-again
+  (let [path    (str (io/file (temp-dir) "registry.edn"))
+        entries (atom [])]
+    (registry/write-awaiters!
+     path {"g1" {:id "g1" :owner {:kind :journal} :subscription {:type :manual}
+                 :deadline nil :prompt nil :status :waking :created 1 :seen #{}
+                 :pending-wake nil :wake {:reason :event} :attempt 2}})
+    (let [reg (registry/make-registry path {:journal (recording-journal entries) :max-attempts 2})]
+      (try
+        (registry/init! reg)
+        (is (wait-until 2000 #(true? (:give-up? (registry/resume-result reg "g1")))))
+        (is (empty? @entries) "a given-up wake is not attempted again at boot")
+        (is (= :waking (:status (registry/lookup reg "g1"))) "it stays for a human")
+        (finally (registry/shutdown! reg))))))
 
 (deftest nats-inbox-refuses-without-a-bus
   (let [e (try (ports/send-wake! (nats-inbox/inbox) {:to "x" :id "i" :body {}})

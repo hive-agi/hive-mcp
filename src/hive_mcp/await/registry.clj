@@ -407,58 +407,96 @@
                                       (log/warn t "await: re-drive failed" {:id id}))))
                  (long delay) TimeUnit/MILLISECONDS))))
 
-(defn resume!
-  "Call the woken awaiter's resumer, ONCE per attempt, off the deadline
-   thread.
+(defn- claim-attempt!
+  "Claim the next attempt number of the :waking awaiter `id` in one swap and
+   persist the claim BEFORE the attempt runs (review N1). Answers the
+   awaiter as claimed, or nil when it is not :waking or its attempts are
+   spent."
+  [reg id]
+  (let [max-n (long (:max-attempts reg default-max-attempts))
+        [old new] (swap-vals! (:state reg)
+                              (fn [st]
+                                (if-let [a' (some-> (get-in st [:awaiters id])
+                                                    (domain/begin-attempt max-n))]
+                                  (assoc-in st [:awaiters id] a')
+                                  st)))
+        a (get-in new [:awaiters id])]
+    (when-not (identical? (get-in old [:awaiters id]) a)
+      (persist! reg)
+      a)))
 
-   :waking was already persisted by the caller, so a crash here is
-   recoverable. A success marks the awaiter :woken; a deferred answer (heap
-   pressure: {:success false :deferred true}) or any non-success leaves it
-   :waking and schedules a re-drive, up to :max-attempts, after which the
-   failure stays recorded for a human. Never throws. Answers the
-   ResumeResult."
+(defn- call-resumer
+  "Run `a`'s resumer once; answer {:ok? ...} (never throws)."
+  [reg id a]
+  (let [payload (:wake a)
+        prompt  (domain/resume-prompt a payload)]
+    (try
+      (let [f (or (get-in @(:state reg) [:resumers id])
+                  (ports/open-resumer (:owner a)))
+            v (f {:awaiter a :payload payload :prompt prompt})]
+        (cond
+          (domain/deferred? v)
+          {:ok? false :deferred true :error "resumer deferred (heap pressure)" :data {:answer v}}
+
+          (and (map? v) (false? (:success v)))
+          {:ok? false :error "resumer reported failure" :data {:answer v}}
+
+          :else {:ok? true :value v}))
+      (catch Throwable e
+        (log/warn e "await: resumer failed" {:id id :owner (:owner a)})
+        {:ok? false :error (.getMessage e) :data (ex-data e)}))))
+
+(defn resume!
+  "Run ONE attempt of the waking awaiter's resumer, off the deadline thread.
+
+   The attempt number is claimed and persisted first (claim-attempt!), so a
+   crash anywhere after makes the next run a new attempt: no [id attempt]
+   pair is ever run, or journaled, twice (review N1). Then the resumer
+   runs, the wake journal observes the outcome, and the outcome is applied
+   only while the row is still :waking, so a cancel that landed during the
+   resume stands.
+
+   A success marks the awaiter :woken. A deferred answer (heap pressure:
+   {:success false :deferred true}) or any non-success leaves it :waking and
+   schedules a re-drive while attempts remain; once :max-attempts attempts
+   are claimed the failure stays recorded for a human, and since the spent
+   count is on disk a restart does not run it again. Never throws. Answers
+   the ResumeResult."
   [reg id]
   (let [id (str id)]
-    (if-let [a (lookup reg id)]
-      (if-not (domain/waking? a)
-        (or (resume-result reg id) {:ok? false :error "not waking"})
-        (let [payload (:wake a)
-              prompt  (domain/resume-prompt a payload)
-              result  (try
-                        (let [f (or (get-in @(:state reg) [:resumers id])
-                                    (ports/open-resumer (:owner a)))
-                              v (f {:awaiter a :payload payload :prompt prompt})]
-                          (if (domain/deferred? v)
-                            {:ok? false :deferred true
-                             :error "resumer deferred (heap pressure)"
-                             :data {:answer v}}
-                            (if (and (map? v) (false? (:success v)))
-                              {:ok? false :error "resumer reported failure"
-                               :data {:answer v}}
-                              {:ok? true :value v})))
-                        (catch Throwable e
-                          (log/warn e "await: resumer failed" {:id id :owner (:owner a)})
-                          {:ok? false :error (.getMessage e) :data (ex-data e)}))
-              attempt (or (:attempt a) 1)
-              result  (assoc result :attempt attempt)
-              _       (observe! reg a result)]
+    (when-let [a0 (lookup reg id)]
+      (if-let [a (claim-attempt! reg id)]
+        (let [attempt (:attempt a)
+              result  (assoc (call-resumer reg id a) :attempt attempt)
+              _       (observe! reg a result)
+              still?  (fn [st] (domain/waking? (get-in st [:awaiters id])))]
           (if (:ok? result)
-            (do (swap! (:state reg) #(-> % (update-in [:awaiters id] domain/mark-woken)
-                                         (update :resumers dissoc id)))
-                (persist! reg)
-                (record-result! reg id result))
-            (let [give-up? (>= attempt (long (:max-attempts reg default-max-attempts)))]
+            (let [[old _] (swap-vals! (:state reg)
+                                      #(if (still? %)
+                                         (-> % (update-in [:awaiters id] domain/mark-woken)
+                                             (update :resumers dissoc id))
+                                         %))]
+              (when (still? old) (persist! reg))
+              (record-result! reg id result))
+            (let [give-up? (>= (long attempt) (long (:max-attempts reg default-max-attempts)))]
               (record-result! reg id (assoc result :give-up? give-up?))
-              (if give-up?
+              (cond
+                (not (still? @(:state reg)))
+                (log/info "await: awaiter left :waking during its resume; no re-drive" {:id id})
+
+                give-up?
                 (log/error "await: wake could not be delivered; leaving it :waking for a human"
                            {:id id :attempt attempt :error (:error result)})
-                (do ;; the next attempt is a NEW attempt: give-up is counted in
-                    ;; attempts made, not in how often one attempt was retried.
-                    (swap! (:state reg) update-in [:awaiters id :attempt] inc)
-                    (persist! reg)
-                    (redrive! reg id)))
-              result))))
-      nil)))
+
+                :else (redrive! reg id))
+              result)))
+        (if (domain/waking? a0)
+          (or (resume-result reg id)
+              (do (log/error "await: attempts were spent before this restart; leaving it :waking for a human"
+                             {:id id :attempt (:attempt a0)})
+                  (record-result! reg id {:ok? false :give-up? true :attempt (:attempt a0)
+                                          :error "attempts spent before this restart; left :waking for a human"})))
+          (or (resume-result reg id) {:ok? false :error "not waking"}))))))
 
 (m/=> resume! [:=> [:cat Registry domain/AwaiterId] [:maybe ResumeResult]])
 
@@ -575,9 +613,13 @@
 ;; Arming
 ;; =============================================================================
 
+(declare listening? store-while-listening!)
+
 (defn- schedule-deadline!
   "Schedule one clock tick for awaiter `a` at its deadline, replacing any
-   timer already held for it."
+   timer already held for it. The timer is stored with the same conditional
+   swap as a source closer, and cancelled when the awaiter stopped
+   listening meanwhile (review N3)."
   [reg a]
   (when-let [d (:deadline a)]
     (let [id    (:id a)
@@ -587,25 +629,43 @@
           (.schedule ex ^Runnable (fn [] (try (offer! reg id nil)
                                               (catch Throwable e
                                                 (log/warn e "await: deadline tick failed" {:id id}))))
-                     (long delay) TimeUnit/MILLISECONDS)]
-      (swap! (:state reg) #(-> % (update :timers dissoc id) (assoc-in [:timers id] fut))))))
+                     (long delay) TimeUnit/MILLISECONDS)
+          ^ScheduledFuture prev (get-in @(:state reg) [:timers id])]
+      (if (store-while-listening! reg :timers id fut)
+        (when (and prev (not (identical? prev fut))) (.cancel prev false))
+        (.cancel fut false)))))
+
+(defn- listening?
+  "True when awaiter `id` in state map `st` still holds its source."
+  [st id]
+  (contains? #{:pending :armed} (get-in st [:awaiters id :status])))
+
+(defn- store-while-listening!
+  "Store `handle` at [k id] ONLY while awaiter `id` is still listening, in
+   one swap (review N3: no check-then-act). Answers true when stored. When
+   it answers false a wake already ran release! for `id`, so the caller
+   must release `handle` itself. Both orders are safe: a store that lands
+   first is found by the waker's release!, which runs after the waker's own
+   status swap; a wake that lands first refuses the store."
+  [reg k id handle]
+  (let [[_ new] (swap-vals! (:state reg)
+                            (fn [st] (if (listening? st id) (assoc-in st [k id] handle) st)))]
+    (identical? handle (get-in new [k id]))))
 
 (defn- open-source!
   "Open the source for `a`, so its events reach offer! for `id`.
 
-   A source may emit from INSIDE open-source (a burst at subscribe: a log
-   tail that already matches, a predicate already true). Such a wake runs
-   release! before the closer exists, so when the awaiter is no longer
-   listening (:waking, :woken, :cancelled) by the time open-source answers,
-   the closer is called at once instead of being kept."
+   A source may emit before its closer is stored: on the calling thread
+   inside open-source (a burst at subscribe), or from a thread of its own
+   (a poller, a tail, a concurrent `await fire`). The closer is stored only
+   while the awaiter still listens, atomically, and is called at once when
+   the store is refused, so no subscription outlives its awaiter."
   [reg a]
   (let [id    (:id a)
         close (ports/open-source (:subscription a) a #(offer! reg id %))]
-    (when close
-      (if (contains? #{:pending :armed} (:status (lookup reg id)))
-        (swap! (:state reg) assoc-in [:closers id] close)
-        (try (close) (catch Exception e
-                       (log/warn e "await: source close failed" {:id id})))))
+    (when (and close (not (store-while-listening! reg :closers id close)))
+      (try (close) (catch Exception e
+                     (log/warn e "await: source close failed" {:id id}))))
     a))
 
 (defn- resolve-resumer
@@ -620,13 +680,13 @@
   a)
 
 (defn- subscribe!
-  "Open the source and schedule the deadline of `a`. No deadline is
-   scheduled for an awaiter that already woke while its source opened."
+  "Open the source and schedule the deadline of `a`. Neither is kept for
+   an awaiter that already woke while its source opened."
   [reg a]
   (resolve-resumer reg a)
   (open-source! reg a)
-  (when (contains? #{:pending :armed} (:status (lookup reg (:id a))))
-    (schedule-deadline! reg a))
+  ;; schedule-deadline! stores its timer only while the awaiter listens.
+  (schedule-deadline! reg a)
   a)
 
 (defn create!
@@ -769,7 +829,11 @@
                 (try
                   (cond
                     (stale? a) (update acc :cancelled conj (:id a))
-                    (domain/waking? a) (do (redrive! reg (:id a))
+                    ;; The resumer is opened HERE, on the caller's thread, as
+                    ;; create! opens it, so a port bound by the caller (an
+                    ;; inbox adapter) is the one the re-drive uses.
+                    (domain/waking? a) (do (resolve-resumer reg a)
+                                           (redrive! reg (:id a))
                                            (update acc :redriven conj (:id a)))
                     (domain/live? a) (do (subscribe! reg a)
                                          (update acc :armed conj (:id a)))

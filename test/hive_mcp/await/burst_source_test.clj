@@ -39,6 +39,25 @@
     (deliver! {:type :burst :data {:n (get-in subscription [:filter :n]) :i i}}))
   (fn close [] (swap! closed conj (:id awaiter))))
 
+(defonce ^:private latches
+  ;; awaiter id -> the latch its :late-thread source waits on before emitting.
+  (atom {}))
+
+(defmethod ports/open-source :late-thread
+  ;; Emits from a thread of its OWN, after open-source has returned: the
+  ;; shape of a poller or a log tail (RUN-LEDGER-4) or of a concurrent
+  ;; `await fire`. It blocks until the test counts the latch down.
+  [_subscription awaiter deliver!]
+  (let [latch (java.util.concurrent.CountDownLatch. 1)
+        id    (:id awaiter)]
+    (swap! latches assoc id latch)
+    (future (.await latch) (deliver! {:type :late-thread :data {}}))
+    ;; Released as the LAST act before returning: the emitting thread then
+    ;; races the registry's own code after open-source returns, which is
+    ;; where the closer is stored.
+    (.countDown latch)
+    (fn close [] (swap! closed conj id))))
+
 (defn- temp-path []
   (str (io/file (.toFile (java.nio.file.Files/createTempDirectory
                           "await-burst" (make-array java.nio.file.attribute.FileAttribute 0)))
@@ -65,6 +84,24 @@
       (is (= 1 (:attempt (registry/lookup reg "burst-1"))) "begin-wake ran once")
       (is (contains? @closed "burst-1") "the source that fired during open is closed, not leaked")
       (is (nil? (get-in @(:state reg) [:timers "burst-1"])) "no deadline is left for a woken row")
+      (finally (registry/shutdown! reg)))))
+
+(deftest n3-a-source-that-emits-from-its-own-thread-never-leaks
+  (reset! resumes []) (reset! closed #{}) (reset! latches {})
+  (let [reg (registry/make-registry (temp-path))
+        ids (mapv #(str "late-" %) (range 200))]
+    (registry/init! reg)
+    (try
+      (doseq [id ids]
+        (registry/create! reg {:id id :owner {:kind :burst-stub} :timeout-ms 600000
+                               :subscription {:type :late-thread}}))
+      (is (wait-until 5000 #(every? (fn [id] (some? (registry/resume-result reg id))) ids)))
+      (is (= (set ids) (set @resumes)) "every awaiter woke exactly once")
+      (is (= 200 (count @resumes)))
+      (is (wait-until 2000 #(= (set ids) @closed))
+          "every source was closed: none outlived its awaiter")
+      (is (empty? (select-keys (:closers @(:state reg)) ids)) "no closer is left stored")
+      (is (empty? (select-keys (:timers @(:state reg)) ids)) "no deadline timer is left stored")
       (finally (registry/shutdown! reg)))))
 
 (deftest racing-deliveries-start-one-wake

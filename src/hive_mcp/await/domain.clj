@@ -279,13 +279,28 @@
 (m/=> arm [:=> [:cat Awaiter [:maybe :any]] ArmResult])
 
 (defn begin-wake
-  "`awaiter` handed to its resumer: :waking, `payload` as its wake, one more
-   attempt recorded. The registry persists this BEFORE it calls the resumer,
-   which is what makes a crash mid-resume recoverable. Pure."
+  "`awaiter` handed to its resumer: :waking, `payload` as its wake. The
+   registry persists this BEFORE it calls the resumer, which is what makes a
+   crash mid-resume recoverable. It does not count an attempt: each attempt
+   claims its own number with `begin-attempt` (review N1). Pure."
   [awaiter payload]
-  (-> awaiter
-      (assoc :status :waking :wake payload)
-      (update :attempt (fnil inc 0))))
+  (assoc awaiter :status :waking :wake payload))
+
+(m/=> begin-wake [:=> [:cat Awaiter [:maybe :map]] Awaiter])
+
+(defn begin-attempt
+  "`awaiter` with the next attempt number CLAIMED, or nil when no attempt
+   may run: it is not :waking, or `max-attempts` attempts were already
+   claimed. The registry persists the claim before the attempt runs, so a
+   crash at any later point makes the restore claim a NEW number: an
+   attempt number is never run twice, and each [awaiter-id attempt] in the
+   wake journal has exactly one outcome (review N1). Pure."
+  [awaiter max-attempts]
+  (let [n (long (or (:attempt awaiter) 0))]
+    (when (and (waking? awaiter) (< n (long max-attempts)))
+      (assoc awaiter :attempt (inc n)))))
+
+(m/=> begin-attempt [:=> [:cat Awaiter :int] [:maybe Awaiter]])
 
 (m/=> begin-wake [:=> [:cat Awaiter [:maybe :map]] Awaiter])
 
