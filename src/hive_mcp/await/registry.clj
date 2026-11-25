@@ -315,7 +315,7 @@
     (locking state
       (write-awaiters! (:path reg) (:awaiters @state)))))
 
-(declare cancel! default-registry)
+(declare cancel! arm! default-registry)
 
 (defn awaiters
   "Every awaiter the registry holds, as a vector sorted by :created."
@@ -552,7 +552,8 @@
    anything is recorded against it. A deferred kind (`:hive-agent-run`) is
    resolved at delivery instead, because its run id does not exist yet."
   [reg a]
-  (when-not (contains? ports/deferred-owner-kinds (get-in a [:owner :kind]))
+  (when-not (or (contains? ports/deferred-owner-kinds (get-in a [:owner :kind]))
+                (get-in @(:state reg) [:resumers (:id a)]))
     (swap! (:state reg) assoc-in [:resumers (:id a)] (ports/open-resumer (:owner a))))
   a)
 
@@ -587,17 +588,28 @@
     ;; Resolve both ports before anything is recorded: a refused owner kind
     ;; or source type leaves no awaiter behind.
     (ports/require-ports! a)
-    (let [ins (volatile! nil)]
+    ;; A resumer that resolves now is OPENED now, before the insert: an
+    ;; owner its kind refuses (a :session with no :inbox) leaves no row.
+    (let [resumer (when-not (contains? ports/deferred-owner-kinds (get-in a [:owner :kind]))
+                    (ports/open-resumer (:owner a)))
+          ins (volatile! nil)]
       (swap! (:state reg)
              (fn [st]
                (if (get-in st [:awaiters (:id a)])
                  (do (vreset! ins :duplicate) st)
-                 (do (vreset! ins :ok) (assoc-in st [:awaiters (:id a)] a)))))
+                 (do (vreset! ins :ok)
+                     (cond-> (assoc-in st [:awaiters (:id a)] a)
+                       resumer (assoc-in [:resumers (:id a)] resumer))))))
       (when (= :duplicate @ins)
         (throw (ex-info (str "await: awaiter " (:id a) " already exists")
                         {:error :await/duplicate :id (:id a)}))))
     (persist! reg)
     (subscribe! reg a)
+    ;; An owner that never parks (ports/arm-on-create?) is armed here: no
+    ;; :parked event will ever come for it, and a wake recorded between the
+    ;; subscribe and this arm is fired by the arm itself.
+    (when (ports/arm-on-create? (:owner a))
+      (arm! reg (:id a) nil))
     (lookup reg (:id a))))
 
 (m/=> create! [:=> [:cat Registry CreateRequest] domain/Awaiter])

@@ -45,6 +45,20 @@
                    :kind  (:kind owner)
                    :known (vec (remove #{:default} (keys (methods open-resumer))))})))
 
+(defmulti arm-on-create?
+  "True when an awaiter for `owner` is armed as soon as it is created.
+
+   The two-phase park stops a wake from resuming a run that is still
+   turning. An owner that never parks has no such run: an app coordinator
+   session (:session) reads its wake from its inbox, and a journal-only
+   awaiter (:journal) resumes nobody. Left :pending, such an awaiter would
+   only be cancelled when its pending TTL ran out, so its kind declares here
+   that create arms it. Open like open-resumer: a new kind answers for itself
+   in its own namespace. The default is false (two-phase park)."
+  (fn [owner] (:kind owner)))
+
+(defmethod arm-on-create? :default [_owner] false)
+
 (def deferred-owner-kinds
   "Owner kinds whose resumer cannot be resolved at create time because the
    owner needs a value the caller does not have yet. `:hive-agent-run` is
