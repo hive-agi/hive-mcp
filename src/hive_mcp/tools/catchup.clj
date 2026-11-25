@@ -446,7 +446,8 @@
 
 (defn- enqueue-piggyback!
   [{:keys [raw-caller-id piggyback-entries context-refs private?]}]
-  (when (seq piggyback-entries)
+  (when (and (seq piggyback-entries)
+             (not (and private? (= "coordinator" raw-caller-id))))
     (memory-piggyback/enqueue! raw-caller-id
                                (mapv fmt/cap-piggyback-entry piggyback-entries)
                                context-refs
