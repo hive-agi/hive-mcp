@@ -42,6 +42,7 @@
             [hive-mcp.extensions.soft :as soft]
             [hive-mcp.tools.catchup.block-cache :as block-cache]
             [hive-mcp.tools.catchup.caps :as catchup-caps]
+            [hive-mcp.tools.catchup.budget :as budget]
             [hive-mcp.tools.catchup.private-view :as pv]
             [malli.core :as m]
             [hive-mcp.tools.core :as core]))
@@ -480,6 +481,33 @@
     :project-id                project-id
     :contributed-blocks        contributed}))
 
+(defn- configured-inline-budget
+  "The `catchup.inline-budget-bytes` config value, resolved softly; nil when
+   unset or the config is unreadable."
+  []
+  (when-let [get-value (soft/resolve-soft 'hive-mcp.config.core/get-config-value)]
+    (rescue nil (get-value budget/config-key))))
+
+(defn- fit-inline-budget
+  "Keep the inline catchup answer under its byte budget (see
+   catchup.budget). Shed blocks are stored in the context store under
+   `scope-tag` with the same TTL as the catchup context-refs. An error
+   answer is returned untouched, and a failure here never fails catchup."
+  [args scope-tag response]
+  (if-not (sequential? response)
+    response
+    (rescue response
+            (budget/fit-blocks
+             response
+             {:budget   (budget/resolve-budget args (configured-inline-budget))
+              :put-ref! (fn [block-name data]
+                          (context-store/context-put!
+                           data
+                           :tags #{"catchup" "catchup-shed"
+                                   (str "catchup-block:" block-name)
+                                   (str "scope:project:" scope-tag)}
+                           :ttl-ms budget/ref-ttl-ms))}))))
+
 (defn- run-catchup-pipeline
   "Sequence the catchup pipeline after the store guard. Returns the final
    fmt/build-catchup-response value. Throws propagate to the caller's
@@ -521,15 +549,17 @@
                                :piggyback-entries piggyback-entries
                                :context-refs      context-refs})]
 
-    (build-response {:bundle bundle
-                     :git-info git-info
-                     :addon-status addon-status
-                     :contributed contributed
-                     :metadata metadata
-                     :context-refs context-refs
-                     :project-id project-id
-                     :project-name project-name
-                     :scopes scopes})))
+    (fit-inline-budget
+     args (or project-id "global")
+     (build-response {:bundle bundle
+                      :git-info git-info
+                      :addon-status addon-status
+                      :contributed contributed
+                      :metadata metadata
+                      :context-refs context-refs
+                      :project-id project-id
+                      :project-name project-name
+                      :scopes scopes}))))
 
 ;; =============================================================================
 ;; Main Catchup Handler
