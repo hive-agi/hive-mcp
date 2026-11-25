@@ -10,28 +10,29 @@
 
    :session  {:kind :session :inbox <inbox id> :session? s :label? s}
              The wake is a message sent to the session's hive inbox
-             (`swarm inbox read` sees it), and it is journaled.
+             (`swarm inbox read` sees it). :woken means STORED in the inbox
+             stream, not read: an inbox nobody arms keeps it for the
+             stream's retention.
    :journal  {:kind :journal :label? s}
-             Nobody is resumed: the wake is only journaled. Use it for a
-             wait whose outcome is read later, e.g. by a run ledger.
+             Nobody is resumed. Its wake is recorded only by the registry's
+             wake journal (ports/IWakeJournal), which records every
+             attempt of every owner kind.
 
-   Both kinds never park, so create arms them at once (ports/arm-on-create?).
-   The source side is left alone: any open-source (:manual today, the
-   RUN-LEDGER-4 sources later) wakes these owners like any other.
+   Both kinds never park, so create inserts them already :armed
+   (ports/arm-on-create?). The source side is left alone: any open-source
+   (:manual today, the RUN-LEDGER-4 sources later) wakes these owners.
 
-   Ports (DIP): the inbox and the journal are protocols, IWakeInbox and
-   IWakeJournal. *inbox* and *journal* hold the adapters and are read when
-   the resumer is OPENED, i.e. once per awaiter, so a caller can bind a
-   double around create! and the resume thread uses the same one. The
-   defaults are the NATS inbox (resolved late, so loading this namespace
-   does not load the bus) and an EDN-lines file next to the registry.
+   The inbox is a port (ports/IWakeInbox), read from *inbox* when the
+   resumer is OPENED (once per awaiter, at create or at restore), so a
+   caller binds a double around create! and the resume thread uses the same
+   one. The default adapter is hive-mcp.await.adapters.nats-inbox.
 
-   A delivery that cannot reach the bus throws, so the registry keeps the
-   wake :waking and re-drives it (at-least-once). The inbox message id is
-   <awaiter id>-<attempt>: within the stream's duplicate window a re-sent
-   attempt is stored once."
-  (:require [clojure.java.io :as io]
-            [clojure.string :as str]
+   The message id is <awaiter id>-wake: an awaiter wakes at most once, so
+   every re-driven attempt publishes the SAME id and the stream stores it
+   once within its duplicate window. A send that cannot reach the bus
+   throws, the wake stays :waking and is re-driven."
+  (:require [clojure.string :as str]
+            [hive-mcp.await.adapters.nats-inbox :as nats-inbox]
             [hive-mcp.await.ports :as ports]
             [malli.core :as m]))
 
@@ -64,29 +65,17 @@
    [:payload {:optional true} [:maybe :map]]
    [:prompt {:optional true} [:maybe :string]]])
 
-(def JournalEntry
-  "One journaled wake."
-  [:map
-   [:awaiter-id :string]
-   [:kind :keyword]
-   [:attempt :int]
-   [:at :int]
-   [:reason {:optional true} [:maybe :keyword]]
-   [:label {:optional true} [:maybe :string]]
-   [:inbox {:optional true} [:maybe :string]]
-   [:payload {:optional true} [:maybe :map]]
-   [:delivered {:optional true} [:maybe :map]]])
-
 ;; =============================================================================
 ;; Pure calculations
 ;; =============================================================================
 
 (defn message-id
-  "The inbox message id of the wake of `awaiter-id` on `attempt`. Pure."
-  [awaiter-id attempt]
-  (str awaiter-id "-" (long (or attempt 1))))
+  "The inbox message id of `awaiter-id`'s wake: the same for every attempt,
+   since an awaiter wakes at most once. Pure."
+  [awaiter-id]
+  (str awaiter-id "-wake"))
 
-(m/=> message-id [:=> [:cat :string [:maybe :int]] :string])
+(m/=> message-id [:=> [:cat :string] :string])
 
 (defn wake-message
   "The inbox message a :session owner receives for `req`. The body is plain
@@ -96,7 +85,7 @@
   (let [id (str (:id awaiter))]
     {:to   (:inbox owner)
      :from "await"
-     :id   (message-id id (:attempt awaiter))
+     :id   (message-id id)
      :body {:type       "await/wake"
             :awaiter-id id
             :reason     (some-> (:reason payload) name)
@@ -106,110 +95,42 @@
 
 (m/=> wake-message [:=> [:cat SessionOwner WakeRequest] :map])
 
-(defn journal-entry
-  "The journal entry for the wake `req` of `owner` at `now`, with what the
-   inbox answered (`delivered`, nil for a :journal owner). Pure."
-  [owner {:keys [awaiter payload]} now delivered]
-  (cond-> {:awaiter-id (str (:id awaiter))
-           :kind       (:kind owner)
-           :attempt    (long (or (:attempt awaiter) 1))
-           :at         (long now)
-           :reason     (:reason payload)
-           :payload    payload}
-    (:label owner) (assoc :label (:label owner))
-    (:inbox owner) (assoc :inbox (:inbox owner))
-    delivered      (assoc :delivered delivered)))
-
-(m/=> journal-entry [:=> [:cat [:map [:kind :keyword]] WakeRequest :int [:maybe :map]] JournalEntry])
-
 ;; =============================================================================
-;; Ports
+;; Port binding
 ;; =============================================================================
-
-(defprotocol IWakeInbox
-  (send-wake! [inbox message]
-    "Send `message` {:to :from :id :body}; answer a map describing the
-     delivery. Throw when it cannot be delivered now."))
-
-(defprotocol IWakeJournal
-  (append-wake! [journal entry]
-    "Record `entry` durably; answer it."))
-
-(defrecord NatsInbox []
-  IWakeInbox
-  (send-wake! [_ message]
-    (let [conn-fn (requiring-resolve 'hive-mcp.nats.client/current-connection)
-          send-fn (requiring-resolve 'hive-mcp.nats.inbox/send!)
-          conn    (conn-fn)]
-      (when-not conn
-        (throw (ex-info "await: no connected event bus; the wake is re-driven"
-                        {:error :await/no-bus :inbox (:to message)})))
-      (send-fn conn message))))
-
-(defn default-journal-path
-  "wakes.ednl beside the await registry file."
-  []
-  (let [reg-path ((requiring-resolve 'hive-mcp.await.registry/default-path))]
-    (str (io/file (.getParentFile (.getAbsoluteFile (io/file reg-path))) "wakes.ednl"))))
-
-(m/=> default-journal-path [:=> [:cat] :string])
-
-(defrecord EdnlJournal [path]
-  IWakeJournal
-  (append-wake! [_ entry]
-    (let [f (io/file (or path (default-journal-path)))]
-      (.mkdirs (.getParentFile (.getAbsoluteFile f)))
-      (locking EdnlJournal
-        (spit f (str (pr-str entry) "\n") :append true))
-      entry)))
 
 (def ^:dynamic *inbox*
-  "The IWakeInbox a :session resumer delivers through, read when the
+  "The ports/IWakeInbox a :session resumer delivers through, read when the
    resumer is opened."
-  (->NatsInbox))
-
-(def ^:dynamic *journal*
-  "The IWakeJournal every wake of these kinds is recorded in, read when the
-   resumer is opened."
-  (->EdnlJournal nil))
-
-(def ^:dynamic *now*
-  "The clock (epoch ms) journal entries are stamped with."
-  #(System/currentTimeMillis))
+  (nats-inbox/inbox))
 
 ;; =============================================================================
 ;; Resumers
 ;; =============================================================================
 
-(defn- refuse-invalid! [schema owner]
-  (when-let [explain (m/explain schema owner)]
-    (throw (ex-info (str "await: invalid " (name (:kind owner)) " owner"
-                         (when (= :session (:kind owner))
-                           ": it needs :inbox (the session's inbox id)"))
-                    {:error   :await/invalid-owner
-                     :owner   owner
-                     :explain (pr-str (mapv #(select-keys % [:path :type]) (:errors explain)))}))))
+(defn- refuse! [owner message]
+  (throw (ex-info (str "await: invalid " (name (:kind owner)) " owner: " message)
+                  {:error :await/invalid-owner :owner owner})))
 
 (defmethod ports/open-resumer :session
   [owner]
-  (let [owner   (cond-> owner (string? (:inbox owner)) (update :inbox str/trim))
-        _       (refuse-invalid! SessionOwner owner)
-        inbox   *inbox*
-        journal *journal*
-        now     *now*]
+  (let [owner (cond-> owner (string? (:inbox owner)) (update :inbox str/trim))
+        inbox *inbox*]
+    (when-let [explain (m/explain SessionOwner owner)]
+      (refuse! owner (str "it needs :inbox (the session's inbox id); "
+                          (pr-str (mapv :path (:errors explain))))))
+    (when-not (ports/valid-address? inbox (:inbox owner))
+      (refuse! owner (str "inbox " (pr-str (:inbox owner))
+                          " is not a deliverable inbox id (1-64 letters, digits, '-' or '_')")))
     (fn resume-session [req]
-      (let [delivered (send-wake! inbox (wake-message owner req))
-            entry     (append-wake! journal (journal-entry owner req (now) delivered))]
-        {:delivered delivered :journaled (select-keys entry [:awaiter-id :attempt :at])}))))
+      {:delivered (ports/send-wake! inbox (wake-message owner req))})))
 
 (defmethod ports/open-resumer :journal
   [owner]
-  (refuse-invalid! JournalOwner owner)
-  (let [journal *journal*
-        now     *now*]
-    (fn resume-journal [req]
-      (let [entry (append-wake! journal (journal-entry owner req (now) nil))]
-        {:journaled (select-keys entry [:awaiter-id :attempt :at])}))))
+  (when (m/explain JournalOwner owner)
+    (refuse! owner "only :label may accompany :kind :journal"))
+  (fn resume-journal [_req]
+    {:journaled true}))
 
 (defmethod ports/arm-on-create? :session [_owner] true)
 (defmethod ports/arm-on-create? :journal [_owner] true)

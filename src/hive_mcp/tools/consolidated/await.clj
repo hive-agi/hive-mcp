@@ -106,35 +106,70 @@
 (m/=> default-filter [:=> [:cat [:maybe :keyword] [:maybe :map] [:maybe :map]] [:maybe :map]])
 
 (defn session-inbox
-  "The inbox a :session owner's wake goes to when the caller names none:
-   the calling coordinator session's own inbox (`coordinator:<session>` ->
-   `coordinator-<session>`, the id `inbox auto-arm!` binds), else
-   `env-inbox` (HIVE_INBOX_ID). nil when neither names one. Pure."
-  [caller env-inbox]
-  (or (some->> (audience/coordinator-session caller)
-               (str "coordinator:")
-               inbox/safe-encode-inbox-id)
-      (some-> (blank->nil env-inbox) inbox/safe-encode-inbox-id)))
+  "The inbox a :session owner's wake goes to when the caller names none, as
+   a Result: (ok id) or (err :await/bad-request {:message s}). Pure.
 
-(m/=> session-inbox [:=> [:cat :any [:maybe :string]] [:maybe :string]])
+   1. a coordinator caller that names a session (`coordinator:<session>`)
+      gets its own inbox, `coordinator-<session>` (the id `inbox auto-arm!`
+      binds);
+   2. a bare coordinator caller (`coordinator`, no session token) is
+      REFUSED: `env-inbox` is the server process's HIVE_INBOX_ID, shared by
+      every coordinator on that server, so falling back to it could hand
+      the wake to another coordinator (review item 4);
+   3. a caller outside the coordinator lane (a script, a peer) falls back
+      to `env-inbox`, when set and valid."
+  [caller env-inbox]
+  (let [session (audience/coordinator-session caller)
+        coord?  (and (some? caller) (audience/coordinator-reader? caller))
+        env     (blank->nil env-inbox)]
+    (cond
+      session
+      (if-let [id (inbox/safe-encode-inbox-id (str "coordinator:" session))]
+        (r/ok id)
+        (r/err :await/bad-request {:message (str "await create: session " (pr-str session)
+                                                 " has no valid inbox id; pass `inbox`")}))
+
+      coord?
+      (r/err :await/bad-request
+             {:message (str "await create: owner_kind=session from a coordinator caller with no"
+                            " session token (" (pr-str (str caller)) "); pass `inbox` explicitly."
+                            " HIVE_INBOX_ID is not used: it is shared by every coordinator on"
+                            " this server.")})
+
+      (and env (inbox/safe-encode-inbox-id env))
+      (r/ok (inbox/safe-encode-inbox-id env))
+
+      :else
+      (r/err :await/bad-request
+             {:message "await create: owner_kind=session needs `inbox` (no caller session and no HIVE_INBOX_ID)"}))))
+
+(m/=> session-inbox [:=> [:cat :any [:maybe :string]] :map])
 
 (defn complete-owner
-  "`owner` with a :session owner's missing :inbox filled from the caller
-   (see session-inbox) and a given one canonicalised. Other kinds are
-   answered unchanged. Pure."
+  "`owner` completed, as a Result. A :session owner's :inbox is the given
+   one canonicalised (`coordinator:777` -> `coordinator-777`), refused when
+   it cannot be encoded to a valid inbox id (review B2), else filled by
+   session-inbox; :session is filled from the caller's session token. Other
+   kinds are answered unchanged. Pure."
   [owner caller env-inbox]
-  (if (= :session (:kind owner))
+  (if (not= :session (:kind owner))
+    (r/ok owner)
     (let [given (blank->nil (:inbox owner))
           ib    (if given
-                  (or (inbox/safe-encode-inbox-id given) given)
-                  (session-inbox caller env-inbox))]
-      (cond-> (dissoc owner :inbox)
-        ib (assoc :inbox ib)
-        (and (nil? (:session owner)) (audience/coordinator-session caller))
-        (assoc :session (audience/coordinator-session caller))))
-    owner))
+                  (if-let [id (inbox/safe-encode-inbox-id (str/trim given))]
+                    (r/ok id)
+                    (r/err :await/bad-request
+                           {:message (str "await create: inbox " (pr-str given) " is not a valid"
+                                          " inbox id (1-64 letters, digits, '-' or '_'; a ':' is"
+                                          " written '-')")}))
+                  (session-inbox caller env-inbox))
+          sess  (audience/coordinator-session caller)]
+      (r/let-ok [id ib]
+        (r/ok (cond-> (assoc owner :inbox id)
+                (and (nil? (:session owner)) sess) (assoc :session sess)))))))
 
-(m/=> complete-owner [:=> [:cat [:maybe :map] :any [:maybe :string]] [:maybe :map]])
+(m/=> complete-owner [:=> [:cat [:maybe :map] :any [:maybe :string]] :map])
+
 
 (defn create-request
   "Pure: the registry create request from MCP `params`, as a Result.
@@ -143,46 +178,56 @@
    `run_id`, `ling_id`, `cwd`, `model`, `provider`, `parent`, `spawned_by`,
    `project_id`, `spawn_mode`, `kanban_task_id`, `sandbox`, `grant`,
    `presets`, `turn_budget`, `token_budget`, `time_budget_ms`,
-   `max_budget_usd` — the authority a successor inherits.
+   `max_budget_usd` (the authority a successor inherits), and for the
+   :session/:journal kinds `inbox`, `label`, `session`.
    Subscription: `source` (alias `type`, default manual), `filter` (object;
    a manual awaiter whose owner names a ling defaults to {:to <ling-id>},
-   see default-filter), `dedup_key`. Deadline: `deadline` (epoch ms) or `timeout_ms`. `prompt` is
-   the continuation the owner resumes with; `id` is optional.
+   see default-filter), `dedup_key`. Deadline: `deadline` (epoch ms) or
+   `timeout_ms`. `prompt` is the continuation the owner resumes with; `id`
+   is optional.
 
    `run_id` is NOT required: a :hive-agent-run owner binds it when it parks
-   (arm).
+   (arm). A :session owner's inbox is completed by complete-owner;
+   `env-inbox` is the server's HIVE_INBOX_ID, passed in by the handler and
+   never read from the wire (review item 5).
    Answers (ok request) or (err :await/bad-request {:message s})."
-  [params]
-  (let [owner (or (some-> (keyword-keys (:owner params)) (update :kind ->kw))
-                  (flat-owner params))
-        owner (some-> owner (dissoc nil) (update-keys
-                                          (fn [k] (or ({:run_id :run-id :ling_id :ling-id
-                                                        :project_id :project-id
-                                                        :spawned_by :spawned-by
-                                                        :spawn_mode :spawn-mode
-                                                        :kanban_task_id :kanban-task-id} k) k))))
-        owner (complete-owner owner (:_caller_id params) (:_env_inbox params))
-        source (or (->kw (:source params)) (->kw (:type params)) :manual)
-        flt    (default-filter source (not-empty (keyword-keys (:filter params))) owner)
-        dedup  (->kw (:dedup_key params))
-        deadline (->long (:deadline params))
-        timeout  (->long (:timeout_ms params))]
-    (cond
-      (nil? (:kind owner))
-      (r/err :await/bad-request {:message "await create: pass `owner` {kind ...} or `owner_kind`"})
+  ([params] (create-request params nil))
+  ([params env-inbox]
+   (let [owner (or (some-> (keyword-keys (:owner params)) (update :kind ->kw))
+                   (flat-owner params))
+         owner (some-> owner (dissoc nil) (update-keys
+                                           (fn [k] (or ({:run_id :run-id :ling_id :ling-id
+                                                         :project_id :project-id
+                                                         :spawned_by :spawned-by
+                                                         :spawn_mode :spawn-mode
+                                                         :kanban_task_id :kanban-task-id} k) k))))
+         owner* (when (:kind owner) (complete-owner owner (:_caller_id params) env-inbox))
+         owner  (if (r/ok? owner*) (:ok owner*) owner)
+         source (or (->kw (:source params)) (->kw (:type params)) :manual)
+         flt    (default-filter source (not-empty (keyword-keys (:filter params))) owner)
+         dedup  (->kw (:dedup_key params))
+         deadline (->long (:deadline params))
+         timeout  (->long (:timeout_ms params))]
+     (cond
+       (nil? (:kind owner))
+       (r/err :await/bad-request {:message "await create: pass `owner` {kind ...} or `owner_kind`"})
 
-      (and (some? (:timeout_ms params)) (not (and timeout (pos? timeout))))
-      (r/err :await/bad-request {:message "await create: timeout_ms must be a positive integer"})
+       (r/err? owner*)
+       owner*
 
-      :else
-      (r/ok (cond-> {:owner owner
-                     :subscription {:type source :filter flt :dedup-key dedup}
-                     :prompt (blank->nil (:prompt params))}
-              (blank->nil (:id params)) (assoc :id (str (:id params)))
-              deadline (assoc :deadline deadline)
-              (and (nil? deadline) timeout) (assoc :timeout-ms timeout))))))
+       (and (some? (:timeout_ms params)) (not (and timeout (pos? timeout))))
+       (r/err :await/bad-request {:message "await create: timeout_ms must be a positive integer"})
 
-(m/=> create-request [:=> [:cat [:maybe :map]] :map])
+       :else
+       (r/ok (cond-> {:owner owner
+                      :subscription {:type source :filter flt :dedup-key dedup}
+                      :prompt (blank->nil (:prompt params))}
+               (blank->nil (:id params)) (assoc :id (str (:id params)))
+               deadline (assoc :deadline deadline)
+               (and (nil? deadline) timeout) (assoc :timeout-ms timeout)))))))
+
+(m/=> create-request [:function [:=> [:cat [:maybe :map]] :map]
+                      [:=> [:cat [:maybe :map] [:maybe :string]] :map]])
 
 (defn- run-verb
   "Run (f) for `verb`, turning a thrown ex-info or an err Result into an MCP
@@ -211,15 +256,14 @@
    recorded, not lost."
   [params]
   (run-verb "create"
-            #(r/let-ok [req (create-request (cond-> params
-                                              (not (contains? params :_env_inbox))
-                                              (assoc :_env_inbox (System/getenv "HIVE_INBOX_ID"))))]
+            #(r/let-ok [req (create-request params (System/getenv "HIVE_INBOX_ID"))]
                (let [a (registry/create! (current-registry) req)]
                  (r/ok {:awaiter a
                         :next (case (get-in a [:owner :kind])
                                 :session (str "Awaiter " (:id a) " is armed. Its wake is sent to inbox "
                                               (get-in a [:owner :inbox]) " (swarm inbox read inbox="
-                                              (get-in a [:owner :inbox]) ") and journaled; keep working.")
+                                              (get-in a [:owner :inbox]) ") and journaled; keep working. Woken means stored in the inbox"
+                                              " stream, not read: arm that inbox (swarm inbox arm) to receive it.")
                                 :journal (str "Awaiter " (:id a) " is armed. Its wake is only journaled;"
                                               " read it with swarm await list.")
                                 (str "Awaiter " (:id a) " is pending. End your run now"
@@ -342,6 +386,7 @@
                               "owner_kind" {:type "string" :description "[await create] Flat alias for owner.kind: hive-agent-run (a parked ling, resumed by a successor), session (an app coordinator session: the wake is sent to its hive inbox and journaled; armed at create), journal (nobody resumed, the wake is only journaled; armed at create)"}
                               "inbox"      {:type "string" :description "[await create] session owner: the inbox the wake is sent to (default: the calling coordinator session's own inbox, else HIVE_INBOX_ID)"}
                               "label"      {:type "string" :description "[await create] session/journal owner: a label kept on the wake and its journal entry"}
+                              "session"    {:type "string" :description "[await create] session owner: the coordinator session token the awaiter belongs to (default: the calling coordinator's session); recorded on the owner, does not route the wake"}
                               "run_id"     {:type "string" :description "[await create/arm] Chat-point run id the hive-agent-run resumer continues (bound at arm when the run parks)"}
                               "ling_id"    {:type "string" :description "[await create] The parked ling's id (also names the successor)"}
                               "cwd"        {:type "string" :description "[await create] Absolute directory the parked run lives in"}
