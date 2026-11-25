@@ -86,6 +86,21 @@
 
 (m/=> spec-of [:=> [:cat :map] :map])
 
+(defn closed-spec
+  "The spec of `subscription`, refused when it carries a key outside
+   `allowed`. A spec is persisted in the registry file, so an unknown key
+   (a `url`, a `password`) must never be accepted and stored. Pure."
+  [source subscription allowed]
+  (let [spec (spec-of subscription)
+        extra (sort (map name (remove (set allowed) (keys spec))))]
+    (when (seq extra)
+      (throw (refusal source (str "unknown spec key(s): " (str/join ", " extra)
+                                  "; accepted: " (str/join ", " (sort (map name allowed))))
+                      {:unknown (vec extra)})))
+    spec))
+
+(m/=> closed-spec [:=> [:cat :keyword :map [:set :keyword]] :map])
+
 (defn poll-interval
   "The poll interval `subscription` asks for, or `timing`'s default. Pure."
   [subscription {:keys [default-poll-ms]}]
@@ -238,9 +253,14 @@
                               r (try (probe)
                                      (catch Throwable t
                                        (swap! errors inc)
+                                       ;; the ex-data :error keyword and the
+                                       ;; source's own message only: an
+                                       ;; adapter keeps secrets out of both
                                        (log/warn "await: poll failed; polling on"
-                                                 {:source source :id (:id awaiter)
-                                                  :poll n :error (.getMessage t)})
+                                                 {:source source :id (:id awaiter) :poll n
+                                                  :error (or (:error (ex-data t)) (.getName (class t)))
+                                                  :message (when (instance? clojure.lang.ExceptionInfo t)
+                                                             (.getMessage t))})
                                        nil))]
                           (when (and (:match? r) (not @stopped?))
                             (deliver! {:type source
