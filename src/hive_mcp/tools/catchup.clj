@@ -414,21 +414,29 @@
      :snippets             {:data snippets             :tags #{"catchup" "snippets" scope-tag}             :ttl-ms catchup-ttl}
      :recent-wraps         {:data recent-wraps         :tags #{"catchup" "recent-wraps" scope-tag}         :ttl-ms catchup-ttl}}))
 
+(defn- shared-store-writes?
+  "True when catchup may write this call's content to the process-global
+   context store: never under a private view."
+  [private?]
+  (not private?))
+
 (defn- persist-context-refs!
   "Dual-write the bundle's raw buckets into the context-store under a single
    shared refs key so callers sharing a cached bundle reuse refs. Returns the
-   {category -> ctx-id} map or nil on failure (non-fatal)."
-  [{:keys [scope-tag private? bundle buckets catchup-ttl]}]
-  (rescue nil
-          (block-cache/shared-context-refs
-           scope-tag (when-not private? (outcome/value-or bundle nil))
-           (fn []
-             (let [refs (context-store/context-put-batch!
-                         (context-store-payload buckets scope-tag catchup-ttl))]
-               (when (seq refs)
-                 (log/info "catchup: stored" (count refs) "categories in context-store"
-                           {:refs (keys refs)}))
-               refs)))))
+   {category -> ctx-id} map, or nil when `share?` is false (nothing is
+   written) or on failure (non-fatal)."
+  [{:keys [scope-tag share? bundle buckets catchup-ttl]}]
+  (when share?
+    (rescue nil
+            (block-cache/shared-context-refs
+             scope-tag (outcome/value-or bundle nil)
+             (fn []
+               (let [refs (context-store/context-put-batch!
+                           (context-store-payload buckets scope-tag catchup-ttl))]
+                 (when (seq refs)
+                   (log/info "catchup: stored" (count refs) "categories in context-store"
+                             {:refs (keys refs)}))
+                 refs))))))
 
 ;; -----------------------------------------------------------------------------
 ;; Boundary: piggyback enqueue
@@ -491,10 +499,11 @@
 (defn- fit-inline-budget
   "Keep the inline catchup answer under its byte budget (see
    catchup.budget). Shed blocks are stored in the context store under
-   `scope-tag` with the same TTL as the catchup context-refs. An error
+   `scope-tag` with the same TTL as the catchup context-refs. When `share?`
+   is false nothing is shed and the answer is returned unchanged. An error
    answer is returned untouched, and a failure here never fails catchup."
-  [args scope-tag response]
-  (if-not (sequential? response)
+  [args scope-tag share? response]
+  (if-not (and share? (sequential? response))
     response
     (rescue response
             (budget/fit-blocks
@@ -519,6 +528,7 @@
         buckets     (promote-bundle bundle)
         metadata    (entries->metadata buckets)
         {:keys [directory project-id project-name scopes caller-id private?]} catchup-ctx
+        share?      (shared-store-writes? private?)
         _ (run-enrichment! {:bundle bundle
                             :directory directory
                             :project-id project-id
@@ -540,7 +550,7 @@
 
         context-refs (persist-context-refs!
                       {:scope-tag   (or project-id "global")
-                       :private?    private?
+                       :share?      share?
                        :bundle      bundle
                        :buckets     buckets
                        :catchup-ttl 3600000})
@@ -550,7 +560,7 @@
                                :context-refs      context-refs})]
 
     (fit-inline-budget
-     args (or project-id "global")
+     args (or project-id "global") share?
      (build-response {:bundle bundle
                       :git-info git-info
                       :addon-status addon-status
