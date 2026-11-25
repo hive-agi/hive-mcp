@@ -292,6 +292,7 @@
       (some? context-refs)
       (assoc :context-refs context-refs
              :refs-delivered? (or (boolean refs-delivered?) send-refs?))
+      (:private? buf) (assoc :private? true)
       (some? offers) (assoc :offers offers))))
 
 (m/=> next-buffer [:=> [:cat :map DrainCollected DrainStep] :map])
