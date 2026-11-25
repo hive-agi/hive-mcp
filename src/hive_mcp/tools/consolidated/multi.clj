@@ -552,6 +552,12 @@
                               "remove_tags" {:type "array"
                                              :items {:type "string"}
                                              :description "[kanban retag|update] Tags to remove; on update, in the same commit as new_status"}
+                              "tags_a" {:type "array"
+                                        :items {:type "string"}
+                                        :description "[kanban diff] Run A tags, e.g. [\"run:AGT-1125R3\"]; read across every status"}
+                              "tags_b" {:type "array"
+                                        :items {:type "string"}
+                                        :description "[kanban diff] Run B tags, e.g. [\"run:AGT-1125R4\"]; cards matched on scenario:<x> + persona:<p>"}
                               "exclude_tags" {:type "array"
                                               :items {:type "string"}
                                               :description "[memory query/search] Tags to exclude from results"}

@@ -2,14 +2,17 @@
   (:require [hive-mcp.context.request :as ctx]
             [hive-mcp.project.tree :as tree]
             [hive-mcp.tools.core :as core :refer [mcp-json]]
+            [hive-mcp.tools.kanban.diff :as kdiff]
+            [hive-mcp.tools.kanban.diff.schema :as ds]
             [hive-mcp.tools.kanban.list.plan :as plan]
+            [hive-mcp.tools.kanban.list.schema :as ls]
             [hive-mcp.tools.kanban.list.source :as src]
             [hive-mcp.tools.kanban.transitions :as kt]
             [hive-mcp.tools.memory.scope :as scope]
             [hive-mcp.vectordb.kanban-facade :as kanban-facade]
             [malli.core :as m]))
 
-(declare query-kanban-entries resolve-project-ids-with-descendants resolve-visible-project-ids effective-dir stats* filter-kanban-by-tags list-slim* list-slim-data)
+(declare query-kanban-entries resolve-project-ids-with-descendants resolve-visible-project-ids effective-dir stats* filter-kanban-by-tags list-slim* list-slim-data fetch-board diff-data diff*)
 
 (defn query-kanban-entries
   "Fetch kanban entries from the underlying memory store.
@@ -192,35 +195,64 @@
   [params]
   (mcp-json (list-slim-data params)))
 
-(defn list-slim-data
-  "The slim board rows `list-slim*` serializes, as data. Same params.
-
-   The board is fetched with one store query per `plan/store-queries` tag
-   set (OR-tags fan out so the store narrows by tag) and merged by id
-   (`src/merge-boards`); the post-filters in `plan/shape` then run over it.
-
-   Session todos (`session-todo` tag) are dropped unless the request opts in
-   (`plan/hidden-tags`): they are an agent's own step list, not backlog."
+(defn fetch-board
+  "The scoped board a FetchPlan selects, read through `*board-source*`: one
+   store query per `plan/store-queries` tag set (OR-tags fan out so the store
+   narrows by tag), merged by id (`src/merge-boards`). Session todos
+   (`session-todo` tag) are dropped unless the request opts in
+   (`plan/hidden-tags`). `params` carries the scope keys (directory,
+   project_id, scope, include_descendants, include_ancestors) and the opt-in.
+   Shared by `kanban list` and `kanban diff`."
   [{:keys [include_descendants include_ancestors project_id scope]
     :or   {include_descendants true}
-    :as   params}]
+    :as   params}
+   fetch-plan]
   ;; HCR: explicit :directory > :_caller_cwd (bb-mcp session pwd) >
   ;; request-ctx > server user.dir.
   (let [eff-dir    (ctx/resolve-caller-directory params)
         scoped-pid (or project_id (scope/get-current-project-id eff-dir))
-        fetch-plan (plan/plan params)
         scope-spec {:project-id           scoped-pid
                     :include-descendants? include_descendants
                     :include-ancestors?   (not (false? include_ancestors))
                     :scope                scope}
-        {:keys [entries multi-project?]}
-        (src/merge-boards
-         (mapv #(src/scoped-board *board-source* scope-spec
-                                  (assoc fetch-plan :required-tags %))
-               (plan/store-queries fetch-plan)))]
-    (plan/shape fetch-plan
-                (plan/drop-hidden entries (plan/hidden-tags params))
-                multi-project?)))
+        board      (src/merge-boards
+                    (mapv #(src/scoped-board *board-source* scope-spec
+                                             (assoc fetch-plan :required-tags %))
+                          (plan/store-queries fetch-plan)))]
+    (update board :entries plan/drop-hidden (plan/hidden-tags params))))
+
+(defn list-slim-data
+  "The slim board rows `list-slim*` serializes, as data. Same params.
+
+   The board comes from `fetch-board`; the post-filters in `plan/shape` then
+   run over it."
+  [params]
+  (let [fetch-plan (plan/plan params)
+        {:keys [entries multi-project?]} (fetch-board params fetch-plan)]
+    (plan/shape fetch-plan entries multi-project?)))
+
+(defn diff-data
+  "`kanban diff` as data: {:ok DiffReport} or {:error message}.
+
+   Collect: each side is read like `kanban list tags=<side> status=all`, the
+   same plan and the same board source, so a diff sees exactly the rows the
+   two lists would. Promote: `kdiff/diff`. Scope params apply to both sides."
+  [params]
+  (let [{:keys [ok error]} (kdiff/request params)]
+    (if error
+      {:error error}
+      (let [side (fn [tags]
+                   (:entries (fetch-board (assoc params :tags tags)
+                                          (plan/plan {:status plan/all-statuses :tags tags}))))]
+        {:ok (kdiff/diff ok (side (:tags-a ok)) (side (:tags-b ok)))}))))
+
+(defn diff*
+  "MCP boundary of `kanban diff`: the DiffReport as JSON, or an MCP error."
+  [params]
+  (let [{:keys [ok error]} (diff-data params)]
+    (if error
+      (core/mcp-error (str "kanban diff: " error))
+      (mcp-json ok))))
 
 ;; =============================================================================
 ;; Contracts
@@ -275,3 +307,11 @@
 (m/=> list-slim* [:=> [:cat [:maybe :map]] core/McpResponse])
 
 (m/=> list-slim-data [:=> [:cat [:maybe :map]] [:vector :map]])
+
+(m/=> fetch-board [:=> [:cat [:maybe :map] ls/FetchPlan] ScopedBoard])
+
+(m/=> diff-data [:=> [:cat [:maybe :map]]
+                 [:or [:map {:closed true} [:ok ds/DiffReport]]
+                  [:map {:closed true} [:error :string]]]])
+
+(m/=> diff* [:=> [:cat [:maybe :map]] core/McpResponse])
