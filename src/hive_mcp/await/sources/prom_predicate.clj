@@ -8,20 +8,25 @@
       :spec {:query \"sum(rate(sisf_sync_rows_total[5m]))\"
              :op \">\" :threshold 0
              :match \"any\"?                    ; any (default) | all series
-             :url \"http://prometheus:9090\"?}} ; default: config services.prometheus.url
-   plus a REQUIRED deadline (<= 48 h).
+             :target \"default\"?}}             ; a NAMED Prometheus, see below
+   plus a REQUIRED deadline (<= 48 h). The spec is CLOSED.
 
-   The query goes to /api/v1/query as a parameter (never spliced into the
-   URL), under a timeout. A vector result holds when ANY (or ALL) of its
-   series compares true; a scalar result is compared as is; an EMPTY vector
-   never holds (no series is not 'zero'). The wake carries the series that
-   matched (at most 5) and the value observed.
+   The caller never gives a URL. :target names a Prometheus the operator
+   configured (:await :prom :targets {name url}; \"default\" falls back to
+   services.prometheus.url), so a wait cannot be pointed at an internal
+   host. The client follows no redirect. The query goes to /api/v1/query
+   as a parameter. A vector result holds when ANY (or ALL) of its series
+   compares true; a scalar is compared as is; an EMPTY vector never holds.
+   The wake carries the value observed and the matched series' labels (at
+   most 5); a failed query reports its HTTP status and Prometheus errorType,
+   never the response text.
 
    Ports (DIP): *http* (IHttpGet) is read when the source opens."
   (:require [clojure.data.json :as json]
             [clojure.string :as str]
             [hive-mcp.await.ports :as ports]
             [hive-mcp.await.sources.boundary :as b]
+            [hive-mcp.await.sources.policy :as policy]
             [hive-mcp.await.sources.poll :as poll]
             [malli.core :as m]))
 
@@ -36,7 +41,7 @@
 (def max-query-chars 4000)
 (def http-timeout-ms 10000)
 (def sample-series 5)
-(def fallback-url "http://localhost:9090")
+(def spec-keys #{:query :op :threshold :match :target})
 
 (def Parsed
   [:map
@@ -44,56 +49,60 @@
    [:op :string]
    [:threshold number?]
    [:match [:enum :any :all]]
-   [:url {:optional true} [:maybe :string]]])
+   [:target :string]])
 
 (defn- refuse [message & [data]]
   (throw (poll/refusal :prom-predicate message (or data {}))))
 
 (defn parse
-  "The Parsed spec of `subscription`, or a refusal. Pure."
+  "The Parsed spec of `subscription`, or a refusal. The target must be a
+   configured one."
   [subscription]
-  (let [spec (poll/spec-of subscription)
+  (let [spec (poll/closed-spec :prom-predicate subscription spec-keys)
         q    (:query spec)
         op   (some-> (:op spec) name str/trim)
         th   (poll/->number (:threshold spec))
         mt   (some-> (or (:match spec) "any") name str/lower-case keyword)
-        url  (some-> (:url spec) str str/trim not-empty)]
+        tgt  (or (some-> (:target spec) name str/trim not-empty) "default")]
     (when-not (and (string? q) (not (str/blank? q))) (refuse ":query (PromQL) is required"))
     (when (> (count q) max-query-chars) (refuse (str ":query is longer than " max-query-chars)))
     (when-not (poll/comparator-of op) (refuse (str ":op must be one of " (str/join " " (sort (keys poll/comparators))))))
     (when-not th (refuse ":threshold must be a number"))
     (when-not (#{:any :all} mt) (refuse ":match must be any or all"))
-    (when (and url (not (re-matches #"https?://[^\s]+" url))) (refuse ":url must be an http(s) URL"))
-    (cond-> {:query q :op op :threshold th :match mt}
-      url (assoc :url (str/replace url #"/+$" "")))))
+    (policy/prom-target-url tgt)
+    {:query q :op op :threshold th :match mt :target tgt}))
 
 (m/=> parse [:=> [:cat :map] Parsed])
 
 (defn- sample-value [v]
   (poll/->number (second v)))
 
+(defn- failed [message data]
+  (ex-info (str "prometheus " message) (merge {:error :await/poll-failed} data)))
+
 (defn evaluate
   "The probe answer for a Prometheus `response` {:status :body}. A non-200
-   or a status other than success is a failed poll (thrown). Pure."
+   or a status other than success is a failed poll (thrown), reported by
+   status and errorType only. Pure."
   [parsed {:keys [status body]}]
   (when-not (= 200 status)
-    (throw (ex-info (str "prometheus answered HTTP " status) {:error :await/poll-failed :status status})))
-  (let [doc  (json/read-str (str body) :key-fn keyword)
+    (throw (failed (str "answered HTTP " status) {:status status})))
+  (let [doc  (try (json/read-str (str body) :key-fn keyword)
+                  (catch Exception _ (throw (failed "answered a body that is not JSON" {}))))
         _    (when-not (= "success" (:status doc))
-               (throw (ex-info (str "prometheus query failed: " (:error doc)) {:error :await/poll-failed})))
+               (throw (failed (str "query failed (" (or (some-> (:errorType doc) str) "error") ")") {})))
         {:keys [resultType result]} (:data doc)
         holds? #(and (some? %) (poll/compare-values (:op parsed) % (:threshold parsed)))
         series (case resultType
                  "vector" (mapv (fn [s] {:metric (:metric s) :value (sample-value (:value s))}) result)
                  "scalar" [{:metric {} :value (sample-value result)}]
-                 (throw (ex-info (str "prometheus result type " resultType " is not an instant vector or scalar")
-                                 {:error :await/poll-failed})))
+                 (throw (failed "result is not an instant vector or scalar" {})))
         hits   (filterv (comp holds? :value) series)
         ok?    (and (seq series)
                     (if (= :all (:match parsed)) (= (count hits) (count series)) (seq hits)))]
     {:match? (boolean ok?)
      :data   {:query (:query parsed) :op (:op parsed) :threshold (:threshold parsed)
-              :match (:match parsed)
+              :match (:match parsed) :target (:target parsed)
               :observed (:value (first (or (seq hits) series)))
               :series-count (count series)
               :matched (vec (take sample-series hits))}}))
@@ -111,15 +120,6 @@
 (defn- current-http []
   (or *http* @(requiring-resolve 'hive-mcp.await.adapters.http/default-client)))
 
-(defn base-url
-  "The Prometheus URL for `parsed`: its own, else config, else localhost."
-  [parsed]
-  (or (:url parsed)
-      (some-> (try ((requiring-resolve 'hive-mcp.config.core/get-in-config) [:services :prometheus :url])
-                   (catch Throwable _ nil))
-              str (str/replace #"/+$" ""))
-      fallback-url))
-
 (defmethod ports/check-subscription :prom-predicate
   [_subscription awaiter]
   (poll/check! :prom-predicate timing awaiter parse))
@@ -128,7 +128,7 @@
   [subscription awaiter deliver!]
   (let [parsed (parse subscription)
         client (current-http)
-        url    (str (base-url parsed) "/api/v1/query")]
+        url    (str (policy/prom-target-url (:target parsed)) "/api/v1/query")]
     (poll/open-polling :prom-predicate timing awaiter deliver!
                        (fn probe []
                          (evaluate parsed (b/http-get! client url {"query" (:query parsed)}

@@ -18,6 +18,8 @@
                            :socket-timeout    t
                            :connection-timeout t
                            :throw-exceptions  false
+                           ;; never follow a redirect off the configured host
+                           :redirect-strategy :none
                            :as                :string})]
       {:status (:status r) :body (:body r)})))
 

@@ -1,38 +1,42 @@
 (ns hive-mcp.await.sources.k8s-log-regex
-  "The :k8s-log-regex await source: poll a pod's (or a selector's) logs with
-   `kubectl logs` until a line matches a regex. It wakes on the first
-   matching line and carries that line. A log line proves a job RAN; when
-   the question is whether the data landed, use :sql-predicate.
+  "The :k8s-log-regex await source: poll a pod's (or a selector's) logs
+   until a line matches a regex. It wakes on the first matching line and
+   carries that line. A log line proves a job RAN; when the question is
+   whether the data landed, use :sql-predicate.
 
    Subscription:
      {:type :k8s-log-regex
       :poll-ms 30000                         ; >= 10 s, default 30 s
-      :spec {:namespace \"sisf\"
+      :spec {:namespace \"sisf\"               ; allowlisted
              :pod \"sisf-sync-7d9\"            ; or :selector \"app=sisf-sync\"
              :container \"sync\"?
-             :context \"blw\"?                 ; kubectl context
+             :context \"blw\"?                 ; allowlisted when given
              :regex \"Scheduled sync completed\"
              :lookback-ms 0?                 ; also match lines this old at create
              :tail 2000?}}                   ; lines read per poll, <= 10000
-   plus a REQUIRED deadline (<= 48 h).
+   plus a REQUIRED deadline (<= 48 h). The spec is CLOSED.
+
+   What may be read is the operator's (:await :k8s :namespaces / :contexts,
+   default deny): logs can carry secrets, and a regex over them is a read
+   channel. The regex is bounded: refused at create when it can backtrack
+   without bound, each line truncated before it is matched, and every match
+   under a time budget.
 
    Bounded poll, not `-f`: each poll is one `kubectl logs --since-time=T
-   --timestamps --tail=N` call under a timeout and an output cap, where T is
-   the awaiter's creation time minus :lookback-ms. So a line logged before
-   the wait began never wakes it (unless lookback says so), a dead or
-   restarted pod is just a failed poll, and close leaves no process behind.
+   --timestamps --tail=N` call under a timeout and an output cap, as an argv
+   (no shell). Every name is checked against the Kubernetes name grammar,
+   so none can start a flag.
 
-   Arguments are passed as an argv vector (no shell), and every name is
-   checked against the Kubernetes name grammar, so none can start a flag.
-
-   Ports (DIP): *process* (IProcessRunner) is read when the source opens."
+   Ports (DIP): the process runner (*process*, IProcessRunner) is read when
+   the source opens; the default is the process adapter."
   (:require [clojure.string :as str]
             [hive-mcp.await.ports :as ports]
             [hive-mcp.await.sources.boundary :as b]
+            [hive-mcp.await.sources.bounded-regex :as rx]
+            [hive-mcp.await.sources.policy :as policy]
             [hive-mcp.await.sources.poll :as poll]
             [malli.core :as m])
-  (:import (java.time Instant)
-           (java.util.regex Pattern PatternSyntaxException)))
+  (:import (java.time Instant)))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -44,13 +48,17 @@
 
 (def default-tail 2000)
 (def max-tail 10000)
-(def max-regex-chars 500)
 (def max-lookback-ms (* 24 60 60 1000))
 (def kubectl-timeout-ms 20000)
 (def max-output-bytes (* 4 1024 1024))
 (def max-line-chars
-  "The longest matched line a wake event carries."
+  "Lines are truncated to this before they are matched and carried."
   2000)
+(def match-budget-ms
+  "The time one poll may spend matching."
+  2000)
+
+(def spec-keys #{:namespace :pod :selector :container :context :regex :lookback-ms :tail})
 
 (def ^:private name-re #"[a-z0-9]([-a-z0-9.]{0,251}[a-z0-9])?")
 (def ^:private selector-re #"[A-Za-z0-9]([-A-Za-z0-9_./=!,() ]{0,500})")
@@ -77,29 +85,28 @@
       s)))
 
 (defn parse
-  "The Parsed spec of `subscription`, or a refusal. Pure."
+  "The Parsed spec of `subscription`, or a refusal."
   [subscription]
-  (let [spec  (poll/spec-of subscription)
+  (let [spec  (poll/closed-spec :k8s-log-regex subscription spec-keys)
         ns'   (checked (:namespace spec) name-re ":namespace")
         pod   (checked (:pod spec) name-re ":pod")
         sel   (checked (:selector spec) selector-re ":selector")
-        rx    (:regex spec)
+        ctx   (checked (:context spec) context-re ":context")
         tail  (or (:tail spec) default-tail)
         look  (or (:lookback-ms spec) 0)]
     (when-not ns' (refuse ":namespace is required"))
     (when (= (boolean pod) (boolean sel)) (refuse "name exactly one of :pod or :selector"))
-    (when-not (and (string? rx) (not (str/blank? rx))) (refuse ":regex is required"))
-    (when (> (count rx) max-regex-chars) (refuse (str ":regex is longer than " max-regex-chars)))
-    (try (Pattern/compile rx)
-         (catch PatternSyntaxException e (refuse (str ":regex does not compile: " (.getDescription e)))))
+    (rx/check-pattern! (:regex spec) refuse)
     (when-not (and (integer? tail) (<= 1 tail max-tail)) (refuse (str ":tail must be 1.." max-tail)))
     (when-not (and (integer? look) (<= 0 look max-lookback-ms))
       (refuse (str ":lookback-ms must be 0.." max-lookback-ms)))
-    (cond-> {:namespace ns' :regex rx :lookback-ms (long look) :tail (long tail)}
+    (policy/allowed! :k8s-log-regex [:k8s :namespaces] ns' "namespace")
+    (when ctx (policy/allowed! :k8s-log-regex [:k8s :contexts] ctx "context"))
+    (cond-> {:namespace ns' :regex (:regex spec) :lookback-ms (long look) :tail (long tail)}
       pod (assoc :pod pod)
       sel (assoc :selector sel)
-      (:container spec) (assoc :container (checked (:container spec) name-re ":container"))
-      (:context spec)   (assoc :context (checked (:context spec) context-re ":context")))))
+      ctx (assoc :context ctx)
+      (:container spec) (assoc :container (checked (:container spec) name-re ":container")))))
 
 (m/=> parse [:=> [:cat :map] Parsed])
 
@@ -124,14 +131,17 @@
 (m/=> argv [:=> [:cat Parsed :string] [:vector :string]])
 
 (defn first-match
-  "The first line of `out` the regex finds, as event data, or nil. Pure."
+  "The first line of `out` the regex finds, as event data, or nil. Each line
+   is truncated to max-line-chars BEFORE it is matched, and all matching
+   shares one time budget (throws :await/regex-timeout)."
   [parsed out]
-  (let [p (Pattern/compile (:regex parsed))]
+  (let [p (re-pattern (:regex parsed))
+        deadline (+ (System/currentTimeMillis) match-budget-ms)]
     (some (fn [line]
-            (let [mt (.matcher p ^String line)]
-              (when (.find mt)
-                {:line  (subs line 0 (min (count line) max-line-chars))
-                 :match (.group mt)
+            (let [line (subs line 0 (min (count line) max-line-chars))
+                  left (max 1 (- deadline (System/currentTimeMillis)))]
+              (when-let [g (rx/find-in p line left)]
+                {:line line :match g
                  :namespace (:namespace parsed)
                  :target (or (:pod parsed) (:selector parsed))})))
           (str/split-lines (or out "")))))
@@ -140,7 +150,7 @@
 
 (defn evaluate
   "The probe answer for one kubectl `result`. A non-zero exit or a timeout
-   is a failed poll (thrown), so polling goes on. Pure."
+   is a failed poll (thrown), so polling goes on."
   [parsed {:keys [exit out err timed-out?]}]
   (when timed-out? (throw (ex-info "kubectl logs timed out" {:error :await/poll-timeout})))
   (when-not (zero? (long exit))
