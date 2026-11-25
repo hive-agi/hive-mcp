@@ -16,7 +16,9 @@
             [hive.events.router :as router]
             [hive-mcp.memory.temporal :as temporal]
             [hive-mcp.tools.kanban.events :as events]
+            [hive-mcp.tools.kanban.fx-builders :as fxb]
             [hive-mcp.tools.kanban.predicates :as pred]
+            [hive-mcp.tools.kanban.transitions :as kt]
             [hive-mcp.tools.kanban.schema :as ks]
             [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
@@ -42,25 +44,24 @@
       move
       (let [{moved-content :content moved-tags :tags}
             (get-in move [:kanban/facade-update :payload])
-            moved   (assoc entry :content moved-content :tags moved-tags)
-            edit    (events/edit-fx {:kanban/entry moved}
-                                    [:kanban/edit {:task-id            task-id
-                                                   :title              title
-                                                   :description        description
-                                                   :append-description append-description
-                                                   :priority           priority
-                                                   :agent-id           agent-id
-                                                   :add-tags           add-tags
-                                                   :remove-tags        remove-tags}])
-            content (get-in edit [:kanban/facade-update :payload :content])
-            tags    (or (get-in edit [:kanban/facade-update :payload :tags]) moved-tags)
-            final   (assoc moved :content content :tags tags)]
-        (cond-> (assoc move :kanban/facade-update {:task-id task-id
-                                                   :payload {:content content :tags tags}})
-          (:kanban/notify-done move)      (assoc-in [:kanban/notify-done :entry] final)
-          (:kanban/archive-external move) (assoc-in [:kanban/archive-external :entry] final)
-          (:kanban/temporal-record edit)  (assoc :kanban/edit-temporal-record
-                                                 (:kanban/temporal-record edit)))))))
+            moved  (assoc entry :content moved-content :tags moved-tags)
+            {:keys [new-content new-tags audit]}
+            (kt/edit-plan moved
+                          {:title              title
+                           :description        description
+                           :append-description append-description
+                           :priority           priority
+                           :agent-id           agent-id}
+                          {:add-tags add-tags :remove-tags remove-tags})
+            tags   (or new-tags moved-tags)
+            final  (assoc moved :content new-content :tags tags)]
+        (-> move
+            (fxb/with-facade-update task-id {:content new-content :tags tags})
+            (cond->
+              (:kanban/notify-done move)      (assoc-in [:kanban/notify-done :entry] final)
+              (:kanban/archive-external move) (assoc-in [:kanban/archive-external :entry] final))
+            (fxb/with-temporal-record :kanban/edit-temporal-record task-id :kanban-edit
+                                      audit (kt/extract-project-id-from-tags moved)))))))
 
 (defn register!
   "Register the `:kanban/update` event and the edit-audit effect, after the

@@ -128,6 +128,25 @@
   (and (some? tag)
        (.startsWith ^String (str tag) "scope:project:")))
 
+(defn tag-deltas?
+  "True when the ±tags delta asks for at least one tag to be added or removed."
+  [{:keys [add-tags remove-tags]}]
+  (boolean (or (seq add-tags) (seq remove-tags))))
+
+(defn apply-tag-deltas
+  "Pure: `tags` with the ±tags delta applied: the string `:add-tags` appended,
+   then every `:remove-tags` member dropped, distinct, in order. Removal wins
+   over addition, so adding and removing one tag leaves it out. Reserved tags
+   are not checked here: the dispatch boundary refuses them
+   (`pred/reserved-tags`). Shared by `retag-transition` and `edit-tags`."
+  [tags {:keys [add-tags remove-tags]}]
+  (let [remove-set (set (or remove-tags []))]
+    (->> (filter string? (or add-tags []))
+         (into (vec (or tags [])))
+         (remove #(contains? remove-set %))
+         distinct
+         vec)))
+
 (defn retag-transition
   "Pure: derive the tag-only mutation for a retag.
 
@@ -141,7 +160,7 @@
    Returns {:old-project-id .. :new-project-id .. :old-tags .. :new-tags ..
             :status .. :priority .. :title ..}. When no move is requested
    `:new-project-id` equals `:old-project-id`."
-  [entry new-project-id {:keys [add-tags remove-tags]}]
+  [entry new-project-id deltas]
   (let [old-tags    (vec (or (:tags entry) []))
         old-pid     (extract-project-id-from-tags entry)
         status      (current-status entry)
@@ -153,9 +172,7 @@
                       (conj (filterv (complement scope-project-tag?) old-tags)
                             (scope/make-scope-tag new-project-id))
                       old-tags)
-        with-add      (into base (filter string? (or add-tags [])))
-        remove-set    (set (or remove-tags []))
-        new-tags      (vec (distinct (remove #(contains? remove-set %) with-add)))]
+        new-tags    (apply-tag-deltas base deltas)]
     {:old-project-id old-pid
      :new-project-id target-pid
      :old-tags       old-tags
@@ -281,6 +298,66 @@
      :new-content  new-content
      :new-tags     (when (changed :priority)
                      (reprioritize-tags (:tags entry) new-prio))}))
+
+;; -----------------------------------------------------------------------------
+;; Edit steps: an edit (and the edit half of an update) is the pipeline
+;;   edit-transition -> edit-tags -> edit-changed -> edit-audit   (edit-plan)
+;; Every step is pure and answers a value object of hive-mcp.tools.kanban.schema.
+;; -----------------------------------------------------------------------------
+
+(defn edit-tags
+  "Pure: the tag vector an edit writes, or nil when it writes none. The ±tags
+   delta applies over the priority-moved tags (`edit-transition`'s :new-tags)
+   when the priority moved, else over the entry's own, so a verdict tag and a
+   priority change land in ONE commit (RUN-LEDGER-3). Without a delta this is
+   `new-tags` unchanged."
+  [entry new-tags deltas]
+  (if (tag-deltas? deltas)
+    (apply-tag-deltas (or new-tags (vec (:tags entry))) deltas)
+    new-tags))
+
+(defn edit-changed
+  "Pure: every field an edit changed: the content fields `edit-transition`
+   found, plus :tags when a ±tags delta actually moved the tag vector (a delta
+   that adds a tag already present is no change)."
+  [entry field-changes new-tags deltas]
+  (cond-> (set field-changes)
+    (and (tag-deltas? deltas) (not= new-tags (vec (:tags entry)))) (conj :tags)))
+
+(defn tag-diff
+  "Pure: the audit diff from `old-tags` to `new-tags`: the tags that landed and
+   the tags that left, each in its own side's order."
+  [old-tags new-tags]
+  {:added-tags   (vec (remove (set old-tags) new-tags))
+   :removed-tags (vec (remove (set new-tags) old-tags))})
+
+(defn edit-audit
+  "Pure: the `:data` of an edit's `:kanban-edit` audit record, or nil when
+   nothing changed, so a no-op edit leaves no audit noise. `edit` is the
+   `edit-transition` result. Carries the `tag-diff` when the tags changed, so
+   the trail can reconstruct a verdict change."
+  [entry {:keys [old-title new-title old-priority new-priority]} changed new-tags]
+  (when (seq changed)
+    (cond-> {:changed      (vec (sort (map name changed)))
+             :old-title    old-title
+             :new-title    new-title
+             :old-priority old-priority
+             :new-priority new-priority}
+      (contains? changed :tags) (merge (tag-diff (:tags entry) new-tags)))))
+
+(defn edit-plan
+  "Pure: the edit of `entry` by `edits` (`edit-transition`'s fields) and the
+   ±tags `deltas`, as the values its effects are built from:
+   {:new-content :new-tags :changed :audit}. :new-tags is nil when the edit
+   writes no tags, :audit nil when nothing changed."
+  [entry edits deltas]
+  (let [{:keys [new-content] :as edit} (edit-transition entry edits)
+        new-tags (edit-tags entry (:new-tags edit) deltas)
+        changed  (edit-changed entry (:changed edit) new-tags deltas)]
+    {:new-content new-content
+     :new-tags    new-tags
+     :changed     changed
+     :audit       (edit-audit entry edit changed new-tags)}))
 
 (defn transition
   "Pure: derive {:old-status :new-status :new-content :new-tags :title :project-id}.
@@ -441,6 +518,15 @@
 (m/=> description-history [:=> [:cat [:maybe [:map-of :any :any]]] [:vector :map]])
 (m/=> push-description-history [:=> [:cat [:maybe [:sequential :any]] :any :any :any] [:vector :map]])
 (m/=> edit-transition [:=> [:cat ks/EntryIn ks/Edits] ks/EditResult])
+(m/=> tag-deltas? [:=> [:cat ks/TagDeltas] :boolean])
+(m/=> apply-tag-deltas [:=> [:cat ks/TagsIn ks/TagDeltas] ks/DeltaTags])
+(m/=> edit-tags [:=> [:cat ks/EntryIn [:maybe ks/StringTags] ks/TagDeltas] [:maybe ks/DeltaTags]])
+(m/=> edit-changed [:=> [:cat ks/EntryIn ks/FieldChanges [:maybe ks/DeltaTags] ks/TagDeltas]
+                    ks/EditChanged])
+(m/=> tag-diff [:=> [:cat ks/TagsIn [:maybe ks/DeltaTags]] ks/TagDiff])
+(m/=> edit-audit [:=> [:cat ks/EntryIn ks/EditResult ks/EditChanged [:maybe ks/DeltaTags]]
+                  [:maybe ks/EditAudit]])
+(m/=> edit-plan [:=> [:cat ks/EntryIn ks/Edits ks/TagDeltas] ks/EditPlan])
 (m/=> transition [:=> [:cat ks/EntryIn [:maybe :string] [:maybe :string]] ks/TransitionResult])
 (m/=> sort-by-priority-then-created [:=> [:cat [:maybe [:sequential ks/Task]]] [:sequential ks/Task]])
 (m/=> effective-dir [:=> [:cat [:maybe :string] Supplier] [:maybe :string]])

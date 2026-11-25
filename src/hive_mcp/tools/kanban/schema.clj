@@ -138,11 +138,22 @@
    [:new-content [:map-of :any :any]]
    [:new-tags [:vector [:maybe :string]]]])
 
-(def RetagOpts
-  "The ±tags delta of a retag."
+(def TagDeltas
+  "A ±tags delta: tags to add, then tags to drop. Shared by retag and by the
+   add_tags/remove_tags of edit and update."
   [:maybe [:map
            [:add-tags {:optional true} TagsIn]
            [:remove-tags {:optional true} TagsIn]]])
+
+(def RetagOpts
+  "The ±tags delta of a retag."
+  TagDeltas)
+
+(def DeltaTags
+  "A tag vector after a ±tags delta: distinct, the base's order kept, added
+   tags appended. The elements are whatever the base held (a store can hand
+   back junk), so it is not narrowed to strings."
+  [:vector TagIn])
 
 (def RetagResult
   "`retag-transition`: the derived tag-only mutation."
@@ -176,6 +187,44 @@
    [:new-content [:map-of :any :any]]
    [:new-tags [:maybe StringTags]]])
 
+(def FieldChanges
+  "The content fields `edit-transition` found changed."
+  [:set [:enum :title :description :priority]])
+
+(def EditChanged
+  "Every field an edit changed: the content fields, plus :tags when an
+   add_tags/remove_tags delta moved the tag vector."
+  [:set [:enum :title :description :priority :tags]])
+
+(def TagDiff
+  "The audit diff of a tag rewrite: the tags that landed, the tags that left."
+  [:map {:closed true}
+   [:added-tags [:vector TagIn]]
+   [:removed-tags [:vector TagIn]]])
+
+(def EditAudit
+  "`:data` of a `:kanban-edit` temporal record. :added-tags/:removed-tags are
+   present only when the tags changed, so the trail can reconstruct a verdict
+   change (RUN-LEDGER-3)."
+  [:map {:closed true}
+   [:changed [:vector [:enum "description" "priority" "tags" "title"]]]
+   [:old-title :any]
+   [:new-title :any]
+   [:old-priority :any]
+   [:new-priority :any]
+   [:added-tags {:optional true} [:vector TagIn]]
+   [:removed-tags {:optional true} [:vector TagIn]]])
+
+(def EditPlan
+  "`edit-plan`: an edit over an entry, as the values its effects are built
+   from. :new-tags is nil when the edit writes no tags; :audit is nil when
+   nothing changed, so a no-op edit leaves no audit noise."
+  [:map {:closed true}
+   [:new-content [:map-of :any :any]]
+   [:new-tags [:maybe DeltaTags]]
+   [:changed EditChanged]
+   [:audit [:maybe EditAudit]]])
+
 ;; =============================================================================
 ;; Events and effects
 ;; =============================================================================
@@ -193,6 +242,21 @@
 (def FacadeUpdate
   [:map [:task-id :any] [:payload [:map-of :keyword :any]]])
 
+(def EditPayload
+  "The facade payload of an edit: the content, plus the tags only when the
+   edit writes them."
+  [:map {:closed true}
+   [:content [:map-of :any :any]]
+   [:tags {:optional true} DeltaTags]])
+
+(def TemporalOp
+  "The audit op of a kanban commit."
+  [:enum :kanban-move :kanban-done :kanban-retag :kanban-edit])
+
+(def TemporalRecord
+  "The audit record a kanban commit emits (`temporal/record-mutation-silent!`)."
+  [:map [:entry-id :any] [:op TemporalOp] [:data :map] [:project-id :any]])
+
 (def ClaimRefused
   "Effect map of a refused card claim: nothing is written."
   [:map {:closed true}
@@ -205,9 +269,7 @@
    [:kanban/facade-update FacadeUpdate]
    [:kanban/track-movement {:optional true}
     [:map [:task-id :any] [:title :any] [:from :any] [:to :any] [:project-id :any]]]
-   [:kanban/temporal-record {:optional true}
-    [:map [:entry-id :any] [:op [:enum :kanban-move :kanban-done :kanban-retag :kanban-edit]]
-     [:data :map] [:project-id :any]]]
+   [:kanban/temporal-record {:optional true} TemporalRecord]
    [:kanban/notify-done {:optional true} [:map [:entry :map] [:task-id :any]]]
    [:kanban/archive-external {:optional true} [:map [:entry :map] [:task-id :any]]]])
 
