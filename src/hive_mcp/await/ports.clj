@@ -75,9 +75,14 @@
   "The registry's wake observer: every resume attempt of every owner kind is
    appended here (domain/WakeEntry) before its outcome is persisted.
 
-   Reader contract: an entry may repeat under crash recovery (the same
-   :awaiter-id and :attempt), so a reader dedups on that pair; a durable
-   adapter may leave a torn last line after a crash, which a reader skips."
+   The registry claims and persists an attempt number before the attempt
+   runs, so each [:awaiter-id :attempt] pair has ONE outcome. A pair may
+   still be appended twice (a crash between the journal append and the
+   registry write after it); the second is a repeat of the same outcome. A
+   reader collapses a pair to one entry, and an :ok? true entry is never
+   replaced by a failed one. A durable adapter may leave a torn line after a
+   crash; it must keep the torn fragment on its own line (newline before the
+   next append), and a reader skips it."
   (append-wake! [journal entry]
     "Record `entry` durably before answering it. Throw when it cannot."))
 
