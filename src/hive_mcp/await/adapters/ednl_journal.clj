@@ -74,6 +74,8 @@
   [path]
   (->EdnlJournal path))
 
+(m/=> journal [:=> [:cat :string] [:fn #(satisfies? ports/IWakeJournal %)]])
+
 (defn parse-lines
   "Pure: the journal text `text` as {:entries [..] :skipped n}. One entry per
    [:awaiter-id :attempt], in order of first appearance; for a repeated pair

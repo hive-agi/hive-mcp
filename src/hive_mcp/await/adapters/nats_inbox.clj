@@ -2,7 +2,8 @@
   "The default ports/IWakeInbox adapter: the hive inbox on HIVE_INBOX
    (hive-mcp.nats.inbox). The bus is resolved at CALL time, so loading this
    namespace loads nothing of the NATS stack."
-  (:require [hive-mcp.await.ports :as ports]))
+  (:require [hive-mcp.await.ports :as ports]
+            [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -23,3 +24,5 @@
   "A NatsInbox."
   []
   (->NatsInbox))
+
+(m/=> inbox [:=> [:cat] [:fn #(satisfies? ports/IWakeInbox %)]])
