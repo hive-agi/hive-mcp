@@ -81,9 +81,9 @@
    Supplying context-refs marks them undelivered so the next drain carries them.
 
    opts may carry :private? true when the enqueuer's view of memory is private
-   to it (e.g. it is bound to an enclave). The flag is STICKY on the buffer: once
-   private, the buffer stays private even after a later non-private enqueue, and
-   `adopt-buffer!` will never hand it to another caller.
+   to it. The flag is STICKY on the buffer: once private, the buffer stays
+   private even after a later non-private enqueue, and `adopt-buffer!` will
+   never hand it to another caller.
 
    Session-scoped: keyed by caller-id only (no project dimension)."
   ([caller-id entries]
@@ -393,8 +393,7 @@
    This function finds a matching buffer from any coordinator instance
    and re-keys it to the new caller.
 
-   A buffer enqueued under a private view (:private? on the buffer) is never
-   adopted: its content is visible only to the caller that wrote it.
+   Never adopts a buffer flagged :private?.
 
    Session-scoped: matches by caller prefix only, no project dimension.
 
