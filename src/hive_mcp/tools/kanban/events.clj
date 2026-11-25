@@ -12,6 +12,7 @@
             [hive-mcp.tools.kanban.claim :as claim]
             [hive-mcp.tools.kanban.coeffects :as kcofx]
             [hive-mcp.tools.kanban.effects :as keffects]
+            [hive-mcp.tools.kanban.fx-builders :as fxb]
             [hive-mcp.tools.kanban.predicates :as pred]
             [hive-mcp.tools.kanban.transitions :as kt]
             [clojure.string :as str]
@@ -153,40 +154,18 @@
   [{:keys [:kanban/entry]} [_ {:keys [task-id title description append-description priority agent-id
                                       add-tags remove-tags]}]]
   (when (and entry (pred/kanban-entry? entry))
-    (let [{:keys [changed new-content new-tags
-                  old-title new-title old-priority new-priority]}
-          (kt/edit-transition entry {:title              title
-                                     :description        description
-                                     :append-description append-description
-                                     :priority           priority
-                                     :agent-id           agent-id})
-          deltas?    (or (seq add-tags) (seq remove-tags))
-          base-tags  (or new-tags (vec (:tags entry)))
-          new-tags   (if deltas?
-                       (:new-tags (kt/retag-transition (assoc entry :tags base-tags) nil
-                                                       {:add-tags add-tags :remove-tags remove-tags}))
-                       new-tags)
-          changed    (cond-> (set changed)
-                       (and deltas? (not= new-tags (vec (:tags entry)))) (conj :tags))
-          project-id (kt/extract-project-id-from-tags entry)]
-      (cond-> {:kanban/facade-update
-               {:task-id task-id
-                :payload (cond-> {:content new-content}
-                           new-tags (assoc :tags new-tags))}}
-        (seq changed)
-        (assoc :kanban/temporal-record
-               {:entry-id   task-id
-                :op         :kanban-edit
-                :data       (cond-> {:changed      (vec (sort (map name changed)))
-                                     :old-title    old-title
-                                     :new-title    new-title
-                                     :old-priority old-priority
-                                     :new-priority new-priority}
-                              ;; the audit trail can reconstruct a verdict change
-                              (contains? changed :tags)
-                              (assoc :added-tags   (vec (remove (set (:tags entry)) new-tags))
-                                     :removed-tags (vec (remove (set new-tags) (:tags entry)))))
-                :project-id project-id})))))
+    (let [{:keys [new-content new-tags audit]}
+          (kt/edit-plan entry
+                        {:title              title
+                         :description        description
+                         :append-description append-description
+                         :priority           priority
+                         :agent-id           agent-id}
+                        {:add-tags add-tags :remove-tags remove-tags})]
+      (-> {}
+          (fxb/with-facade-update task-id (fxb/edit-payload new-content new-tags))
+          (fxb/with-temporal-record task-id :kanban-edit audit
+                                    (kt/extract-project-id-from-tags entry))))))
 
 (defn- result-from-fx
   "Lift a possibly-empty effect map into a Result.
