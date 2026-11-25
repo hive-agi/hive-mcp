@@ -302,7 +302,7 @@
 
 (deftest with-durability-test
   (testing "edges read back: not pending, not degraded, no warning"
-    (is (= (assoc ok-result :pending? false)
+    (is (= (assoc ok-result :pending? false :pending-edges [])
            (sut/with-durability ok-result (constantly true)))))
 
   (testing "edges not readable within the budget: pending with a kg-pending
@@ -332,7 +332,7 @@
   (testing "no edges: nothing to wait for, the check is not called"
     (let [called? (atom false)
           empty-result {:edges [] :warnings ["kg-timeout:a:200ms"] :degraded? true}]
-      (is (= (assoc empty-result :pending? false)
+      (is (= (assoc empty-result :pending? false :pending-edges [])
              (sut/with-durability empty-result (fn [_] (reset! called? true)))))
       (is (false? @called?)))))
 
@@ -357,20 +357,25 @@
 
   (testing "a store slower than the budget leaves the edges queued: every edge
             id is still returned and nothing is reported skipped"
-    (with-redefs [sut/kg-call-timeout-ms (constantly 5000)
-                  sut/with-durability
-                  (let [real sut/with-durability]
-                    (fn [kg-result _] (with-redefs [sut/kg-call-timeout-ms (constantly 50)]
-                                        (real kg-result (constantly nil)))))]
-      (let [execute-fn (#'plan-tool/build-execute-fn
-                        "/tmp/nodir" "plan-id" "test-project" "test-agent")
-            plan      (plan-with [{:id "s1" :title "T1" :depends-on []}
-                                  {:id "s2" :title "T2" :depends-on ["s1"]}])
-            result    (execute-fn {:plan plan})]
-        (is (= 4 (count (:kg-edges result))))
-        (is (false? (:kg-degraded? result)))
-        (is (true? (:kg-pending? result)))
-        (is (= ["kg-pending:edges-queued:50ms"] (:kg-warnings result)))))))
+    ;; No redef: the queued edges come from real apply-kg-calls thunks, and
+    ;; the never-readable store is the injected readable? port, its budget
+    ;; the opts arity.
+    (let [kg     (sut/apply-kg-calls
+                  [{:label "plan-task-edges" :thunk (constantly ["e1" "e2"])
+                    :specs [{:from "plan-id" :to "t1" :relation :depends-on}
+                            {:from "plan-id" :to "t2" :relation :depends-on}]
+                    :timeout-ms 5000}
+                   {:label "task-dep-edges" :thunk (constantly ["e3"])
+                    :specs [{:from "t2" :to "t1" :relation :depends-on}]
+                    :timeout-ms 5000}])
+          result (sut/with-durability kg (constantly nil) {:timeout-ms 50})]
+      (is (= ["e1" "e2" "e3"] (:edges result)))
+      (is (false? (:degraded? result)))
+      (is (true? (:pending? result)))
+      (is (= ["kg-pending:edges-queued:50ms"] (:warnings result)))
+      (is (= 3 (count (:pending-edges result)))
+          "every queued edge is named as pending, none as missing")
+      (is (= [] (:missing-edges result))))))
 
 (deftest integration-build-execute-fn-kg-partial-test
   (testing "one batch hangs, others ok → partial edges + 1 warning"
@@ -389,5 +394,9 @@
         (is (true? (:kg-degraded? result)))
         (is (= 1 (count (:kg-warnings result))))
         (is (re-find #"plan-task-edges" (first (:kg-warnings result))))
+        (is (= [{:from "plan-id" :to (get-in rows ["T1" :id]) :relation "depends-on"
+                 :label "plan-task-edges" :reason "kg-timeout:plan-task-edges:200ms"}]
+               (:kg-missing-edges result))
+            "the response names exactly the edge that did not land")
         ;; ok batches still contribute.
         (is (= #{:ok-decision :dep-edge} (set (:kg-edges result))))))))

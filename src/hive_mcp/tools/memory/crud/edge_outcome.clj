@@ -28,27 +28,48 @@
 
    Returns {:edge-ids [ids] :edge-errors []} when create! returns, or
    {:edge-ids [] :edge-errors [{:relation :to :error}]} with one row per
-   request when it throws. Never throws an Exception."
-  [create! requests]
-  (try
-    {:edge-ids (vec (create!)) :edge-errors []}
-    (catch Exception e
-      (log/error e "KG edge creation failed; entry kept without edges")
-      {:edge-ids    []
-       :edge-errors (mapv #(assoc % :error (error-message e)) requests)})))
+   request when it throws (each row also carries :from when `from` is given).
+   Never throws an Exception."
+  ([create! requests] (attempt-edges create! requests nil))
+  ([create! requests from]
+   (try
+     {:edge-ids (vec (create!)) :edge-errors []}
+     (catch Exception e
+       (log/error e "KG edge creation failed; entry kept without edges")
+       {:edge-ids    []
+        :edge-errors (mapv #(cond-> (assoc % :error (error-message e))
+                              from (assoc :from from))
+                           requests)}))))
+
+(defn- edge-row
+  [from {:keys [relation to]}]
+  {:from from :to to :relation relation})
 
 (defn outcome-check
   "How a caller learns the final outcome of edges a memory add could not
    confirm. nil when nothing is unconfirmed. `edge-errors` are edge writes that
    failed or outran their stage budget (they may still land);
-   `link-pending` is the :kg-outgoing link of edges that exist."
-  [entry-id edge-errors link-pending]
-  (when (or (seq edge-errors) link-pending)
-    {:status  "unconfirmed"
-     :how     (str "memory get id=" entry-id " include_kg=true"
-                   " (kg_outgoing lists the edges that landed), or"
-                   " kg traverse start_node=" entry-id " direction=outgoing")
-     :targets (vec (distinct (map :to edge-errors)))}))
+   `link-pending` is the :kg-outgoing link of edges that exist.
+
+   :unconfirmed_edges names EXACTLY which edges are unconfirmed, each
+   {:from :to :relation}: the failed edge writes, plus, when the link is
+   pending, every requested edge (`requests`; the link covers them all).
+   :relink is the verb that re-creates one."
+  ([entry-id edge-errors link-pending]
+   (outcome-check entry-id edge-errors link-pending nil))
+  ([entry-id edge-errors link-pending requests]
+   (when (or (seq edge-errors) link-pending)
+     (let [unconfirmed (into [] (distinct)
+                             (map #(edge-row entry-id %)
+                                  (concat edge-errors (when link-pending requests))))]
+       {:status  "unconfirmed"
+        :how     (str "memory get id=" entry-id " include_kg=true"
+                      " (kg_outgoing lists the edges that landed), or"
+                      " kg traverse start_node=" entry-id " direction=outgoing")
+        :targets (vec (distinct (map :to edge-errors)))
+        :unconfirmed_edges unconfirmed
+        :relink  (str "kg edge from=" entry-id " to=<to> relation=<relation>"
+                      " for each unconfirmed_edges row that is not in kg_outgoing")}))))
 
 ;;; =============================================================================
 ;;; Contracts
@@ -74,12 +95,22 @@
   "Edge ids written, or one error row per request when the write threw."
   [:map
    [:edge-ids [:vector :any]]
-   [:edge-errors [:vector [:map [:relation Relation] [:to :any] [:error :string]]]]])
+   [:edge-errors [:vector [:map [:relation Relation] [:to :any] [:error :string]
+                           [:from {:optional true} :any]]]]])
+
+(def ^:private OutcomeCheck
+  [:maybe [:map [:status :string] [:how :string] [:targets [:vector :any]]
+           [:unconfirmed_edges [:vector [:map [:from :any] [:to :any] [:relation :any]]]]
+           [:relink :string]]])
 
 (m/=> edge-requests [:=> [:cat KgParams] [:vector EdgeRequest]])
 
-(m/=> attempt-edges [:=> [:cat ifn? [:sequential EdgeRequest]] EdgeOutcome])
+(m/=> attempt-edges [:function
+                     [:=> [:cat ifn? [:sequential EdgeRequest]] EdgeOutcome]
+                     [:=> [:cat ifn? [:sequential EdgeRequest] :any] EdgeOutcome]])
 
 (m/=> outcome-check
-  [:=> [:cat :string [:maybe [:sequential :map]] [:maybe :map]]
-   [:maybe [:map [:status :string] [:how :string] [:targets [:vector :any]]]]])
+  [:function
+   [:=> [:cat :string [:maybe [:sequential :map]] [:maybe :map]] OutcomeCheck]
+   [:=> [:cat :string [:maybe [:sequential :map]] [:maybe :map] [:maybe [:sequential :map]]]
+    OutcomeCheck]])

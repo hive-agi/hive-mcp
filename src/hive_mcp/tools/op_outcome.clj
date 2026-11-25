@@ -9,12 +9,15 @@
    order, names the `:kind`:
 
    - :success-false  a map whose :success is false
-   - :body-failure   a text envelope whose :text is a JSON object with
+   - :body-failure   a text envelope whose :text is a JSON or EDN map with
                      :success false
    - :is-error       :isError true
    - :ok-false       :ok false
-   - :error-key      a non-nil :error on a map with no :success key (an
-                     explicit :success true wins over a stray :error)
+   - :status-failure a :status of invalid or error (keyword or string), on
+                     the map itself or on its text body
+   - :error-key      a non-nil :error on a map with no :success key, on the
+                     map itself or on its text body (an explicit :success
+                     true wins over a stray :error)
    - :null-id        opts {:null-id-key K} given, and the map holds K
                      with a nil value
 
@@ -23,6 +26,7 @@
 
    SPDX-License-Identifier: AGPL-3.0-or-later"
   (:require [clojure.data.json :as json]
+            [clojure.edn :as edn]
             [clojure.string :as str]
             [malli.core :as m]
             [hive-mcp.resilience.swallow :as swallow]))
@@ -31,15 +35,39 @@
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
 
-(defn json-failure-body
-  "The parsed JSON object in a text envelope's :text when it is a map whose
-   :success is false, else nil."
+(defn text-body
+  "The map a text envelope's :text holds, read as JSON, else as EDN (hive
+   handlers that `pr-str` their reply), else nil. Never throws."
   [result]
   (let [t (when (map? result) (:text result))]
     (when (and (string? t) (str/starts-with? (str/triml t) "{"))
-      (let [body (swallow/attempt-ex (json/read-str t :key-fn keyword))]
-        (when (and (map? body) (false? (:success body)))
-          body)))))
+      (let [body (or (swallow/attempt-ex (json/read-str t :key-fn keyword))
+                     (swallow/attempt-ex (edn/read-string {:default (fn [_tag v] v)} t)))]
+        (when (map? body) body)))))
+
+(defn json-failure-body
+  "The parsed body (JSON or EDN) of a text envelope when it is a map whose
+   :success is false, else nil."
+  [result]
+  (let [body (text-body result)]
+    (when (false? (:success body))
+      body)))
+
+(def failed-statuses
+  "The :status values that mean the handler refused or failed the op."
+  #{"invalid" "error"})
+
+(defn- error-only?
+  "True when map `m` carries a non-nil :error and no :success key."
+  [m]
+  (and (map? m) (some? (:error m)) (not (contains? m :success))))
+
+(defn- failed-status
+  "The failed :status of map `m` as a string, or nil."
+  [m]
+  (let [st (when (map? m) (:status m))]
+    (when (or (keyword? st) (string? st))
+      (failed-statuses (str/lower-case (name st))))))
 
 (defn- reported-reason
   "The first failure reason `m` states, as a string: the head of a
@@ -47,6 +75,10 @@
   [m]
   (let [errs (:errors m)]
     (some-> (or (when (sequential? errs) (first errs))
+                (when (and (map? errs) (seq errs))
+                  (let [[k v] (first errs)]
+                    (str (if (keyword? k) (name k) k) ": "
+                         (if (sequential? v) (first v) v))))
                 (:error m)
                 (:reason m)
                 (:message m))
@@ -54,22 +86,24 @@
 
 (defn- failure-kind
   "The first rule `result` matches, or nil."
-  [result body null-id-key]
+  [result body status-body null-id-key]
   (when (map? result)
     (cond
       (false? (:success result))         :success-false
       body                               :body-failure
       (true? (:isError result))          :is-error
       (false? (:ok result))              :ok-false
-      (and (some? (:error result))
-           (not (contains? result :success))) :error-key
+      (or (failed-status result)
+          (failed-status status-body))   :status-failure
+      (error-only? result)               :error-key
+      (error-only? status-body)          :error-key
       (and null-id-key
            (contains? result null-id-key)
            (nil? (get result null-id-key))) :null-id)))
 
 (defn- failure-message
   "Human-readable reason for a failed `result` of `kind`."
-  [kind result body]
+  [kind result body status-body]
   (case kind
     :success-false (or (reported-reason result)
                        "tool reported failure (:success false)")
@@ -79,7 +113,10 @@
      :ok-false)    (or (reported-reason result)
                        (some-> (:text result) str)
                        "tool reported failure (:isError/:ok false)")
-    :error-key     (str (:error result))
+    :status-failure (let [m (if (failed-status result) result status-body)]
+                      (or (reported-reason m)
+                          (str "tool reported :status " (failed-status m))))
+    :error-key     (str (:error (if (error-only? result) result status-body)))
     :null-id       "creation tool returned nil id, degraded backend?"))
 
 (defn op-outcome
@@ -89,10 +126,11 @@
   ([result]
    (op-outcome result nil))
   ([result {:keys [null-id-key]}]
-   (let [body (json-failure-body result)
-         kind (failure-kind result body null-id-key)]
+   (let [parsed (text-body result)
+         body   (when (false? (:success parsed)) parsed)
+         kind   (failure-kind result body parsed null-id-key)]
      (if kind
-       {:failed? true :kind kind :message (failure-message kind result body)}
+       {:failed? true :kind kind :message (failure-message kind result body parsed)}
        {:failed? false}))))
 
 (defn op-failed?
@@ -106,7 +144,7 @@
 
 (def FailureKind
   "The rule a failed result matched, in the order the ns doc lists them."
-  [:enum :success-false :body-failure :is-error :ok-false :error-key :null-id])
+  [:enum :success-false :body-failure :is-error :ok-false :status-failure :error-key :null-id])
 
 (def Outcome
   "What `op-outcome` answers: not failed, or failed with a kind and a reason."
@@ -120,6 +158,8 @@
 (def OutcomeOpts
   "op-outcome options; :null-id-key arms the :null-id rule."
   [:maybe [:map [:null-id-key {:optional true} :any]]])
+
+(m/=> text-body [:=> [:cat :any] [:maybe :map]])
 
 (m/=> json-failure-body [:=> [:cat :any] [:maybe [:map [:success [:= false]]]]])
 

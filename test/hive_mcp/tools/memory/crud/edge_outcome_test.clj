@@ -85,7 +85,7 @@
                 body (json/read-str (:text resp) :key-fn keyword)]
             (is (not (:isError resp)))
             (is (= "entry-1" (:id body)))
-            (is (= [{:relation "depends-on" :to ""}]
+            (is (= [{:relation "depends-on" :to "" :from "entry-1"}]
                    (mapv #(dissoc % :error) (:kg_edge_errors body))))
             (is (empty? @updates) "no :kg-outgoing link is written for failed edges"))))))))
 
@@ -162,7 +162,8 @@
        (is (re-find #"memory get id=entry-2 include_kg=true"
                     (get-in pending-body [:kg_check :how])))
        (is (not (contains? ok-body :kg_check)) "a confirmed link reports no check"))
-     (is (= {:status "unconfirmed" :targets ["a"]}
+     (is (= {:status "unconfirmed" :targets ["a"]
+          :unconfirmed_edges [{:from "e" :to "a" :relation "refines"}]}
             (dissoc (edge-outcome/outcome-check "e" [{:relation "refines" :to "a" :error "x"}] nil)
-                    :how)))
+                    :how :relink)))
      (is (nil? (edge-outcome/outcome-check "e" [] nil))))))
