@@ -218,6 +218,10 @@
                               "tag_match" {:type "string"
                                            :enum ["any" "all"]
                                            :description "[kanban list] Tag match semantics for `tags` (default 'all')"}
+                              "tags_a" {:type "array" :items {:type "string"}
+                                        :description "[kanban diff] Run A tags, e.g. [\"run:AGT-1125R3\"]; read across every status"}
+                              "tags_b" {:type "array" :items {:type "string"}
+                                        :description "[kanban diff] Run B tags, e.g. [\"run:AGT-1125R4\"]; cards matched on scenario:<x> + persona:<p>"}
                               "priority" {:type "string"
                                           :enum ["high" "medium" "low"]
                                           :description "[kanban list] Filter by exact priority / [kanban create|update] Set the task priority. An update rewrites the `priority-*` tag together with the content field, so `list` and `get` cannot disagree."}
