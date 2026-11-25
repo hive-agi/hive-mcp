@@ -228,7 +228,8 @@
                 (tt/timed-query "catchup/blocks-total"
                                 #(compose-blocks {:project-id project-id
                                                   :directory  directory
-                                                  :caller-id  caller-id})))))
+                                                  :caller-id  caller-id
+                                                  :private?   private?})))))
 
 (defn- launch-catchup-queries
   "Fire the four parallel queries. Returns a map of futures:
