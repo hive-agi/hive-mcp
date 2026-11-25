@@ -23,16 +23,14 @@
 
 (defprotocol ISecretResolver
   (resolve-secret! [resolver ref]
-    "The secret value named by `ref` (a string such as \"pass:sisf/pg-url\"
-     or \"env:SISF_PG_URL\"), or throw ex-info {:error :await/secret-missing}.
-     The value is never logged, never journaled and never put in an event."))
+    "The secret value named by `ref` (a string <scheme>:<id>, e.g.
+     \"k8s:sisf/staging-pg/url\" or \"vault:<row-id>\"), or throw ex-info
+     {:error :await/secret-missing}. The value is never logged, never
+     journaled and never put in an event. See await.sources.secret-refs."))
 
-(defprotocol ISqlRunner
-  (run-select! [runner request]
-    "Run ONE read-only SELECT. `request` is
-     {:url s :sql s :params [..] :row-cap n :statement-timeout-ms n}, where
-     :sql uses JDBC `?` placeholders bound to :params in order. Answer
-     {:rows [{col value}..] :truncated? bool}. Throw on failure."))
+;; The SQL adapter port is data, not a protocol, so an addon can contribute
+;; one without a compile-time dependency on hive-mcp: see
+;; hive-mcp.await.sources.sql-port.
 
 (defprotocol IProcessRunner
   (run-process! [runner argv opts]
