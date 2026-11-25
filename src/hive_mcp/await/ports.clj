@@ -33,6 +33,16 @@
                    :type  (:type subscription)
                    :known (vec (remove #{:default} (keys (methods open-source))))})))
 
+(defmulti check-subscription
+  "Refuse `subscription` of `awaiter` before anything is recorded: throw an
+   ex-info {:error :await/invalid-subscription ...} when the source cannot
+   honour it (no deadline, a poll interval under the minimum, a query that
+   is not one SELECT). Answer nil when it is fine. Open like open-source: a
+   source with nothing to check takes the default, which accepts."
+  (fn [subscription _awaiter] (:type subscription)))
+
+(defmethod check-subscription :default [_subscription _awaiter] nil)
+
 (defmulti open-resumer
   "The resume fn for `owner`: (fn [{:keys [awaiter payload prompt]}] ...)."
   (fn [owner] (:kind owner)))
@@ -118,6 +128,7 @@
         k (get-in awaiter [:owner :kind])]
     (when-not (contains? (methods open-source) t)
       ((get-method open-source :default) (:subscription awaiter) awaiter nil))
+    (check-subscription (:subscription awaiter) awaiter)
     (when-not (or (contains? (methods open-resumer) k)
                   (contains? deferred-owner-kinds k))
       ((get-method open-resumer :default) (:owner awaiter)))
