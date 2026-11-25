@@ -93,6 +93,8 @@
     (let [v (get m k)]
       (if (some? v) v (get m (name k))))))
 
+(m/=> field [:=> [:cat :any :keyword] :any])
+
 (defn- text
   "`v` as a non-blank string (a keyword by its name), else nil."
   [v]
@@ -106,6 +108,28 @@
   (cond (keyword? v) v
         (text v)     (keyword (text v))
         :else        nil))
+
+(def ^:private successor-suffix
+  ;; What a resume appends to a ling's name: an await wake
+  ;; (-w-<awaiter 8>-<attempt>, resumers.hive-agent-run/successor-name) or a
+  ;; respawn (-r<n>), possibly chained.
+  #"(?:-w-[A-Za-z0-9]{1,8}-\d+|-r\d+)+")
+
+(defn same-ling?
+  "True when ling id `current` is the ling that owns awaiters of ling id
+   `owner`: the same id, or a resume of it (`owner` followed by one or more
+   resume suffixes). A parked ling wakes as <id>-w-<awaiter>-<n>, so its
+   successor's :parked shout must arm what the ling created earlier. Pure."
+  [owner current]
+  (let [o (some-> owner str) c (some-> current str)]
+    (boolean
+     (and (not (str/blank? o)) (not (str/blank? c))
+          (or (= o c)
+              (and (> (count c) (count o))
+                   (str/starts-with? c o)
+                   (re-matches successor-suffix (subs c (count o)))))))))
+
+(m/=> same-ling? [:=> [:cat [:maybe :any] [:maybe :any]] :boolean])
 
 (defn classify
   "The Action a delivered shout `event` asks for, or nil. Pure.
@@ -149,7 +173,9 @@
 (defn apply-action!
   "Execute `action` (an Action) against registry `reg`. An :arm for an
    awaiter another ling owns is refused, so a shout can only arm the
-   awaiter its own ling created. Answers the Outcome."
+   awaiter its own ling created, or one an earlier run of the same ling
+   created before it was resumed under a successor name (`same-ling?`).
+   Answers the Outcome."
   [reg {:keys [op] :as action}]
   (case op
     :arm
@@ -161,7 +187,7 @@
         {:op :arm :awaiter-id awaiter-id :ling-id ling-id
          :armed? false :fired? false :refused :unknown-awaiter}
 
-        (and owner-ling ling-id (not= owner-ling ling-id))
+        (and owner-ling ling-id (not (same-ling? owner-ling ling-id)))
         {:op :arm :awaiter-id awaiter-id :ling-id ling-id
          :armed? false :fired? false :refused :other-ling}
 

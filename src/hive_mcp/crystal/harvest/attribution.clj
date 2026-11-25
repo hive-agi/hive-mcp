@@ -423,3 +423,5 @@
                           [:directory {:optional true} :any]
                           [:agent-id {:optional true} :any]
                           [:errors {:optional true} :any]]])
+
+(malli.core/=> with-attribution [:=> #:provenance{:kind :inferred-static, :source "hive-carto.candidate.mallify.static"} [:cat :any :any] :map])

@@ -37,6 +37,9 @@
   (rescue nil
           (requiring-resolve sym)))
 
+(m/=> try-resolve [:=> [:cat :qualified-symbol]
+                    [:maybe [:fn {:gen/elements [#'clojure.core/inc]} var?]]])
+
 (defn- boot-timing?
   "Per-addon boot timing is on by default; disable with HIVE_BOOT_TIMING=0.
    Mirrors hive-mcp.server.core/boot-timing? (kept local to avoid a require

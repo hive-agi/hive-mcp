@@ -95,6 +95,8 @@
   [xs]
   (->> xs (sort-by str) vec))
 
+(m/=> ordered [:=> [:cat [:maybe [:or [:sequential :any] [:set :any]]]] [:vector :any]])
+
 (defn- manifest-evidence
   "Select non-secret manifest fields. :addon/config is intentionally omitted."
   [spec]
@@ -108,6 +110,12 @@
 (defn- throwable-message
   [^Throwable t]
   (or (ex-message t) (.getName (class t))))
+
+(def ^:private AThrowable
+  [:fn {:gen/fmap (fn [_] (ex-info "boom" {})) :gen/schema :nil}
+   #(instance? Throwable %)])
+
+(m/=> throwable-message [:=> [:cat AThrowable] :string])
 
 (defn- stage
   [stage-name status summary evidence]
@@ -636,3 +644,7 @@
       [:function
        [:=> [:cat :any] DoctorResult]
        [:=> [:cat :any Ports] DoctorResult]])
+
+(malli.core/=> forbidden-host-lib? [:=> #:provenance{:kind :inferred-static, :source "hive-carto.candidate.mallify.static"} [:cat :any] :boolean])
+
+(m/=> stage [:=> [:cat StageName [:enum :pass :fail :skip] :string [:maybe :map]] Stage])

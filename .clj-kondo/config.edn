@@ -4,14 +4,31 @@
  ;; resolve-<Name> defs so generated symbols resolve.
  :hooks {:analyze-call {hive-dsl.adt/defadt hive-dsl.hooks.defadt/defadt
                         hive-di.core/defconfig hive-di.hooks.defconfig/defconfig
-                        hive-dsl.result/guard            hooks.hive-dsl.result/guard
-                        hive-dsl.result/rescue           hooks.hive-dsl.result/rescue
-                        hive-dsl.result/rescue-log       hooks.hive-dsl.result/rescue-log
-                        hive-dsl.result/rescue-interrupt hooks.hive-dsl.result/rescue-interrupt
-                        hive-dsl.result/try-effect       hooks.hive-dsl.result/try-effect
-                        hive-dsl.result/try-effect*      hooks.hive-dsl.result/try-effect*
-                        hive-dsl.result/let-ok           hooks.hive-dsl.result/let-ok
-                        hive-mcp.dns.result/let-ok       hooks.hive-dsl.result/let-ok
+                        hive-dsl.result/guard            hive-dsl.hooks.result/guard
+                        hive-dsl.result/rescue           hive-dsl.hooks.result/rescue
+                        hive-dsl.result/rescue-log       hive-dsl.hooks.result/rescue-log
+                        hive-dsl.result/rescue-interrupt hive-dsl.hooks.result/rescue-interrupt
+                        hive-dsl.result/try-effect       hive-dsl.hooks.result/try-effect
+                        hive-dsl.result/try-effect*      hive-dsl.hooks.result/try-effect*
+                        hive-dsl.result/let-ok           hive-dsl.hooks.result/let-ok
+                        ;; hive-mcp.dns.result re-exports hive-dsl.result, so its
+                        ;; macros hook through hive-dsl's own hook namespaces —
+                        ;; one definition, the one hive-dsl ships and every
+                        ;; consumer already imports. Mirrors the export exactly;
+                        ;; hive-mcp.kondo.config-export-test holds them together.
+                        hive-mcp.dns.result/let-ok               hive-dsl.hooks.result/let-ok
+                        hive-mcp.dns.result/try-effect           hive-dsl.hooks.result/try-effect
+                        hive-mcp.dns.result/try-effect*          hive-dsl.hooks.result/try-effect*
+                        hive-mcp.dns.result/rescue               hive-dsl.hooks.result/rescue
+                        hive-mcp.dns.result/guard                hive-dsl.hooks.result/guard
+                        hive-mcp.dns.result/rescue-log           hive-dsl.hooks.result/rescue-log
+                        hive-mcp.dns.result/rescue-interrupt     hive-dsl.hooks.result/rescue-interrupt
+                        ;; ok-> / ok->> thread the unwrapped ok value. Modelled
+                        ;; as hooks (not :lint-as ->) so the two configs agree:
+                        ;; the export has always mapped them as hooks.
+                        hive-mcp.dns.result/ok->                 hive-dsl.hooks.macros/ok->
+                        hive-mcp.dns.result/ok->>                hive-dsl.hooks.macros/ok->>
+                        hive-mcp.tools.core/with-coerced-params hive-mcp.hooks.tools/with-coerced-params
                         ;; test stub macros that bind a symbol outside a
                         ;; binding vector, so :lint-as cannot model them
                         hive-mcp.test.stub.log-capture/with-captured-logs
@@ -40,7 +57,6 @@
            ;; let-ok now uses a hook (see :hooks above) — :lint-as let can't
            ;; model its interleaved `:let` bindings. ok-> threads the unwrapped
            ;; ok value as the first arg, exactly like clojure.core/->.
-           hive-mcp.dns.result/ok-> clojure.core/->
            hive-dsl.result/ok-> clojure.core/->
            ;; hive-di defmanifest defines a manifest var like def
            hive-di.addon/defmanifest clojure.core/def

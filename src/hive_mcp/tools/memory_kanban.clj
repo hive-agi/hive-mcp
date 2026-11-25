@@ -37,7 +37,8 @@
             [malli.core :as m]
             [hive-mcp.tools.kanban.update :as kanban-update]
             [hive-mcp.tools.kanban.children :as children]
-            [hive-mcp.tools.kanban.create-scope :as create-scope]))
+            [hive-mcp.tools.kanban.create-scope :as create-scope]
+            [hive-mcp.resilience.swallow :as swallow]))
 
 (declare query-kanban-entries resolve-project-ids-with-descendants effective-dir stats* filter-kanban-by-tags list-slim*)
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
@@ -55,6 +56,8 @@
          (log/error e (str (name category) " failed"))
          (mcp-error (.getMessage e)))))
 
+(m/=> safe-call [:=> [:cat :keyword ifn?] core/McpResponse])
+
 ;; ============================================================
 ;; Movement tracking — used by create + delete paths
 ;; (move uses the event-driven path which handles tracking itself)
@@ -69,8 +72,7 @@
   (try
     (ds/register-kanban-movement!
      {:task-id task-id :title title :from from :to to :project-id project-id
-      :session-id (try (session/session-id {:project-id project-id})
-                       (catch Throwable _ nil))})
+      :session-id (swallow/attempt (session/session-id {:project-id project-id}))})
     (catch Exception e
       (log/debug "track-movement! failed (non-fatal):" (.getMessage e)))))
 
@@ -278,8 +280,8 @@
   {:edges-from kg-edges/get-edges-from
    :edges-to   kg-edges/get-edges-to
    :get-entry  (fn [id]
-                 (or (try (kanban-facade/get-entry-by-id id) (catch Throwable _ nil))
-                     (try (proto/get-entry (proto/get-store) id) (catch Throwable _ nil))))})
+                 (or (swallow/attempt (kanban-facade/get-entry-by-id id))
+                     (swallow/attempt (proto/get-entry (proto/get-store) id))))})
 
 (defn with-open-children
   "When `new-status` is done, attach the card's open KG children to the slim
@@ -314,7 +316,7 @@
    `coordinator:<session>`); `steal_claim` true takes a card a live foreign
    owner holds. See hive-mcp.tools.kanban.claim."
   [params]
-  {:owner        (try (ctx/current-session-agent-id params) (catch Throwable _ nil))
+  {:owner        (swallow/attempt (ctx/current-session-agent-id params))
    :steal-claim? (contains? #{true "true"} (:steal_claim params))})
 
 (m/=> claim-params [:=> [:cat [:maybe :map]] [:map [:owner [:maybe :string]] [:steal-claim? :boolean]]])
@@ -346,15 +348,21 @@
    Like `move*`, the slim view is derived from the committed effect payload
    rather than a read-back, because some vector backends are eventual here.
    A move to done also lists the card's open KG children."
-  [{:keys [task_id id new_status status title description append_description priority directory agent_id] :as params}]
+  [{:keys [task_id id new_status status title description append_description priority directory agent_id
+           add_tags remove_tags] :as params}]
   (let [task-id    (or task_id id)
         new-status (or new_status status)
+        tag-deltas? (or (seq add_tags) (seq remove_tags))
         payload    {:task-id            task-id
                     :title              title
                     :description        description
                     :append-description append_description
                     :priority           priority
-                    :agent-id           (or agent_id (try (ctx/current-agent-id) (catch Throwable _ nil)))
+                    ;; passed as given: dispatch coerces a tag string to [tag]
+                    ;; and refuses a bad shape or a reserved tag
+                    :add-tags           add_tags
+                    :remove-tags        remove_tags
+                    :agent-id           (or agent_id (swallow/attempt (ctx/current-agent-id)))
                     :directory          directory}
         result     (if new-status
                      (kanban-update/dispatch-update! (merge (assoc payload :new-status new-status)
@@ -362,7 +370,8 @@
                      (kanban-events/dispatch-edit! payload))]
     (if (r/ok? result)
       (let [{:keys [content tags]} (get-in result [:ok :kanban/facade-update :payload])]
-        (mcp-json (with-open-children (kt/task->slim {:id task-id :content content :tags tags})
+        (mcp-json (with-open-children (cond-> (kt/task->slim {:id task-id :content content :tags tags})
+                                        tag-deltas? (assoc :tags tags))
                     task-id new-status)))
       (mcp-error (or (:message result)
                      (str "Edit failed: " (:error result)))))))
@@ -373,11 +382,14 @@
    `new_status`/`status` moves; `title`/`description`/`priority` edit. When
    both are given `edit*` sends them as ONE commit, so the returned slim view
    carries both changes or the call fails with nothing applied.
-   `append_description` extends the existing description without replacing it."
-  [{:keys [new_status status title description append_description priority] :as params}]
+   `append_description` extends the existing description without replacing it.
+   `add_tags`/`remove_tags` ride the same commit as the move and the edit, so
+   closing a card with a verdict tag is one call (RUN-LEDGER-3)."
+  [{:keys [new_status status title description append_description priority add_tags remove_tags] :as params}]
   (let [given? (fn [v] (and (string? v) (not (str/blank? v))))
         move?  (some given? [new_status status])
-        edit?  (some given? [title description append_description priority])]
+        edit?  (or (some given? [title description append_description priority])
+                   (seq add_tags) (seq remove_tags))]
     (cond
       edit?  (edit* (cond-> params (not move?) (dissoc :new_status :status)))
       :else  (move* params))))
@@ -452,7 +464,7 @@
   "Best-effort store read; nil on any failure (unregistered slot, transport
    blip, missing entry). Keeps the cross-store probe non-throwing."
   [thunk]
-  (try (thunk) (catch Throwable _ nil)))
+  (swallow/attempt (thunk)))
 
 (defn- fetch-entry-any-store
   "Resolve a single entry by id across the kanban store and the default
@@ -491,12 +503,10 @@
    data. Non-fatal — nil on any failure or blank query."
   [q directory]
   (when (and (string? q) (not (str/blank? q)))
-    (try
-      (let [res (mem-search/handle-search-semantic
+    (swallow/attempt (let [res (mem-search/handle-search-semantic
                  {:query q :limit 5 :directory directory})
             txt (:text res)]
-        (when txt (json/read-str txt :key-fn keyword)))
-      (catch Throwable _ nil))))
+        (when txt (json/read-str txt :key-fn keyword))))))
 
 (defn- get*
   "Unified get-by-id across the kanban store and the default memory store.

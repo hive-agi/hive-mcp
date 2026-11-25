@@ -19,7 +19,9 @@
   (:require [hive-spi.diag.ports :as p]
             [hive-spi.diag.schema :as schema]
             [hive-dsl.result :as r]
-            [malli.core :as m]))
+            [malli.core :as m]
+            [hive-mcp.extensions.soft :as ext-soft]
+            [hive-mcp.resilience.swallow :as swallow]))
 
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
@@ -27,20 +29,15 @@
 (defn- measure-fn
   "clj-memory-meter.core/measure, or nil when the library is absent."
   []
-  (try
-    (requiring-resolve 'clj-memory-meter.core/measure)
-    (catch Throwable _ nil)))
+  (ext-soft/resolve-soft 'clj-memory-meter.core/measure))
 
 (defn- probe-available?
   "Attempt one trivial measurement to decide whether JOL's agent is usable in
    this JVM. True iff `measure` returns a number without throwing. A throw (no
    -Djdk.attach.allowAttachSelf=true, or library absent) => unavailable."
   []
-  (boolean
-   (try
-     (when-let [measure (measure-fn)]
-       (number? (measure (object-array 4) :bytes true)))
-     (catch Throwable _ false))))
+  (boolean (swallow/attempt (when-let [measure (measure-fn)]
+       (number? (measure (object-array 4) :bytes true))))))
 
 (defrecord MemoryMeterSizer [available]
   p/IRetainedSizer

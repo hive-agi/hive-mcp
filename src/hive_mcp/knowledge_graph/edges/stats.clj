@@ -116,6 +116,8 @@
     (let [n (+ (get m k 0) delta)]
       (if (pos? n) (assoc m k n) (dissoc m k)))))
 
+(m/=> bump [:=> [:cat [:map-of :any :int] :any :int] [:map-of :any :int]])
+
 (defn apply-delta!
   "Update the cache for a single edge add (+1) or remove (-1).
    Flips :initialized? to true — incremental maintenance is authoritative

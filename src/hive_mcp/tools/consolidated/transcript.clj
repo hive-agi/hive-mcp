@@ -27,7 +27,8 @@
             [clojure.string :as str]
             [taoensso.timbre :as log]
             [hive-mcp.tools.core :as tcore]
-            [malli.core :as m]))
+            [malli.core :as m]
+            [hive-mcp.resilience.swallow :as swallow]))
 
 ;; =============================================================================
 ;; Query Execution
@@ -58,6 +59,8 @@
   "Human text for an err Result."
   [res]
   (or (:message res) (pr-str res)))
+
+(m/=> err-message [:=> [:cat [:map [:message {:optional true} [:maybe :string]]]] :string])
 
 ;; =============================================================================
 ;; Response Formatting
@@ -247,12 +250,14 @@
                 (ti/select-listing rows opts)))))
 
 (defn- run-summary
-  "{:turns :ending} of one run, read through `source`; {} when unreadable."
+  "{:turns :ending} of one run, read through `source`; {:status kw} when
+   its store was deliberately not opened (busy/unknown); {} when unreadable."
   [source agent-id]
   (let [res (src/read-entries source agent-id)]
-    (if (r/ok? res)
-      {:turns (ti/max-turn (:ok res)) :ending (ti/ending (:ok res))}
-      {})))
+    (cond
+      (r/ok? res)        {:turns (ti/max-turn (:ok res)) :ending (ti/ending (:ok res))}
+      (src/unopened? res) {:status (:error res)}
+      :else              {})))
 
 (defn- latest-runs
   "{agent-id run-id}: each agent's newest chat-point run, read through
@@ -267,17 +272,19 @@
            (reduce #(assoc %1 (:agent-id %2) (:run-id %2)) {})))))
 
 (defn- list-row
-  "Wire projection of one listing row: strings and numbers only. `latest`
-   is {agent-id run-id}."
-  [source parents latest row]
-  (let [{:keys [turns ending]} (run-summary source (:agent-id row))]
-    {:agent    (:agent-id row)
-     :project  (:project-id row)
-     :parent   (or (:parent row) (src/parent-of parents (:agent-id row)))
-     :turns    turns
-     :modified (ti/iso (:modified row))
-     :ending   ending
-     :run_id   (get latest (:agent-id row))}))
+  "Wire projection of one listing row: strings and numbers only, plus a
+   keyword :status when the run's store was not opened. `latest` is
+   {agent-id run-id}; `summary` is (fn [agent-id]) -> run-summary."
+  [summary parents latest row]
+  (let [{:keys [turns ending status]} (summary (:agent-id row))]
+    (cond-> {:agent    (:agent-id row)
+             :project  (:project-id row)
+             :parent   (or (:parent row) (src/parent-of parents (:agent-id row)))
+             :turns    turns
+             :modified (ti/iso (:modified row))
+             :ending   ending
+             :run_id   (get latest (:agent-id row))}
+      status (assoc :status (subs (str status) 1)))))
 
 (defn- list-response [source parents runs params now-ms]
   (with-filters params now-ms
@@ -289,8 +296,10 @@
               (tcore/mcp-error (err-message res))
               (let [matched (:ok res)
                     page    (take limit matched)
-                    latest  (if (seq page) (latest-runs runs) {})]
-                (tcore/mcp-json {:transcripts (mapv #(list-row source parents latest %) page)
+                    latest  (if (seq page) (latest-runs runs) {})
+                    ;; one read per agent per call: a store is never opened twice
+                    summary (memoize #(run-summary source %))]
+                (tcore/mcp-json {:transcripts (mapv #(list-row summary parents latest %) page)
                                  :count       (count page)
                                  :matched     (count matched)})))))))))
 
@@ -335,27 +344,41 @@
 ;; find: cross-run full-text search
 ;; =============================================================================
 
+(defn- skipped-row
+  "Wire row of a run whose store was not opened: agent, project, the
+   keyword status and the run id (from `latest`, {agent-id run-id})."
+  [latest row res]
+  {:agent  (:agent-id row)
+   :project (:project-id row)
+   :status (subs (str (:error res)) 1)
+   :run_id (get latest (:agent-id row))})
+
 (defn- run-find
-  "Result<{:hits :runs-scanned}>: `needle-text` searched across the runs of
-   `(:selection ctx)`, newest first, stopping at `(:limit ctx)` hits."
-  [source needle-text {:keys [selection limit role tool]}]
+  "Result<{:hits :runs-scanned :skipped}>: `needle-text` searched across the
+   runs of `(:selection ctx)`, newest first, stopping at `(:limit ctx)` hits.
+   A run whose store was not opened (busy/unknown) is listed under :skipped."
+  [source needle-text {:keys [selection limit role tool latest-fn]}]
   (let [needle (ti/compile-needle needle-text)]
     (if (:error needle)
       (r/err :transcript/bad-query {:message (:error needle)})
-      (let [[hits scanned]
-            (reduce (fn [[hits n] row]
+      (let [[hits scanned skipped]
+            (reduce (fn [[hits n skipped] row]
                       (if (>= (count hits) limit)
-                        (reduced [hits n])
-                        (let [res (src/read-entries source (:agent-id row))
-                              es  (if (r/ok? res) (:ok res) [])
-                              found (ti/find-hits {:agent (:agent-id row) :run (:project-id row)}
-                                                  es needle {:role role :tool tool})]
-                          [(into hits (take (- limit (count hits))) found) (inc n)])))
-                    [[] 0]
-                    selection)]
-        (r/ok {:hits hits :count (count hits) :runs-scanned scanned})))))
+                        (reduced [hits n skipped])
+                        (let [res (src/read-entries source (:agent-id row))]
+                          (if (src/unopened? res)
+                            [hits (inc n) (conj skipped [row res])]
+                            (let [es    (if (r/ok? res) (:ok res) [])
+                                  found (ti/find-hits {:agent (:agent-id row) :run (:project-id row)}
+                                                      es needle {:role role :tool tool})]
+                              [(into hits (take (- limit (count hits))) found) (inc n) skipped])))))
+                    [[] 0 []]
+                    selection)
+            latest (if (and (seq skipped) latest-fn) (latest-fn) {})]
+        (r/ok (cond-> {:hits hits :count (count hits) :runs-scanned scanned}
+                (seq skipped) (assoc :skipped (mapv (fn [[row res]] (skipped-row latest row res)) skipped))))))))
 
-(defn- find-response [source parents params now-ms]
+(defn- find-response [source parents runs-port params now-ms]
   (with-filters params now-ms
     (fn [opts]
       (with-limit (:limit params) :limit default-list-limit
@@ -368,6 +391,7 @@
                   (run-query source
                              (tq/transcript-query :query/find {:query (str (:query params))})
                              {:selection (:ok sel) :limit limit
+                              :latest-fn #(latest-runs runs-port)
                               :role (some-> (:role params) str str/trim not-empty)
                               :tool (some-> (:tool params) str str/trim not-empty)}
                              tcore/mcp-json))))))))))
@@ -394,7 +418,7 @@
   (or (not (str/blank? (str parent)))
       (boolean (re-find #"[*?]" (str (or agent id))))))
 
-(defn- digest-response [source parents params now-ms]
+(defn- digest-response [source parents runs params now-ms]
   (if-not (multi-digest? params)
     (with-agent-id (or (:agent params) (:agent_id params) (:id params))
       (fn [aid]
@@ -407,14 +431,23 @@
             (let [sel (select-runs source parents (assoc opts :limit limit))]
               (if-not (r/ok? sel)
                 (tcore/mcp-error (err-message sel))
-                (let [rows (keep (fn [row]
-                                   (let [res (execute-query source
-                                                            (tq/transcript-query :query/digest
-                                                                                 {:agent-id (:agent-id row)}))]
-                                     (when (r/ok? res)
-                                       (assoc (ti/digest-row (:ok res)) :project (:project-id row)))))
-                                 (:ok sel))]
-                  (tcore/mcp-json {:lings (vec rows) :count (count rows)}))))))))))
+                ;; A run whose store was not opened is listed under :skipped
+                ;; with its reason; it never fails the whole digest.
+                (let [results (mapv (fn [row]
+                                      [row (execute-query source
+                                                          (tq/transcript-query :query/digest
+                                                                               {:agent-id (:agent-id row)}))])
+                                    (:ok sel))
+                      rows    (vec (keep (fn [[row res]]
+                                           (when (r/ok? res)
+                                             (assoc (ti/digest-row (:ok res)) :project (:project-id row))))
+                                         results))
+                      skipped (filterv (fn [[_ res]] (src/unopened? res)) results)
+                      latest  (if (seq skipped) (latest-runs runs) {})]
+                  (tcore/mcp-json (cond-> {:lings rows :count (count rows)}
+                                    (seq skipped)
+                                    (assoc :skipped (mapv (fn [[row res]] (skipped-row latest row res))
+                                                          skipped)))))))))))))
 
 (defn- dispatch [{:keys [source parents runs now-ms]}
                  {:keys [command agent-id agent_id id n turn full max_chars max-chars] :as params}]
@@ -432,8 +465,8 @@
       "help"   (tcore/mcp-json help-response)
       "list"   (list-response source parents runs params (now-ms))
       "runs"   (runs-response runs parents params (now-ms))
-      ("find" "search") (find-response source parents params (now-ms))
-      "digest" (digest-response source parents params (now-ms))
+      ("find" "search") (find-response source parents runs params (now-ms))
+      "digest" (digest-response source parents runs params (now-ms))
       "query"  (listing by-agent)
       "stats"  (by-agent #(tcore/mcp-json (compute-stats %2 %1)))
       "replay" (by-agent #(tcore/mcp-json {:markdown (format-replay %2 %1) :agent-id %1}))
@@ -461,8 +494,7 @@
       (tcore/mcp-error (str "Unknown transcript command: " command)))))
 
 (defn- soft-resolve [sym]
-  (try (requiring-resolve sym)
-       (catch Throwable _hive-agent-absent nil)))
+  (swallow/attempt (requiring-resolve sym)))
 
 (defn hive-agent-runs
   "The `:runs` port over hive-agent's configured chat-point store

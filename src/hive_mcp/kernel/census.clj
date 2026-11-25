@@ -11,7 +11,8 @@
   (:require [clojure.edn :as edn]
             [clojure.java.io :as io]
             [clojure.string :as str]
-            [malli.core :as m]))
+            [malli.core :as m]
+            [hive-mcp.resilience.swallow :as swallow]))
 
 ;; ---------------------------------------------------------------------------
 ;; Value schemas
@@ -143,15 +144,13 @@
   "The first top-level `(ns ...)` form in FILE, read with :read-cond :allow
    and *read-eval* off; nil when the file has none or cannot be read."
   [file]
-  (try
-    (with-open [r (java.io.PushbackReader. (io/reader file))]
+  (swallow/attempt-ex (with-open [r (java.io.PushbackReader. (io/reader file))]
       (binding [*read-eval* false]
         (loop []
           (let [x (read {:read-cond :allow :eof ::eof} r)]
             (cond (= x ::eof) nil
                   (and (seq? x) (= 'ns (first x))) x
-                  :else (recur))))))
-    (catch Exception _ nil)))
+                  :else (recur))))))))
 
 (m/=> ns-form [:=> [:cat [:or SourceFile :string]] [:maybe NsForm]])
 

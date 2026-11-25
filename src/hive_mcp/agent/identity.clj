@@ -32,7 +32,8 @@
             [taoensso.timbre :as log]
             [hive-mcp.agent.grant :as grant]
             [malli.core :as m]
-            [hive-mcp.extensions.soft :as ext-soft])
+            [hive-mcp.extensions.soft :as ext-soft]
+            [hive-mcp.resilience.swallow :as swallow])
   (:import [java.nio.file Files LinkOption StandardCopyOption]
            [java.nio.file.attribute FileAttribute PosixFilePermissions]))
 
@@ -68,6 +69,8 @@
 (defn- soft [sym]
   (ext-soft/resolve-cached sym))
 
+(m/=> soft [:=> [:cat :qualified-symbol] [:maybe ifn?]])
+
 (defn domain
   "The credential domain fns, or nil when the hive-agent addon is absent."
   []
@@ -100,16 +103,14 @@
   []
   (parse-mode
    (when-let [get-in-config (soft 'hive-mcp.config.core/get-in-config)]
-     (try (get-in-config [:services :agent :identity :mode])
-          (catch Throwable _ nil)))))
+     (swallow/attempt (get-in-config [:services :agent :identity :mode])))))
 
 (def ^:dynamic *mode* configured-mode)
 
 (defn configured-ttl-ms []
   (or (when-let [get-in-config (soft 'hive-mcp.config.core/get-in-config)]
-        (try (let [v (get-in-config [:services :agent :identity :ttl-ms])]
-               (when (and (integer? v) (pos? v)) v))
-             (catch Throwable _ nil)))
+        (swallow/attempt (let [v (get-in-config [:services :agent :identity :ttl-ms])]
+               (when (and (integer? v) (pos? v)) v))))
       default-ttl-ms))
 
 (defn default-key-file
@@ -133,6 +134,8 @@
   [^bytes public]
   (let [d (.digest (java.security.MessageDigest/getInstance "SHA-256") public)]
     (subs (apply str (map #(format "%02x" (bit-and (long %) 0xff)) d)) 0 16)))
+
+(m/=> key-id [:=> [:cat bytes?] [:string {:min 16 :max 16}]])
 
 (defn- write-key-file!
   "Write `content` to `f` atomically, created 0600 in a 0700 directory."
@@ -222,7 +225,7 @@
    depth and grant its registry row records (the row is written before any
    backend starts the child). nil when there is no row or no domain."
   [get-slave slave-id]
-  (when-let [row (try (get-slave slave-id) (catch Throwable _ nil))]
+  (when-let [row (swallow/attempt (get-slave slave-id))]
     (let [p (:slave/parent row)
           p (if (map? p) (:slave/id p) p)]
       (mint-for-child {:agent-id  slave-id

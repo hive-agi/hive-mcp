@@ -29,7 +29,8 @@
             [clojure.string :as str]
             [taoensso.timbre :as log]
             [hive-mcp.workflows.support :as support]
-            [malli.core :as m]))
+            [malli.core :as m]
+            [hive-mcp.resilience.swallow :as swallow]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -51,6 +52,8 @@
   (boolean (or (= :headless mode)
                (headless-modes mode)
                (headless-reg/get-headless-backend mode))))
+
+(m/=> headless-mode? [:=> [:cat :any] :boolean])
 
 ;; ── Effect Ports ────────────────────────────────────────────────────────────
 
@@ -183,8 +186,7 @@
     (when persona (register! agent-name persona))
     (try
       (let [spawn-result (spawn-agent-fn params)
-            payload (try (json/read-str (:text spawn-result) :key-fn keyword)
-                         (catch Exception _ nil))
+            payload (swallow/attempt-ex (json/read-str (:text spawn-result) :key-fn keyword))
             _ (when (or (:isError spawn-result) (false? (:success payload)))
                 (throw (ex-info "Agent spawn failed"
                                 {:type :execution/spawn-failed :result spawn-result})))
@@ -529,3 +531,5 @@
 (m/=> spark! [:function
               [:=> [:cat [:maybe :map]] SparkReport]
               [:=> [:cat [:maybe :map] [:maybe :map]] SparkReport]])
+
+(malli.core/=> dispatch-to-ling! [:=> #:provenance{:kind :inferred-static, :source "hive-carto.candidate.mallify.static"} [:cat :map] [:or :map :nil]])

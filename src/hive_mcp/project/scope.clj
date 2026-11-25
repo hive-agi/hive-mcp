@@ -89,6 +89,8 @@
         (str/starts-with? scope scope-prefix)
         (subs scope-prefix-len)))))
 
+(m/=> normalize-scope [:=> [:cat [:maybe :string]] [:maybe :string]])
+
 (defn- infer-parent-from-string
   "Infer parent scope from colon-delimited string.
    'a:b:c' -> 'a:b', 'a:b' -> 'a', 'a' -> nil, 'global' -> nil."
@@ -110,6 +112,8 @@
   "True if scope is nil or 'global'. CC-free: uses set contains?."
   [scope]
   (contains? global-set scope))
+
+(m/=> global-or-nil? [:=> [:cat :any] :boolean])
 
 ;; ============================================================
 ;; Project Config Registry

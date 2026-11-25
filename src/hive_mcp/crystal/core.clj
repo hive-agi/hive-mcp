@@ -738,3 +738,6 @@
   (should-promote? {:duration :ephemeral
                     :recalls [{:context :explicit-reference :count 3}
                               {:context :cross-session :count 1}]}))
+
+;; the extension or the inline fallback, applied to ARGS: whatever it answers
+(m/=> delegate [:=> [:cat :keyword ifn? [:sequential :any]] :any])

@@ -25,7 +25,8 @@
             [hive-mcp.channel.audience :as audience]
             [hive-mcp.channel.broadcast-ledger :as bledger]
             [hive-mcp.swarm.delegate :as delegate]
-            [malli.core :as m])
+            [malli.core :as m]
+            [hive-mcp.resilience.swallow :as swallow])
   (:import [java.lang Exception]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -174,10 +175,8 @@
   "Pull :shout-message-cap from loaded config, fall back to default.
    Lazy requiring-resolve avoids circular dep at hivemind bootstrap."
   []
-  (or (try
-        (when-let [f (requiring-resolve 'hive-mcp.config.core/get-in-config)]
-          (f [:hivemind :shout-message-cap]))
-        (catch Exception _ nil))
+  (or (swallow/attempt-ex (when-let [f (requiring-resolve 'hive-mcp.config.core/get-in-config)]
+          (f [:hivemind :shout-message-cap])))
       default-shout-message-cap))
 
 (defn cap-message
@@ -269,6 +268,8 @@
     (string? v) (zero? (count v))
     (coll? v) (empty? v)
     :else false))
+
+(m/=> blank-payload-value? [:=> [:cat :any] :boolean])
 
 (defn empty-shout?
   "Predicate: would this shout carry a zero-information payload?
@@ -636,9 +637,7 @@
 (defn- asker-parent-id
   "Spawner of `agent-id` per the slave registry, or nil when unknown."
   [agent-id]
-  (try
-    (:slave/parent (queries/get-slave-by-name-or-id agent-id))
-    (catch Exception _ nil)))
+  (swallow/attempt-ex (:slave/parent (queries/get-slave-by-name-or-id agent-id))))
 
 ;; =============================================================================
 ;; Ask: moved to hive-agent.swarm.hivemind.ask. These delegate there and hand
@@ -657,8 +656,7 @@
                                     [:hivemind :ask-popup?])))
                       (catch Exception _ true))]
     (when enabled?
-      (try (requiring-resolve 'hive-notify.registry/ask-first!)
-           (catch Throwable _ nil)))))
+      (swallow/attempt (requiring-resolve 'hive-notify.registry/ask-first!)))))
 
 (defn- ask-ports
   "The host effects an ask needs. Each is read through its var at call time,

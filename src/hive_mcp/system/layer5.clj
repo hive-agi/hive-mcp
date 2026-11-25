@@ -25,7 +25,8 @@
             [clojure.core.async :as async]
             [malli.core :as m]
             [taoensso.timbre :as log]
-            [hive-mcp.system.sweep-coordinator :as sweep-coordinator]))
+            [hive-mcp.system.sweep-coordinator :as sweep-coordinator]
+            [hive-mcp.extensions.soft :as ext-soft]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -114,7 +115,7 @@
 (defn- resolve-soft
   "The var `sym` resolves to, or nil when the namespace is not in this build."
   [sym]
-  (try (requiring-resolve sym) (catch Throwable _ nil)))
+  (ext-soft/resolve-soft sym))
 
 (defmethod ig/init-key :hive/await-registry
   [_ config]

@@ -12,7 +12,8 @@
             [hive-mcp.tools.op-outcome :as op-outcome]
             [hive-mcp.dispatch.verbs :as verbs]
             [malli.core :as m]
-            [hive-mcp.dispatch.lazy :as lazy]))
+            [hive-mcp.dispatch.lazy :as lazy]
+            [hive-mcp.resilience.swallow :as swallow]))
 
 ;; =============================================================================
 ;; Command Normalization
@@ -169,9 +170,11 @@
   "V, a collection of verb names or a 0-arity fn returning one, as a set of
    lower-cased strings; nil when V is absent, empty, or throws."
   [v]
-  (let [v (if (fn? v) (try (v) (catch Throwable _ nil)) v)]
+  (let [v (if (fn? v) (swallow/attempt (v)) v)]
     (when (and (coll? v) (seq v))
       (into #{} (map #(str/lower-case (if (keyword? %) (name %) (str %)))) v))))
+
+(m/=> verb-set [:=> [:cat :any] [:maybe [:set :string]]])
 
 (defn declared-verbs
   "The verbs opaque root K of HANDLERS says it routes, as a set of lower-cased
@@ -190,7 +193,7 @@
     (or (verb-set (::verbs (meta node)))
         (verb-set (::verbs (meta cur)))
         (when (map? cur) (verb-set (::verbs (meta (:_handler cur)))))
-        (when (ifn? oracle) (verb-set (try (oracle k) (catch Throwable _ nil)))))))
+        (when (ifn? oracle) (verb-set (swallow/attempt (oracle k)))))))
 
 (defn- qualification-hints
   "Root keys that can own CMD, offered as `<root> CMD`.
@@ -316,8 +319,7 @@
   [cmd handlers]
   (let [{oracle ::root-oracle tool-name ::tool-name} (meta handlers)]
     (when (and cmd (ifn? oracle))
-      (try (root-route-hint cmd tool-name (oracle))
-           (catch Throwable _ nil)))))
+      (swallow/attempt (root-route-hint cmd tool-name (oracle))))))
 
 (defn- unknown-command-error
   "Loud error for a command this tree cannot resolve. When the first word

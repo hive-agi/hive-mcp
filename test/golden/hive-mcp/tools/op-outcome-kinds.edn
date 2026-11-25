@@ -3,6 +3,11 @@
  {:failed? true,
   :kind :null-id,
   :message "creation tool returned nil id, degraded backend?"},
+ :status-failure
+ [{:failed? true, :kind :status-failure, :message "origin: bad"}
+  {:failed? true, :kind :status-failure, :message "kind: required"}
+  {:failed? true, :kind :status-failure, :message "boom"}
+  {:failed? false}],
  :body-failure {:failed? true, :kind :body-failure, :message "boom"},
  :success-wins {:failed? false},
  :is-error {:failed? true, :kind :is-error, :message "bad"},

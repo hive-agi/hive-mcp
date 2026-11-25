@@ -13,7 +13,8 @@
    The router (`core.clj`) wraps these with `mcp-json` for the MCP boundary."
   (:require [clojure.string  :as str]
             [hive-dsl.result :as r]
-            [malli.core :as m]))
+            [malli.core :as m]
+            [hive-mcp.resilience.swallow :as swallow]))
 
 ;; =============================================================================
 ;; Helpers
@@ -32,8 +33,7 @@
   [sym-str]
   (let [sym (cond
               (symbol? sym-str)  sym-str
-              (string? sym-str)  (try (symbol sym-str)
-                                   (catch Exception _ nil))
+              (string? sym-str)  (swallow/attempt-ex (symbol sym-str))
               :else nil)]
     (when (or (nil? sym) (nil? (namespace sym)))
       (throw (ex-info "Symbol must be fully-qualified ns/name" {:symbol sym-str})))
@@ -43,6 +43,9 @@
       (catch Throwable t
         (throw (ex-info (str "Could not resolve symbol: " (ex-message t))
                         {:symbol sym}))))))
+
+(m/=> resolve-or-throw [:=> [:cat [:or :symbol :string]]
+                         [:fn {:gen/elements [#'clojure.core/inc]} var?]])
 
 (defn- normalize-agent-ids
   "Coerce :agent-ids/:agent_ids/:all into the shape `hive-agent.events.observers/enable!`
@@ -153,9 +156,7 @@
 
 (defn- handler-registered?-fn
   []
-  (try
-    (requiring-resolve 'hive.events/handler-registered?)
-    (catch Throwable _ nil)))
+  (swallow/attempt (requiring-resolve 'hive.events/handler-registered?)))
 
 (defn- observed-events-set
   []
@@ -279,3 +280,7 @@
   (ok :help help-text))
 
 (m/=> handle-help [:=> [:cat EventsParams] [:map [:ok [:= true]] [:command [:= :help]] [:result :string]]])
+
+(malli.core/=> err [:=> #:provenance{:kind :inferred-static, :source "hive-carto.candidate.mallify.static"} [:cat :any :any] :map])
+
+(malli.core/=> ok [:=> #:provenance{:kind :inferred-static, :source "hive-carto.candidate.mallify.static"} [:cat :any :any] :map])

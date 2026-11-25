@@ -58,11 +58,16 @@
   :ret ::ok-result
   :fn #(= (-> % :ret :ok) (-> % :args :value)))
 
+;; Extra data for err: a map without the reserved Result keys :ok and :error.
+(s/def ::err-data (s/and map?
+                         #(not (contains? % :ok))
+                         #(not (contains? % :error))))
+
 ;; err: keyword? -> ::err-result  (1-arity)
-;; err: keyword? map? -> ::err-result  (2-arity)
+;; err: keyword? ::err-data -> ::err-result  (2-arity)
 (s/fdef r/err
   :args (s/or :unary (s/cat :category keyword?)
-              :binary (s/cat :category keyword? :data map?))
+              :binary (s/cat :category keyword? :data ::err-data))
   :ret ::err-result
   :fn #(= (-> % :ret :error) (-> % :args second :category)))
 

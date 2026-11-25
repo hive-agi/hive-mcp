@@ -139,6 +139,8 @@
   [frontmatter & aliases]
   (some #(get frontmatter %) aliases))
 
+(m/=> fm-get [:=> [:cat [:maybe :map] [:* [:or :keyword :string]]] :any])
+
 ;; =============================================================================
 ;; Frontmatter → agent-def Coercion
 ;; =============================================================================

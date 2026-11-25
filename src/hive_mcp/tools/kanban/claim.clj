@@ -27,7 +27,8 @@
             [clojure.set :as set]
             [clojure.string :as str]
             [hive-mcp.channel.audience :as audience]
-            [malli.core :as m]))
+            [malli.core :as m]
+            [hive-mcp.resilience.swallow :as swallow]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
 
@@ -40,6 +41,8 @@
    [:map [:refused [:= true]] [:holder :string] [:since [:maybe :string]]]])
 
 (defn- present [s] (when (and (string? s) (not (str/blank? s))) s))
+
+(m/=> present [:=> [:cat :any] [:maybe :string]])
 
 (defn owner-key
   "The identity an owner id is compared by. A coordinator lane that names a
@@ -117,9 +120,8 @@
 (def ^:private dead-statuses #{:terminated :dead :killed :zombie})
 
 (defn- get-slave [id]
-  (try (when-let [f (requiring-resolve 'hive-mcp.swarm.datascript.queries/get-slave)]
-         (f id))
-       (catch Throwable _ nil)))
+  (swallow/attempt (when-let [f (requiring-resolve 'hive-mcp.swarm.datascript.queries/get-slave)]
+         (f id))))
 
 (defn- pid-alive? [pid]
   (try (let [^java.util.Optional h (java.lang.ProcessHandle/of (long pid))]
@@ -202,12 +204,11 @@
       (into []
             (keep (fn [^java.io.File f]
                     (when (str/ends-with? (.getName f) ".json")
-                      (try (let [m (json/read-str (slurp f))
+                      (swallow/attempt (let [m (json/read-str (slurp f))
                                  pid (get m "pid")
                                  sid (present (get m "sessionId"))]
                              (when (and (int? pid) sid)
-                               {:pid (long pid) :session-id sid}))
-                           (catch Throwable _ nil)))))
+                               {:pid (long pid) :session-id sid}))))))
             (.listFiles d)))))
 
 (defn default-ports

@@ -43,44 +43,45 @@
   "Flush accumulated tx-data as a single transaction.
    `batch-item-count` is the number of producer-side items this batch drained
    from tx-chan (used to decrement in-flight); it may differ from (count batch)
-   after dsl-batch/normalize-tx-datum expansion. The three-argument arity
-   accepts a transaction port for deterministic failure testing."
+   after dsl-batch/normalize-tx-datum expansion. in-flight drops by
+   `batch-item-count` for every drained batch, an empty one included.
+   The three-argument arity accepts a transaction port for deterministic
+   failure testing."
   ([batch batch-item-count]
    (flush-batch! batch batch-item-count
                  (fn [tx] (proto/transact! (store/ensure-store!) tx))))
   ([batch batch-item-count transact-fn]
-   (when (seq batch)
-     (let [n (count batch)]
-       (try
-         (transact-fn batch)
-         (swap! writer-metrics (fn [m]
-                                 (-> m
-                                     (update :batches-flushed inc)
-                                     (update :items-written + n)
-                                     (update :largest-batch max n))))
-         (catch Throwable t
-           (log/error "Coalesced batch transact failed, falling back to individual writes"
-                      {:batch-size n :error (.getMessage t)})
-           ;; Fallback: retry items individually so we don't lose data
-           (doseq [item batch]
-             (try
-               (transact-fn [item])
-               (swap! writer-metrics update :items-written inc)
-               (catch Throwable t2
-                 (log/error t2 "CRITICAL: Async KG write failed after enqueue and fallback"
-                            {:item item :error (.getMessage t2)})
-                 ;; Keep the last failure next to the drop count so writer-stats
-                 ;; shows WHY writes are being lost, not only how many.
-                 (swap! writer-metrics
-                        (fn [m]
-                          (-> m
-                              (update :items-dropped inc)
-                              (update :async-write-failures inc)
-                              (update :unreported-failures inc)
-                              (assoc :last-failure {:at    (System/currentTimeMillis)
-                                                    :error (.getMessage t2)}))))))))
-         (finally
-           (swap! in-flight - batch-item-count)))))))
+   (try
+     (when (seq batch)
+       (let [n (count batch)]
+         (try
+           (transact-fn batch)
+           (swap! writer-metrics (fn [m]
+                                   (-> m
+                                       (update :batches-flushed inc)
+                                       (update :items-written + n)
+                                       (update :largest-batch max n))))
+           (catch Throwable t
+             (log/error "Coalesced batch transact failed, falling back to individual writes"
+                        {:batch-size n :error (.getMessage t)})
+             ;; Fallback: retry items individually so we don't lose data
+             (doseq [item batch]
+               (try
+                 (transact-fn [item])
+                 (swap! writer-metrics update :items-written inc)
+                 (catch Throwable t2
+                   (log/error t2 "CRITICAL: Async KG write failed after enqueue and fallback"
+                              {:item item :error (.getMessage t2)})
+                   (swap! writer-metrics
+                          (fn [m]
+                            (-> m
+                                (update :items-dropped inc)
+                                (update :async-write-failures inc)
+                                (update :unreported-failures inc)
+                                (assoc :last-failure {:at    (System/currentTimeMillis)
+                                                      :error (.getMessage t2)})))))))))))
+     (finally
+       (swap! in-flight - batch-item-count)))))
 
 (defn- start-writer-loop!
   "Start the background write-coalescing consumer.

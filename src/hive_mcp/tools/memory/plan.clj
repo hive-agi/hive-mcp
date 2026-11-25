@@ -64,6 +64,8 @@
   (when-let [entry (facade/get-entry-by-id id)]
     (when (plan-entry? entry) entry)))
 
+(m/=> hydrate [:=> [:cat [:maybe :string]] [:maybe :map]])
+
 (defn- param
   "PARAMS' value for KEY, whichever of its two spellings the caller used. A
    snake_case `project_id` arrives from JSON and a kebab-case `:project-id`
@@ -71,6 +73,8 @@
   [params snake kebab]
   (let [v (get params snake)]
     (if (some? v) v (get params kebab))))
+
+(m/=> param [:=> [:cat [:maybe :map] :keyword :keyword] :any])
 
 (defn- preview [content]
   (when (string? content)

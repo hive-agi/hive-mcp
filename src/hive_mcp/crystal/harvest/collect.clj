@@ -880,3 +880,5 @@
       [:function
        [:=> [:cat] HarvestByScopeWithSummary]
        [:=> [:cat HarvestOpts] HarvestByScopeWithSummary]])
+
+(malli.core/=> harvest-world [:=> #:provenance{:kind :inferred-static, :source "hive-carto.candidate.mallify.static"} [:cat :map] :map])

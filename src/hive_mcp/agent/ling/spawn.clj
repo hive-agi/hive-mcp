@@ -22,7 +22,8 @@
             [hive-mcp.swarm.datascript :as ds]
             [malli.core :as m]
             [hive-mcp.context.request :as request-ctx]
-            [hive-mcp.channel.audience :as audience]))
+            [hive-mcp.channel.audience :as audience]
+            [hive-mcp.resilience.swallow :as swallow]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -76,8 +77,7 @@
   (let [legacy (:slave/presets slave)
         encoded (:slave/preset-order slave)
         decoded (when (string? encoded)
-                  (try (clojure.edn/read-string encoded)
-                       (catch Exception _ nil)))]
+                  (swallow/attempt-ex (clojure.edn/read-string encoded)))]
     (if (and (vector? decoded)
              (every? string? decoded)
              (= (set decoded) (set legacy)))
@@ -266,10 +266,6 @@
         (log/error t "Spawn-dispatch: unexpected error"
                    {:ling-id slave-id})))))
 
-(defn- headless-mode?
-  [mode]
-  (contains? (headless-reg/registered-headless) mode))
-
 (defn- enrich-task
   [{:keys [task cwd kanban-task-id]}]
   (when task
@@ -283,7 +279,7 @@
 
 (defn- resolve-headless-inputs
   [{:keys [mode ctx presets]}]
-  (let [headless? (headless-mode? mode)]
+  (let [headless? (contains? (headless-reg/registered-headless) mode)]
     {:headless? headless?
      :preset-content (when (and headless? (seq presets))
                        (load-presets-content presets))
@@ -358,10 +354,11 @@
 
 (defn- row-filter
   "hive-agent's registry row filter chain, resolved softly so core needs no
-   swarm addon: nil when hive-agent (or its shout-filters ns) is absent."
+   swarm addon: nil when hive-agent (or its shout-filters ns) is absent.
+   An absent addon is the expected case, so this is a soft resolve and not
+   a logged swallow."
   []
-  (try (requiring-resolve 'hive-agent.events.shout-filters/row!)
-       (catch Throwable _ nil)))
+  (soft/resolve-soft 'hive-agent.events.shout-filters/row!))
 
 (defn- register-slave-row!
   "Persist a slave row through the spawn store, first making sure its parent

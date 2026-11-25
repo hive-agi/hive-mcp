@@ -30,6 +30,8 @@
 
 (defn- blank->nil [s] (when-not (str/blank? (str s)) (str s)))
 
+(m/=> blank->nil [:=> [:cat :any] [:maybe :string]])
+
 (defn- ->kw
   "A keyword from a keyword or a string (a leading colon is dropped)."
   [x]
@@ -37,10 +39,14 @@
         (blank->nil x) (keyword (let [s (str x)] (if (str/starts-with? s ":") (subs s 1) s)))
         :else nil))
 
+(m/=> ->kw [:=> [:cat :any] [:maybe :keyword]])
+
 (defn- ->long [x]
   (cond (integer? x) (long x)
         (string? x)  (parse-long (str/trim x))
         :else        nil))
+
+(m/=> ->long [:=> [:cat :any] [:maybe :int]])
 
 (defn- ->bool [x]
   (cond (boolean? x) x
@@ -51,6 +57,8 @@
   "`m` with keyword keys (JSON objects may arrive with string keys)."
   [m]
   (when (map? m) (into {} (map (fn [[k v]] [(->kw k) v])) m)))
+
+(m/=> keyword-keys [:=> [:cat :any] [:maybe [:map-of [:maybe :keyword] :any]]])
 
 (def ^:private owner-string-keys
   "Flat owner params that are strings, and the Owner key each one lands on."
@@ -78,6 +86,21 @@
         (coll? (:presets params))       (assoc :presets (mapv str (:presets params)))
         (keyword-keys (:turn_budget params)) (assoc :turn-budget (keyword-keys (:turn_budget params)))))))
 
+(defn default-filter
+  "The subscription filter an await create gets: the caller's `flt` when it
+   names one; otherwise, for a :manual source whose `owner` names a ling,
+   {:to <ling-id>}. That addresses a broadcast `await fire` (one naming no
+   awaiter id) to that ling only; before, an unfiltered manual awaiter
+   matched every broadcast, and one coordinator's fire woke every other
+   coordinator's lings (friction 20261122150418-7fef4903). An awaiter left
+   with no filter hears only a fire that names its id. Pure."
+  [source flt owner]
+  (or flt
+      (when-let [ling (and (= :manual source) (blank->nil (:ling-id owner)))]
+        {:to ling})))
+
+(m/=> default-filter [:=> [:cat [:maybe :keyword] [:maybe :map] [:maybe :map]] [:maybe :map]])
+
 (defn create-request
   "Pure: the registry create request from MCP `params`, as a Result.
 
@@ -86,8 +109,9 @@
    `project_id`, `spawn_mode`, `kanban_task_id`, `sandbox`, `grant`,
    `presets`, `turn_budget`, `token_budget`, `time_budget_ms`,
    `max_budget_usd` — the authority a successor inherits.
-   Subscription: `source` (alias `type`, default manual), `filter` (object),
-   `dedup_key`. Deadline: `deadline` (epoch ms) or `timeout_ms`. `prompt` is
+   Subscription: `source` (alias `type`, default manual), `filter` (object;
+   a manual awaiter whose owner names a ling defaults to {:to <ling-id>},
+   see default-filter), `dedup_key`. Deadline: `deadline` (epoch ms) or `timeout_ms`. `prompt` is
    the continuation the owner resumes with; `id` is optional.
 
    `run_id` is NOT required: a :hive-agent-run owner binds it when it parks
@@ -103,7 +127,7 @@
                                                         :spawn_mode :spawn-mode
                                                         :kanban_task_id :kanban-task-id} k) k))))
         source (or (->kw (:source params)) (->kw (:type params)) :manual)
-        flt    (keyword-keys (:filter params))
+        flt    (default-filter source (not-empty (keyword-keys (:filter params))) owner)
         dedup  (->kw (:dedup_key params))
         deadline (->long (:deadline params))
         timeout  (->long (:timeout_ms params))]
@@ -141,6 +165,8 @@
                       (when-let [k (:error (ex-data e))] (str " [" k "]")))))
     (catch Throwable e
       (mcp-error (str "await " verb " failed: " (.getMessage e))))))
+
+(m/=> run-verb [:=> [:cat :string ifn?] tc/McpResponse])
 
 (defn handle-create
   "Create a :pending awaiter (see create-request for the params). Answers
@@ -217,18 +243,34 @@
 
 (m/=> handle-cancel [:=> [:cat [:maybe :map]] tc/McpResponse])
 
+(defn addressed-data
+  "The data a fire delivers. A fire that names awaiter `target` (looked up,
+   or nil) is addressed to it, so a missing :to is filled from the target's
+   filter :to: naming the id is enough to reach an awaiter whose filter was
+   defaulted to {:to <ling-id>}. Every other key still has to match. Pure."
+  [data target]
+  (let [to (get-in target [:subscription :filter :to])]
+    (if (and (some? to) (not (contains? data :to)))
+      (assoc data :to to)
+      data)))
+
+(m/=> addressed-data [:=> [:cat :map [:maybe :map]] :map])
+
 (defn handle-fire
   "Inject one :manual event with `data` (an object, default {}) into the
-   awaiter `id`, or into every listening :manual awaiter when no id is
-   given; each awaiter's filter and dedup decide whether it wakes. Answers
+   awaiter `id` (its filter :to is filled in when `data` names none, see
+   addressed-data), or, when no id is given, into every listening :manual
+   awaiter that has a filter; each awaiter's filter and dedup decide whether
+   it wakes. An awaiter with no filter hears only a fire naming its id. Answers
    the ids offered the event and the ids that woke, with their resume
    results. An :armed awaiter wakes; a :pending one RECORDS the wake."
   [params]
   (run-verb "fire"
             (fn []
               (let [reg     (current-registry)
-                    data    (or (keyword-keys (:data params)) {})
                     id      (blank->nil (:id params))
+                    data    (addressed-data (or (keyword-keys (:data params)) {})
+                                            (when id (registry/lookup reg id)))
                     before  (set (map :id (filter domain/live? (registry/awaiters reg))))
                     offered (manual/fire! data id)
                     status  (fn [wid] (:status (registry/lookup reg wid)))
@@ -250,7 +292,7 @@
 
 (def tool-def
   {:name "await"
-   :description "Park on an event instead of polling: create (a PENDING awaiter: source, filter, deadline, continuation prompt, owner; then end your run parked with awaiter_id — it arms when the park is observed and a wake arriving before then is recorded, not lost), arm (id, run_id?: promote a pending awaiter now, the same promotion hive-agent's park performs), list (awaiters, sources, owner kinds), cancel (id), fire (inject a manual event: id?, data)."
+   :description "Park on an event instead of polling: create (a PENDING awaiter: source, filter, deadline, continuation prompt, owner; then end your run parked with awaiter_id — it arms when the park is observed and a wake arriving before then is recorded, not lost), arm (id, run_id?: promote a pending awaiter now, the same promotion hive-agent's park performs), list (awaiters, sources, owner kinds), cancel (id), fire (inject a manual event: id?, data; without id only FILTERED awaiters hear it, so address a ling with data.to=<ling_id>)."
    :inputSchema {:type "object"
                  :properties {"owner"      {:type "object" :description "[await create] Who resumes on the wake: {kind, ...}; kind hive-agent-run takes cwd plus the authority to inherit"}
                               "owner_kind" {:type "string" :description "[await create] Flat alias for owner.kind (hive-agent-run)"}
@@ -269,7 +311,7 @@
                               "time_budget_ms" {:type "integer" :description "[await create] Wall-clock budget of the successor"}
                               "max_budget_usd" {:type "number" :description "[await create] Spend cap of the successor"}
                               "source"     {:type "string" :description "[await create] Event source type (default manual)"}
-                              "filter"     {:type "object" :description "[await create] Every key must equal the event data's value"}
+                              "filter"     {:type "object" :description "[await create] Every key must equal the event data's value. Default for a manual awaiter naming ling_id: {to: <ling_id>}; an awaiter with no filter wakes only on a fire naming its id"}
                               "dedup_key"  {:type "string" :description "[await create] Event data key whose value never wakes twice"}
                               "timeout_ms" {:type "integer" :description "[await create] Wake with reason timeout after this long"}
                               "deadline"   {:type "integer" :description "[await create] Absolute deadline, epoch ms"}

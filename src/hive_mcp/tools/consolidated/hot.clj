@@ -32,7 +32,9 @@
             [malli.core :as m]
             [malli.error :as me]
             [clojure.string :as str]
-            [hive-mcp.tools.consolidated.hot-eject-fallback :as eject-fallback]))
+            [hive-mcp.tools.consolidated.hot-eject-fallback :as eject-fallback]
+            [hive-mcp.resilience.swallow :as swallow]
+            [hive-mcp.tools.consolidated.hot-memory-gate :as memory-gate]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -46,7 +48,7 @@
   "Resolve a var, or nil. Re-resolved per call so a pin bump takes effect without
    restarting this namespace."
   [sym]
-  (try (requiring-resolve sym) (catch Throwable _ nil)))
+  (swallow/attempt (requiring-resolve sym)))
 
 (defn- bridge-available? []
   (some? (soft 'hive-addon.hot/reload-addon!)))
@@ -95,8 +97,7 @@
    image — the baseline a first reload should measure change against, not the
    moment somebody first ran `hot`."
   []
-  (try (.getStartTime (java.lang.management.ManagementFactory/getRuntimeMXBean))
-       (catch Throwable _ nil)))
+  (swallow/attempt (.getStartTime (java.lang.management.ManagementFactory/getRuntimeMXBean))))
 
 (defn ensure-hot-init!
   "Initialize hive-hot with THIS system's addon source dirs, or extend it.
@@ -249,6 +250,7 @@
    :hot/ns-reloaded :hot/ns-skipped :hot/ns-dragged
    :hot/ns-unchanged? :hot/multi-file :hot/stale-ctors
    :hot/refused? :hot/preflight :hot/restored :hot/down :hot/restored?
+   :hot/reload-failures :hot/quarantined
    :ok? :errors :diagnostic :diagnostics :teardown/data-preserved?])
 
 (def inject-report-keys
@@ -348,13 +350,46 @@
 
 (m/=> reload-call-opts [:=> [:cat :map :any] :map])
 
+(def ^:dynamic *read-meminfo*
+  "The memory reader the heavy-reload gate uses; tests rebind it."
+  memory-gate/read-meminfo)
+
+(defn memory-gate-opts
+  "Options for `memory-gate/refusal` from config.edn [:services :hot] and the
+   caller. Config and the ling test are resolved softly, so this namespace
+   gains no hard edge to config or the DSL layer."
+  [params]
+  (let [cfg   (swallow/attempt
+               (when-let [get-in-config (soft 'hive-mcp.config.core/get-in-config)]
+                 (get-in-config [:services :hot])))
+        ling? (swallow/attempt
+               (when-let [ling-caller? (soft 'hive-mcp.dsl.response/ling-caller?)]
+                 (ling-caller? (:_caller_id params))))]
+    {:read-mem            *read-meminfo*
+     :floor-gb            (:memory-floor-gb cfg)
+     :min-swap-free-ratio (:min-swap-free-ratio cfg)
+     :ling?               (boolean ling?)}))
+
+(m/=> memory-gate-opts [:=> [:cat [:maybe :map]] memory-gate/RefusalOpts])
+
+(defn- memory-refusal
+  "The heavy-reload refusal for this call, or nil."
+  [command params]
+  ;; :reason goes on the wire as the qualified string "hot/memory-low", the same
+  ;; convention unmount-outcome uses: JSON would drop a keyword's namespace.
+  (some-> (memory-gate/refusal command params (memory-gate-opts params))
+          (update :reason #(subs (str %) 1))))
+
 (defn handle-reload
   "Reload one addon (or every addon built from one namespace) plus dependents."
-  [{:keys [addon namespace strategy force]}]
+  [{:keys [addon namespace strategy force] :as params}]
   (cond
     (not (bridge-available?)) (mcp-error unavailable-msg)
     (and (nil? addon) (nil? namespace))
     (mcp-error "addon (or namespace) is required — e.g. {:command \"reload\" :addon \"hive.carto\"}")
+
+    (memory-refusal :reload params)
+    (mcp-json (memory-refusal :reload params))
 
     :else
     (let [{:keys [specs host hot-init error]} (prepared)]
@@ -416,9 +451,15 @@
 (defn handle-reload-all
   "Reload every mounted addon that hive-addon.hot/plan marks reloadable, in
    dependency order. The rest are reported under :skipped with a reason."
-  [_params]
-  (if-not (bridge-available?)
+  [params]
+  (cond
+    (not (bridge-available?))
     (mcp-error unavailable-msg)
+
+    (memory-refusal :reload-all params)
+    (mcp-json (memory-refusal :reload-all params))
+
+    :else
     (let [{:keys [specs host plan hot-init error]} (prepared)]
       (if error
         error
@@ -1296,6 +1337,8 @@
                 :description "[eject/unmount] Also tear down the mounted addons that depend on the target and remount them without it. Default false: such an eject is refused."}
      "force" {:type "boolean"
               :description "[reload] Re-read every file under the addon's source roots, and reload their dependents, even when nothing changed on disk: repairs an image that diverged from its mounted source (a load-file from another checkout). [eject/unmount] Plug out even when calls are still in flight after drain_ms (the report says :forced?). [evict] Also evict a pinned or eager addon. [pin] Allow :lazy on an addon with no surface a stub could advertise. [inject] Mount even when this image cannot undo the inject (only a restart removes it). Default false."}
+     "force_memory" {:type "boolean"
+                     :description "[reload/reload-all] Operator override: run a forced reload or reload-all even when the host is short of memory (MemAvailable under 15 GB, or SwapFree under 10% of SwapTotal). Without it such a call is refused with :reason :hot/memory-low and the numbers; a plain reload of one changed addon is never gated. Default false."}
      "drain_ms" {:type "integer"
                  :description "[eject/unmount] How long to wait for the addon's calls in flight before teardown; new calls are refused meanwhile. Still running after it: refused as busy (nothing torn down) unless force. Default 30000."}
      "policy" {:type "string"
@@ -1307,3 +1350,8 @@
    :handler #'handle-hot})
 
 (def tools [tool-def])
+
+(malli.core/=> bridge-available? [:=> #:provenance{:kind :inferred-static, :source "hive-carto.candidate.mallify.static"} [:cat] :boolean])
+
+(m/=> soft [:=> [:cat :qualified-symbol]
+            [:maybe [:fn {:gen/elements [#'clojure.core/inc]} var?]]])

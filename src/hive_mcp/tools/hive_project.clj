@@ -159,6 +159,8 @@
                   "}")
     :else (pr-str v)))
 
+(m/=> format-edn-value [:=> [:cat :any] :string])
+
 (defn- generate-edn-content
   "Generate .hive-project.edn content as formatted string.
    Includes both :parent-id (preferred) and :parent (legacy) for compatibility."

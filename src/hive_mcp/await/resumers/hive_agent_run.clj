@@ -29,7 +29,8 @@
    in nothing of the agent stack and a test can stand a double in."
   (:require [clojure.string :as str]
             [hive-mcp.await.ports :as ports]
-            [malli.core :as m]))
+            [malli.core :as m]
+            [hive-mcp.resilience.swallow :as swallow]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -87,8 +88,7 @@
    Throws ex-info :await/resumer-unavailable when the agent stack is absent."
   []
   (or @spawn-fn
-      (try (some-> (requiring-resolve 'hive-mcp.tools.agent.spawn/handle-spawn) deref)
-           (catch Throwable _ nil))
+      (swallow/attempt (some-> (requiring-resolve 'hive-mcp.tools.agent.spawn/handle-spawn) deref))
       (throw (ex-info "await: hive-agent-run resumer cannot reach the spawn path"
                       {:error :await/resumer-unavailable}))))
 

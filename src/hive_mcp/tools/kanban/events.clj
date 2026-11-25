@@ -146,8 +146,12 @@
        `kt/edit-transition` for why the tag must travel with the content.
      * `:kanban/temporal-record` op = `:kanban-edit`, emitted only when a
        field actually changed, so a no-op edit leaves no audit noise.
+     * `:add-tags` / `:remove-tags` apply to the (priority-moved) tags in the
+       SAME commit, so a verdict tag rides the update that sets it
+       (RUN-LEDGER-3). Scope is untouched: a scope move stays `retag`.
      * No completion hooks, no movement tracking, no delete effect"
-  [{:keys [:kanban/entry]} [_ {:keys [task-id title description append-description priority agent-id]}]]
+  [{:keys [:kanban/entry]} [_ {:keys [task-id title description append-description priority agent-id
+                                      add-tags remove-tags]}]]
   (when (and entry (pred/kanban-entry? entry))
     (let [{:keys [changed new-content new-tags
                   old-title new-title old-priority new-priority]}
@@ -156,6 +160,14 @@
                                      :append-description append-description
                                      :priority           priority
                                      :agent-id           agent-id})
+          deltas?    (or (seq add-tags) (seq remove-tags))
+          base-tags  (or new-tags (vec (:tags entry)))
+          new-tags   (if deltas?
+                       (:new-tags (kt/retag-transition (assoc entry :tags base-tags) nil
+                                                       {:add-tags add-tags :remove-tags remove-tags}))
+                       new-tags)
+          changed    (cond-> (set changed)
+                       (and deltas? (not= new-tags (vec (:tags entry)))) (conj :tags))
           project-id (kt/extract-project-id-from-tags entry)]
       (cond-> {:kanban/facade-update
                {:task-id task-id
@@ -165,11 +177,15 @@
         (assoc :kanban/temporal-record
                {:entry-id   task-id
                 :op         :kanban-edit
-                :data       {:changed      (vec (sort (map name changed)))
-                             :old-title    old-title
-                             :new-title    new-title
-                             :old-priority old-priority
-                             :new-priority new-priority}
+                :data       (cond-> {:changed      (vec (sort (map name changed)))
+                                     :old-title    old-title
+                                     :new-title    new-title
+                                     :old-priority old-priority
+                                     :new-priority new-priority}
+                              ;; the audit trail can reconstruct a verdict change
+                              (contains? changed :tags)
+                              (assoc :added-tags   (vec (remove (set (:tags entry)) new-tags))
+                                     :removed-tags (vec (remove (set new-tags) (:tags entry)))))
                 :project-id project-id})))))
 
 (defn- result-from-fx
@@ -369,6 +385,24 @@
     :else
     (dispatch-committed! [:kanban/retag event-payload] task-id)))
 
+(defn reserved-tag-error
+  "The Result error refusing the reserved `tags` (`pred/reserved-tags`) a
+   tag delta on update/edit asked to add or remove."
+  [tags]
+  (r/err :kanban/reserved-tag
+         {:message (str "add_tags/remove_tags cannot add or remove reserved tags " (pr-str (vec tags))
+                        ": status moves with new_status, priority with priority, scope with "
+                        "retag new_project_id, and the kanban tag is never removed")
+          :tags    (vec tags)}))
+
+(defn invalid-tags-error
+  "The Result error for a tag delta that is neither a tag string nor a
+   collection of tag strings (`pred/coerce-tags` answered :invalid)."
+  [given]
+  (r/err :kanban/invalid-tags
+         {:message "add_tags/remove_tags take a tag string or an array of tag strings"
+          :given   given}))
+
 (defn dispatch-edit!
   "Public boundary entry point. Synchronously dispatch a `:kanban/edit` event
    and return a Result wrapping the effect map. Effects run before this returns.
@@ -390,9 +424,15 @@
      (r/err :kanban/nothing-to-edit ...)    when no editable field was given
      (r/err :kanban/invalid-priority ...)   when priority is outside the enum
      (r/err :kanban/invalid-task ...)       when entry missing or non-kanban"
-  [{:keys [task-id title description append-description priority] :as event-payload}]
+  [{:keys [task-id title description append-description priority] :as raw-payload}]
   (init!)
-  (let [given?     (fn [v] (and (string? v) (not (clojure.string/blank? v))))
+  (let [add-tags      (pred/coerce-tags (:add-tags raw-payload))
+        remove-tags   (pred/coerce-tags (:remove-tags raw-payload))
+        event-payload (assoc raw-payload :add-tags add-tags :remove-tags remove-tags)
+        reserved      (when-not (some #{:invalid} [add-tags remove-tags])
+                        (pred/reserved-tags (concat add-tags remove-tags)))
+        given?     (fn [v] (or (and (string? v) (not (clojure.string/blank? v)))
+                               (and (sequential? v) (boolean (seq v)))))
         priorities #{"high" "medium" "low"}]
     (cond
       (or (nil? task-id)
@@ -401,9 +441,15 @@
              {:message "Edit requires :task-id"
               :given   task-id})
 
-      (not (some given? [title description append-description priority]))
+      (some #{:invalid} [add-tags remove-tags])
+      (invalid-tags-error (select-keys raw-payload [:add-tags :remove-tags]))
+
+      (seq reserved)
+      (reserved-tag-error reserved)
+
+      (not (some given? [title description append-description priority add-tags remove-tags]))
       (r/err :kanban/nothing-to-edit
-             {:message "Edit requires at least one of :title, :description, :append-description, :priority"
+             {:message "Edit requires at least one of :title, :description, :append-description, :priority, :add-tags, :remove-tags"
               :task-id task-id})
 
       (and (given? priority) (not (priorities priority)))
@@ -429,4 +475,6 @@
 (m/=> init! [:=> [:cat] [:= true]])
 (m/=> dispatch-move! [:=> [:cat ks/DispatchPayload] ks/Result])
 (m/=> dispatch-retag! [:=> [:cat ks/DispatchPayload] ks/Result])
+(m/=> reserved-tag-error [:=> [:cat [:sequential :string]] :map])
+(m/=> invalid-tags-error [:=> [:cat :any] :map])
 (m/=> dispatch-edit! [:=> [:cat ks/DispatchPayload] ks/Result])

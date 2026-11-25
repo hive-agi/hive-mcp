@@ -28,6 +28,8 @@
         (str (subs truncated 0 last-space) "...")
         (str (subs s 0 (- max-gap-length 3)) "...")))))
 
+(m/=> truncate-gap [:=> [:cat :string] :string])
+
 (defn extract-questions
   "Extract sentences ending with question marks from content."
   [content]

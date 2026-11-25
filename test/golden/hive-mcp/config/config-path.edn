@@ -1,0 +1,4 @@
+{:blank "/home/u/.config/hive-mcp/config.edn",
+ :empty "/home/u/.config/hive-mcp/config.edn",
+ :nil "/home/u/.config/hive-mcp/config.edn",
+ :override "alt/config.edn"}

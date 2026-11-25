@@ -19,6 +19,11 @@
   "MCP enum spellings plus the canonical internal tags."
   [:enum "todo" "inprogress" "inreview" "done" "doing" "review"])
 
+(def ListStatus
+  "A list's status filter: a Status, or \"all\" for every status (no status
+   tag is pushed to the store). RUN-LEDGER-2."
+  [:enum "todo" "inprogress" "inreview" "done" "doing" "review" "all"])
+
 (def Priority [:enum "high" "medium" "low"])
 
 (def TagMode [:enum "all" "any"])
@@ -43,7 +48,7 @@
 
 (def ListRequest
   [:map
-   [:status        {:optional true} [:maybe Status]]
+   [:status        {:optional true} [:maybe ListStatus]]
    [:tags          {:optional true} [:maybe Tags]]
    [:tag_match     {:optional true} [:maybe TagMode]]
    [:query         {:optional true} [:maybe [:string {:gen/max 12}]]]

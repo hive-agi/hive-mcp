@@ -1,0 +1,100 @@
+{:addon-undeclared
+ {:error :config/set-refused,
+  :key "addons.hive.blender.code-gate",
+  :rule :floor,
+  :matched [:addons :*],
+  :message
+  "config set refused (floor): key addons.hive.blender.code-gate refused: it is under addons.*, which only the addon's own declaration opens",
+  :fix
+  "Edit addons.hive.blender.code-gate in ~/.config/hive-mcp/config.edn by hand, then run `config reload`."},
+ :addons-root
+ {:error :config/set-refused,
+  :key "addons",
+  :rule :ancestor-of-protected,
+  :matched [:addons :hive.guard],
+  :message
+  "config set refused (ancestor-of-protected): key addons refused: it is an ancestor of the protected path addons.hive.guard; writing it would replace that subtree",
+  :fix
+  "Edit addons in ~/.config/hive-mcp/config.edn by hand, then run `config reload`."},
+ :allowed {:allowed "models.default-model"},
+ :auth-probe
+ {:error :config/set-refused,
+  :key "llm-providers.openrouter.auth-probe",
+  :rule :floor,
+  :matched [:llm-providers :*],
+  :message
+  "config set refused (floor): key llm-providers.openrouter.auth-probe refused: it is under the protected path llm-providers.*",
+  :fix
+  "Edit llm-providers.openrouter.auth-probe in ~/.config/hive-mcp/config.edn by hand, then run `config reload`."},
+ :checked-ancestor
+ {:error :config/set-refused,
+  :key "agent-defaults.ling",
+  :rule :ancestor-of-protected,
+  :matched [:agent-defaults :* :provider],
+  :message
+  "config set refused (ancestor-of-protected): key agent-defaults.ling refused: it is an ancestor of agent-defaults.*.provider, whose value check a map written here would skip",
+  :fix
+  "Edit agent-defaults.ling in ~/.config/hive-mcp/config.edn by hand, then run `config reload`."},
+ :non-canonical
+ {:error :config/set-refused,
+  :key "SERVICES.seal",
+  :rule :non-canonical,
+  :matched nil,
+  :message
+  "config set refused (non-canonical): key SERVICES.seal refused: it is not canonical (lower-case dotted segments, none empty)",
+  :fix
+  "Edit SERVICES.seal in ~/.config/hive-mcp/config.edn by hand, then run `config reload`."},
+ :not-allowlisted
+ {:error :config/set-refused,
+  :key "foo.bar",
+  :rule :not-allowlisted,
+  :matched nil,
+  :message
+  "config set refused (not-allowlisted): key foo.bar refused: it is not on the config set allowlist",
+  :fix
+  "Edit foo.bar in ~/.config/hive-mcp/config.edn by hand, then run `config reload`."},
+ :provider-api-url
+ {:error :config/set-refused,
+  :key "llm-providers.openrouter.api-url",
+  :rule :floor,
+  :matched [:llm-providers :*],
+  :message
+  "config set refused (floor): key llm-providers.openrouter.api-url refused: it is under the protected path llm-providers.*",
+  :fix
+  "Edit llm-providers.openrouter.api-url in ~/.config/hive-mcp/config.edn by hand, then run `config reload`."},
+ :seal-gpg-bin
+ {:error :config/set-refused,
+  :key "services.seal.gpg-bin",
+  :rule :floor,
+  :matched [:services :seal],
+  :message
+  "config set refused (floor): key services.seal.gpg-bin refused: it is under the protected path services.seal",
+  :fix
+  "Edit services.seal.gpg-bin in ~/.config/hive-mcp/config.edn by hand, then run `config reload`."},
+ :secret
+ {:error :config/set-refused,
+  :key "secrets.x",
+  :rule :floor,
+  :matched [:secrets],
+  :message
+  "config set refused (floor): key secrets.x refused: it is under the protected path secrets",
+  :fix
+  "Edit secrets.x in ~/.config/hive-mcp/config.edn by hand, then run `config reload`."},
+ :services-root
+ {:error :config/set-refused,
+  :key "services",
+  :rule :ancestor-of-protected,
+  :matched [:services :seal],
+  :message
+  "config set refused (ancestor-of-protected): key services refused: it is an ancestor of the protected path services.seal; writing it would replace that subtree",
+  :fix
+  "Edit services in ~/.config/hive-mcp/config.edn by hand, then run `config reload`."},
+ :unknown-provider
+ {:error :config/set-refused,
+  :key "agent-defaults.ling.provider",
+  :rule :bad-value,
+  :matched [:agent-defaults :* :provider],
+  :message
+  "config set refused (bad-value): key agent-defaults.ling.provider refused: the value does not name a provider configured under llm-providers",
+  :fix
+  "Edit agent-defaults.ling.provider in ~/.config/hive-mcp/config.edn by hand, then run `config reload`."}}

@@ -106,7 +106,7 @@
         ;; 0.5.10 publishes the router registry API (get-event, get-interceptors,
         ;; append-interceptor!, get-fx) that hive-mcp.events.registry delegates to.
         io.github.hive-agi/hive-events
-        {:mvn/version "0.6.1"}
+        {:mvn/version "0.6.2"}
 
         ;; hive-hot - unified hot-reload with events integration
         io.github.hive-agi/hive-hot
@@ -187,11 +187,11 @@
 
         ;; hive-ttracking — telemetry/timing (timed-query, track*, bench*).
         ;; Consumed by catchup.clj and siblings (bundle/hydration/hierarchy).
-        io.github.hive-agi/hive-ttracking {:mvn/version "0.2.2"}
+        io.github.hive-agi/hive-ttracking {:mvn/version "0.2.3"}
 
         ;; hive-system — system-level abstractions (IProcess, INetwork,
         ;; process liveness, secrets, shell, redaction).
-        io.github.hive-agi/hive-system {:mvn/version "0.4.3"}
+        io.github.hive-agi/hive-system {:mvn/version "0.4.4"}
 
         ;; Integrant — lifecycle framework for component-based systems
         ;; Replaces monolithic start! with declarative system map + profile merging
@@ -580,7 +580,7 @@
   ;; There is NO `uber` task; the server runs from source everywhere,
   ;; including the container (see Dockerfile and bin/docker-entrypoint.sh).
   :build
-  {:deps {io.github.hive-agi/hive-build {:mvn/version "0.3.1"}}
+  {:deps {io.github.hive-agi/hive-build {:mvn/version "0.3.3"}}
    :ns-default hive-build.api}
   :aot-boot {:extra-paths ["target/boot-classes"]
              :exec-fn hive-mcp.scripts.aot-boot/compile-boot-closure!

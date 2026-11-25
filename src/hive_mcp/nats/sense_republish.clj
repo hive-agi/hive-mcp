@@ -29,7 +29,8 @@
             [hive-mcp.channel.audience :as audience]
             [hive-mcp.nats.inbox :as inbox]
             [taoensso.timbre :as log]
-            [malli.core :as m]))
+            [malli.core :as m]
+            [hive-mcp.resilience.swallow :as swallow]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -220,6 +221,31 @@
 
 (defonce ^:private bindings* (atom {}))
 
+(defonce ^:private binding-watches* (atom {}))
+
+(defn add-binding-watch!
+  "Call `(f)` after every binding change (`bind-inbox!`, `unbind-inbox!`),
+   under `key` (same key replaces). The replay loop uses it: a parent that
+   arms its inbox gets the senses held for it. A throwing watch is isolated.
+   Returns `key`."
+  [key f]
+  (swap! binding-watches* assoc key f)
+  key)
+
+(m/=> add-binding-watch! [:=> [:cat :any ifn?] :any])
+
+(defn remove-binding-watch!
+  "Remove the binding watch under `key`. Idempotent. Returns nil."
+  [key]
+  (swap! binding-watches* dissoc key)
+  nil)
+
+(m/=> remove-binding-watch! [:=> [:cat :any] :nil])
+
+(defn- notify-binding-watches! []
+  (doseq [[_ f] @binding-watches*]
+    (swallow/attempt (f))))
+
 (defn bindings
   "{binding-key inbox-id} bound now."
   []
@@ -234,6 +260,7 @@
   (let [inbox-id (inbox/encode-inbox-id inbox-id)
         k        (binding-key parent-id)]
     (swap! bindings* assoc k inbox-id)
+    (notify-binding-watches!)
     k))
 
 (m/=> bind-inbox! [:=> [:cat :string :string] :string])
@@ -242,6 +269,7 @@
   "Remove the binding of `parent-id`. Returns nil."
   [parent-id]
   (swap! bindings* dissoc (binding-key parent-id))
+  (notify-binding-watches!)
   nil)
 
 (m/=> unbind-inbox! [:=> [:cat :any] :nil])
@@ -307,7 +335,7 @@
   [{:keys [publisher resolve-inbox state*] :as r} sense]
   (let [ok? (republishable? sense)
         to  (when ok?
-              (try (resolve-inbox (:sense/parent sense)) (catch Throwable _ nil)))]
+              (swallow/attempt (resolve-inbox (:sense/parent sense))))]
     (cond
       (not ok?)
       (do (count! r :skipped) {:outcome :skipped :reason :class})
@@ -318,7 +346,7 @@
       (contains? (get-in @state* [:seen :ids]) (msg-id sense))
       (do (count! r :duplicate) {:outcome :duplicate :to to :id (msg-id sense)})
 
-      (not (try (publisher-available? publisher) (catch Throwable _ false)))
+      (not (swallow/attempt (publisher-available? publisher)))
       (do (degrade! r "no connected event bus") {:outcome :degraded :to to})
 
       :else
@@ -342,7 +370,7 @@
    the feed's thread only enqueues. A rejected hand-off is counted :dropped."
   [{:keys [execute] :as r}]
   (fn [sense]
-    (when-not (try (execute #(republish! r sense)) (catch Throwable _ false))
+    (when-not (swallow/attempt (execute #(republish! r sense)))
       (count! r :dropped))
     nil))
 
@@ -359,18 +387,23 @@
 (defn install!
   "Subscribe `r` to its feed as THE process republisher, replacing any
    earlier one. Returns {:installed? bool :feed kw}: false when the feed is
-   absent (no sixth-sense in this JVM); idempotent, so call it again later."
-  [{:keys [feed] :as r}]
-  (let [attached? (boolean (try (subscribe! feed listener-key (listener r))
-                                (catch Throwable t
-                                  (log/debug t "[sense-republish] feed refused")
-                                  false)))
-        [old]     (reset-vals! current* (when attached? r))]
-    (when (and old (not attached?))
-      (try (unsubscribe! (:feed old) listener-key) (catch Throwable _ nil)))
-    {:installed? attached? :feed (feed-id feed)}))
+   absent (no sixth-sense in this JVM); idempotent, so call it again later.
+   `f` (default `(listener r)`) is the fn subscribed: the replay loop passes
+   a wake-only listener (hive-mcp.nats.sense-replay/wake-listener)."
+  ([r] (install! r nil))
+  ([{:keys [feed] :as r} f]
+   (let [attached? (boolean (try (subscribe! feed listener-key (or f (listener r)))
+                                 (catch Throwable t
+                                   (log/debug t "[sense-republish] feed refused")
+                                   false)))
+         [old]     (reset-vals! current* (when attached? r))]
+     (when (and old (not attached?))
+       (swallow/attempt (unsubscribe! (:feed old) listener-key)))
+     {:installed? attached? :feed (feed-id feed)})))
 
-(m/=> install! [:=> [:cat Republisher] [:map [:installed? :boolean] [:feed :any]]])
+(m/=> install! [:function
+                [:=> [:cat Republisher] [:map [:installed? :boolean] [:feed :any]]]
+                [:=> [:cat Republisher [:maybe ifn?]] [:map [:installed? :boolean] [:feed :any]]]])
 
 (defn installed?
   "Is a process republisher subscribed now?"
@@ -383,7 +416,7 @@
   "Unsubscribe the process republisher. Idempotent. Returns nil."
   []
   (when-let [{:keys [feed]} (first (reset-vals! current* nil))]
-    (try (unsubscribe! feed listener-key) (catch Throwable _ nil)))
+    (swallow/attempt (unsubscribe! feed listener-key)))
   nil)
 
 (m/=> uninstall! [:=> [:cat] :nil])

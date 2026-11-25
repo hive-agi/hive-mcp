@@ -150,6 +150,13 @@
       (and (= method :get) (= uri "/health"))
       (health-handler req)
 
+      ;; per-inbox SSE push (hive-mcp.nats.inbox-stream): loopback + token,
+      ;; checked there; resolved late so the channel does not load NATS
+      (and (string? uri) (.startsWith ^String uri "/inbox/"))
+      (if-let [h (rescue nil (requiring-resolve 'hive-mcp.nats.inbox-stream/handler))]
+        (h req)
+        {:status 503 :headers {"Content-Type" "text/plain"} :body "inbox stream unavailable"})
+
       (not (origin-allowed? origin))
       (forbidden-origin origin)
 

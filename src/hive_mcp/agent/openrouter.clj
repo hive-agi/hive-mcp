@@ -13,7 +13,8 @@
             [hive-mcp.agent.provider :as provider]
             [hive-mcp.agent.provider.model :as model]
             [hive-mcp.agent.cache :as cache]
-            [malli.core :as m]))
+            [malli.core :as m]
+            [hive-dsl.result :as r]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -328,6 +329,87 @@
 ;;; Factory Functions
 ;;; ---------------------------------------------------------------------------
 
+(def ^:private BackendSpec
+  "What openai-compat-backend resolved from its options and the registry."
+  [:map
+   [:provider :any]
+   [:dispatch :any]
+   [:url [:maybe :string]]
+   [:secret-key :any]
+   [:api-key [:maybe :string]]
+   [:model [:maybe :string]]
+   [:prov-name :string]
+   [:explicit-url? :boolean]
+   [:registered? :boolean]])
+
+(def ^:private Refusal
+  "An err on the Result railway: :message plus the ex-data to throw."
+  [:map [:error :keyword] [:message :string] [:data :map]])
+
+(defn- resolve-backend-spec
+  "Promote: merge explicit options over the provider's registry entry. An
+   explicit option always wins; `secret` is the API key the boundary read for
+   the effective secret key (nil when there is none)."
+  [{:keys [provider api-url api-key model secret-key]} reg-entry secret]
+  {:provider      provider
+   :dispatch      (:dispatch reg-entry)
+   :url           (or api-url (:api-url reg-entry))
+   :secret-key    (or secret-key (:secret-key reg-entry))
+   :api-key       (or api-key secret)
+   :model         (or model (:default-model reg-entry))
+   :prov-name     (or (some-> provider name) "custom")
+   :explicit-url? (boolean api-url)
+   :registered?   (boolean (and provider reg-entry))})
+
+(defn- refuse
+  [message data]
+  (r/err :openai-compat/refused {:message message :data data}))
+
+(defn- spec-refusal
+  "Pipeline: the first reason SPEC cannot become a backend, as an err, or
+   (ok spec). Checked in order: dispatch-routed provider, missing URL,
+   missing key (ollama-compat needs none), missing model."
+  [{:keys [provider dispatch url secret-key api-key model prov-name explicit-url?] :as spec}]
+  (cond
+    (and dispatch (not explicit-url?))
+    (refuse (str prov-name " is not an OpenAI-compat provider (dispatch: "
+                 (name dispatch) ")")
+            {:provider provider :dispatch dispatch
+             :fix "Route through the dispatch-specific client, or pass an explicit :api-url"})
+
+    (not url)
+    (refuse "API URL required for custom provider" {:provider provider})
+
+    (and (not api-key) (not= provider :ollama-compat))
+    (refuse (str prov-name " API key required")
+            {:provider provider :secret-key secret-key
+             :env (when secret-key
+                    (-> (name secret-key) (str/replace "-" "_") str/upper-case))})
+
+    (not model)
+    (refuse (str "No model for " prov-name ": pass :model or set llm-providers."
+                 prov-name ".default-model")
+            {:error      :model-not-configured
+             :provider   provider
+             :config-key (str "llm-providers." prov-name ".default-model")
+             :fix        (str "hive config set llm-providers." prov-name
+                              ".default-model <model-id>")})
+
+    :else (r/ok spec)))
+
+(defn- model-policy
+  "Boundary: ask the provider policy whether SPEC's model may run there. A
+   registered provider reached through its registry URL is judged by the
+   effective registry; a hand-built endpoint by the entry it describes."
+  [{:keys [provider model url api-key prov-name explicit-url? registered?] :as spec}]
+  (if-let [err (if (and registered? (not explicit-url?))
+                 (provider/model-refusal provider model)
+                 (provider/model-refusal (or provider :custom) model
+                                         {:api-url    url
+                                          :secret-key (when (seq api-key) :explicit-api-key)}))]
+    (refuse (str "Model " model " is denied on provider " prov-name ": " (:fix err)) err)
+    (r/ok spec)))
+
 (defn openai-compat-backend
   "Create an OpenAI-compatible LLM backend.
    Options:
@@ -341,49 +423,23 @@
                    :default-model is used
      :secret-key - config secret key for API key resolution
 
+   Stages: the registry and secret reads (Collect), resolve-backend-spec
+   (Promote), spec-refusal (Pipeline), model-policy and the throw (Boundary).
+
    Throws when neither :model nor the provider's configured :default-model is
    set (ex-data names the config key). Throws when the named provider is dispatch-routed (`:dispatch` in its
    registry entry, e.g. :anthropic) and no :api-url override is supplied —
    such a provider has no chat-completions endpoint."
-  [{:keys [provider api-url api-key model secret-key]}]
-  (let [reg-entry      (get (effective-provider-registry) provider)
-        dispatch       (:dispatch reg-entry)
-        effective-url  (or api-url (:api-url reg-entry))
-        effective-sk   (or secret-key (:secret-key reg-entry))
-        effective-key  (or api-key
-                           (when effective-sk (global-config/get-secret effective-sk)))
-        effective-model (or model (:default-model reg-entry))
-        prov-name      (or (some-> provider name) "custom")]
-    (when (and dispatch (not api-url))
-      (throw (ex-info (str prov-name " is not an OpenAI-compat provider (dispatch: "
-                          (name dispatch) ")")
-                      {:provider provider :dispatch dispatch
-                       :fix "Route through the dispatch-specific client, or pass an explicit :api-url"})))
-    (when-not effective-url
-      (throw (ex-info "API URL required for custom provider"
-                      {:provider provider})))
-    (when (and (not effective-key) (not= provider :ollama-compat))
-      (throw (ex-info (str prov-name " API key required")
-                      {:provider provider :secret-key effective-sk
-                       :env (when effective-sk
-                              (-> (name effective-sk) (str/replace "-" "_") str/upper-case))})))
-    (when-not effective-model
-      (throw (ex-info (str "No model for " prov-name ": pass :model or set llm-providers."
-                           prov-name ".default-model")
-                      {:error      :model-not-configured
-                       :provider   provider
-                       :config-key (str "llm-providers." prov-name ".default-model")
-                       :fix        (str "hive config set llm-providers." prov-name
-                                        ".default-model <model-id>")})))
-    (when-let [err (if (and provider reg-entry (not api-url))
-                     (provider/model-refusal provider effective-model)
-                     (provider/model-refusal (or provider :custom) effective-model
-                                             {:api-url    effective-url
-                                              :secret-key (when (seq effective-key) :explicit-api-key)}))]
-      (throw (ex-info (str "Model " effective-model " is denied on provider " prov-name
-                           ": " (:fix err))
-                      err)))
-    (->OpenAICompatBackend effective-url (or effective-key "") effective-model prov-name)))
+  [{:keys [provider api-key secret-key] :as opts}]
+  (let [reg-entry (get (effective-provider-registry) provider)
+        sk        (or secret-key (:secret-key reg-entry))
+        secret    (when (and (not api-key) sk) (global-config/get-secret sk))
+        outcome   (r/let-ok [spec (spec-refusal (resolve-backend-spec opts reg-entry secret))]
+                    (model-policy spec))]
+    (if (r/ok? outcome)
+      (let [{:keys [url api-key model prov-name]} (:ok outcome)]
+        (->OpenAICompatBackend url (or api-key "") model prov-name))
+      (throw (ex-info (:message outcome) (:data outcome))))))
 
 (defn auto-backend
   "Create a backend using the best available provider.
@@ -478,6 +534,9 @@
 (m/=> auto-backend [:=> [:cat [:maybe :map]] Backend])
 
 (m/=> openrouter-backend [:=> [:cat [:maybe :map]] Backend])
+
+(m/=> resolve-backend-spec [:=> [:cat [:maybe :map] [:maybe :map] [:maybe :string]] BackendSpec])
+(m/=> spec-refusal [:=> [:cat BackendSpec] [:or [:map [:ok BackendSpec]] Refusal]])
 
 ;; nil for an empty or nil tool list; throws on an unrecognised tool shape.
 (m/=> format-tools [:=> [:cat [:maybe [:sequential :map]]] [:maybe [:vector :map]]])

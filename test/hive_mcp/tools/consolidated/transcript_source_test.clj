@@ -105,3 +105,61 @@
              (:ok (src/read-entries s "ling-2")))))
     (testing "an agent with no store is not-found"
       (is (r/err? (src/read-entries s "nobody"))))))
+
+;; -----------------------------------------------------------------------------
+;; Stores that are not opened stay visible (busy / unknown), and a listing
+;; reads each store at most once per call. Temp dirs and an injected reader.
+;; -----------------------------------------------------------------------------
+
+(defn- three-stores
+  "A DatalevinSource over a temp root with three agent stores; `busy-id`'s
+   reader answers :transcript/store-busy. Returns {:source :reads}."
+  [busy-id]
+  (let [root  (doto (io/file (System/getProperty "java.io.tmpdir") (str "tsrc-busy-" (System/nanoTime)))
+                (.mkdirs))
+        reads (atom {})]
+    (doseq [a ["a1" "a2" "a3"]]
+      (let [d (io/file root "proj" a)]
+        (.mkdirs d)
+        (spit (io/file d "data.mdb") "x")))
+    {:reads  reads
+     :source (src/->DatalevinSource
+              (str root)
+              (fn [dir agent-id]
+                (swap! reads update (str dir) (fnil inc 0))
+                (if (= agent-id busy-id)
+                  (r/err :transcript/store-busy {:dir dir :agent-id agent-id})
+                  (r/ok [(assoc (dl-entry 1 "user" "hi") :transcript/agent-id agent-id)
+                         (assoc (dl-entry 2 "assistant" "done") :transcript/agent-id agent-id)]))))}))
+
+(def ^:private no-runs
+  {:list-runs (fn [] (r/ok [{:run-id "run-a2" :agent-id "a2" :created 1}]))
+   :run-tip   (fn [_] (r/ok nil))})
+
+(deftest list-shows-a-busy-run-and-opens-each-store-once
+  (let [{:keys [source reads]} (three-stores "a2")
+        res  (transcript/handle-transcript {:source source :runs no-runs} {:command "list"})
+        rows (:transcripts (body res))
+        busy (first (filter #(= "a2" (:agent %)) rows))]
+    (is (not (:isError res)))
+    (is (= #{"a1" "a2" "a3"} (set (map :agent rows))) "the busy run keeps its row")
+    (is (= "transcript/store-busy" (:status busy)))
+    (is (= "run-a2" (:run_id busy)))
+    (is (every? #(= 1 %) (vals @reads)) "list never reads the same dir twice in one call")))
+
+(deftest digest-skips-a-busy-run-and-answers-the-rest
+  (let [{:keys [source]} (three-stores "a2")
+        res (body (transcript/handle-transcript {:source source :runs no-runs}
+                                                {:command "digest" :agent "a*"}))]
+    (is (= 2 (:count res)))
+    (is (= [{:agent "a2" :project "proj" :status "transcript/store-busy" :run_id "run-a2"}]
+           (:skipped res)))))
+
+(deftest find-lists-a-busy-run-as-skipped
+  (let [{:keys [source]} (three-stores "a2")
+        raw (transcript/handle-transcript {:source source :runs no-runs}
+                                          {:command "find" :query "done"})
+        _   (is (not (:isError raw)) (:text raw))
+        res (when-not (:isError raw) (body raw))]
+    (is (= 2 (:count res)))
+    (is (= ["a2"] (map :agent (:skipped res))))))

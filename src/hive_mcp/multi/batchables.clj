@@ -140,6 +140,8 @@
   (when-let [h (rescue nil (some-> (requiring-resolve sym) deref))]
     (iter-handler h)))
 
+(m/=> iter-handler-from [:=> [:cat :qualified-symbol] [:maybe ifn?]])
+
 (defn- memory-handlers
   "Lazy-resolve memory's batch handlers.
 

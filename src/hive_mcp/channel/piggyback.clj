@@ -18,7 +18,8 @@
             [hive-mcp.channel.row-transforms :as row-transforms]
             [hive-mcp.channel.piggyback.sources :as sources]
             [hive-mcp.channel.lineage :as lineage]
-            [malli.core :as m]))
+            [malli.core :as m]
+            [hive-mcp.resilience.swallow :as swallow]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -257,10 +258,8 @@
   "Read a config path, nil on any failure. Lazy requiring-resolve keeps the
    channel layer free of a load-time dep on config bootstrap."
   [path]
-  (try
-    (when-let [f (requiring-resolve 'hive-mcp.config.core/get-in-config)]
-      (f path))
-    (catch Exception _ nil)))
+  (swallow/attempt-ex (when-let [f (requiring-resolve 'hive-mcp.config.core/get-in-config)]
+      (f path))))
 
 (defn spawner-routing?
   "Is HIVEMIND delivery addressed to the SPAWNER (default) rather than
@@ -330,8 +329,81 @@
       (fn [id]
         (ctx-id/make-piggyback-agent-id (ctx-id/parse-caller-id id) pscope)))))
 
+(def ^:private Msg
+  [:map [:timestamp number?]])
+
+(def ^:private CursorWindow
+  [:map
+   [:project-key [:tuple :any :string]]
+   [:global-key [:tuple :any [:= "global"]]]
+   [:in-context [:vector Msg]]
+   [:max-global [:maybe number?]]
+   [:max-project [:maybe number?]]])
+
+(defn- global-msg? [msg] (= "global" (:project-id msg)))
+
+(defn- cursor-window
+  "Promote: what one read may see under CURSORS, and how far it moves them.
+
+   A global shout is judged against the session's global cursor; a project
+   shout against the reader's [agent project] cursor, and only when its
+   project is one the read accepts. The survivors are sorted by timestamp
+   and, when the read names a :context-id, narrowed to that conversation.
+
+   The maxima are taken over everything the project AND context filters
+   accepted, NOT only over what this reader is addressed by; otherwise a
+   shout dropped by the audience filter would be re-examined forever. They
+   must NOT advance over a conversation this read excluded, which is still
+   wanted by a later read."
+  [agent-id {:keys [project-id additional-project-ids session-id context-id]} cursors all-msgs]
+  (let [project-key    [agent-id (or project-id "global")]
+        global-key     [(or session-id agent-id) "global"]
+        project-cursor (get cursors project-key 0)
+        global-cursor  (get cursors global-key 0)
+        accepted-pids  (cond-> #{}
+                         project-id (conj project-id)
+                         (seq additional-project-ids) (into additional-project-ids))
+        fresh?   (fn [{:keys [timestamp] :as msg}]
+                   (if (global-msg? msg)
+                     (> timestamp global-cursor)
+                     (and (contains? accepted-pids (:project-id msg))
+                          (> timestamp project-cursor))))
+        new-msgs (->> all-msgs (filter fresh?) (sort-by :timestamp) vec)
+        in-context (if context-id
+                     (filterv #(= context-id (:context-id %)) new-msgs)
+                     new-msgs)
+        max-ts   (fn [msgs] (when (seq msgs) (apply max (map :timestamp msgs))))]
+    {:project-key project-key
+     :global-key  global-key
+     :in-context  in-context
+     :max-global  (max-ts (filter global-msg? in-context))
+     :max-project (max-ts (remove global-msg? in-context))}))
+
+(defn- message->row
+  "Pipeline: the row a reader sees for one message. :ts and :deliberate? ride
+   along only as far as the transform chain, which is the one stage that
+   reads them. :to is deliberately NOT rendered: a directed message reaches
+   its recipient and nobody else, so its mere arrival says who it is for."
+  [{:keys [agent-id event-type message task deliberate? context-id ref timestamp]}]
+  (cond-> {:a agent-id
+           :e (if (keyword? event-type) (name event-type) event-type)
+           :m message
+           :ts timestamp}
+    task (assoc :t task)
+    context-id (assoc :ctx context-id)
+    ref (assoc :ref ref)
+    deliberate? (assoc :deliberate? true)))
+
+(m/=> cursor-window [:=> [:cat :any [:maybe :map] [:map-of :any number?] [:sequential Msg]]
+                     CursorWindow])
+(m/=> message->row [:=> [:cat :map] [:map [:a :any] [:e :any] [:m :any] [:ts :any]]])
+
 (defn get-messages
   "Get new hivemind messages since last call for this agent+project.
+
+   Stages: merged-messages (Collect), cursor-window (Promote), the audience
+   filter, message->row and the transform chain (Pipeline), and the cursor
+   swap! (Boundary).
    Dual-path: merges messages from atom-based source and backbone buffer.
 
    Five stages, in order: cursor -> project -> context -> audience ->
@@ -393,41 +465,13 @@
      :session-id              - The caller id without its project suffix; owns the
                                 global cursor. Defaults to the reader id.
      :context-id              - Read only this A2A conversation."
-  [agent-id & {:keys [project-id additional-project-ids session-id context-id]}]
+  [agent-id & {:keys [project-id session-id context-id] :as opts}]
   (when (and (nil? project-id) (not= agent-id "coordinator"))
     (log/warn "Agent" agent-id "reading hivemind without project-id - using global cursor"))
   (let [all-msgs (merged-messages)]
     (when (seq all-msgs)
-      (let [effective-project (or project-id "global")
-            project-key    [agent-id effective-project]
-            global-key     [(or session-id agent-id) "global"]
-            cursors        @agent-read-cursors
-            project-cursor (get cursors project-key 0)
-            global-cursor  (get cursors global-key 0)
-            ;; Project-scoped shouts this read accepts; global ones are
-            ;; accepted by every read and judged against the global cursor.
-            accepted-pids (cond-> #{}
-                            project-id (conj project-id)
-                            (seq additional-project-ids) (into additional-project-ids))
-            global?  (fn [msg] (= "global" (:project-id msg)))
-            fresh?   (fn [{:keys [timestamp] :as msg}]
-                       (if (global? msg)
-                         (> timestamp global-cursor)
-                         (and (contains? accepted-pids (:project-id msg))
-                              (> timestamp project-cursor))))
-            new-msgs (->> all-msgs (filter fresh?) (sort-by :timestamp) vec)
-            ;; A read may scope itself to one A2A conversation.
-            in-context (if context-id
-                         (filterv #(= context-id (:context-id %)) new-msgs)
-                         new-msgs)
-            ;; Cursors advance over everything the project AND context filters
-            ;; accepted, NOT only over what this reader is addressed by;
-            ;; otherwise a shout dropped by the audience filter would be
-            ;; re-examined forever. They must NOT advance over a conversation
-            ;; this read excluded, which is still wanted by a later read.
-            max-ts   (fn [msgs] (when (seq msgs) (apply max (map :timestamp msgs))))
-            max-global  (max-ts (filter global? in-context))
-            max-project (max-ts (remove global? in-context))
+      (let [{:keys [project-key global-key in-context max-global max-project]}
+            (cursor-window agent-id opts @agent-read-cursors all-msgs)
             addressed (if (spawner-routing?)
                         (audience/filter-messages agent-id (lineage/with-parents all-msgs in-context) (scoped-id-fn project-id) {:global-opt-in? (unowned-global-opt-in?)})
                         in-context)
@@ -440,19 +484,7 @@
             ;; directed message reaches its recipient and nobody else, so its
             ;; mere arrival says who it is for, and spelling that out again is
             ;; tokens for nothing.
-            formatted-msgs (mapv (fn [{:keys [agent-id event-type message task deliberate?
-                                              context-id ref timestamp]}]
-                                   (cond-> {:a agent-id
-                                            :e (if (keyword? event-type)
-                                                 (name event-type)
-                                                 event-type)
-                                            :m message
-                                            :ts timestamp}
-                                     task (assoc :t task)
-                                     context-id (assoc :ctx context-id)
-                                     ref (assoc :ref ref)
-                                     deliberate? (assoc :deliberate? true)))
-                                 addressed)
+            formatted-msgs (mapv message->row addressed)
             transformed (row-transforms/apply-transforms
                          formatted-msgs
                          {:reader agent-id

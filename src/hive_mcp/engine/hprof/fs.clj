@@ -10,7 +10,8 @@
   (:require [hive-mcp.engine.hprof.spec :as spec]
             [clojure.java.io :as io]
             [malli.core :as m]
-            [taoensso.timbre :as log])
+            [taoensso.timbre :as log]
+            [hive-mcp.resilience.swallow :as swallow])
   (:import (java.io File FileInputStream FileOutputStream)
            (java.util.zip GZIPOutputStream)))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
@@ -99,11 +100,11 @@
           (do (.delete src)
               (.getCanonicalPath dst))
           (do (log/warn "[hprof] gzip rename failed:" (.getCanonicalPath tmp))
-              (try (.delete tmp) (catch Throwable _ nil))
+              (swallow/attempt (.delete tmp))
               nil))
         (catch Throwable t
           (log/warn t "[hprof] gzip failed:" path)
-          (try (.delete tmp) (catch Throwable _ nil))
+          (swallow/attempt (.delete tmp))
           nil)))))
 
 (m/=> gzip! [:=> [:cat [:map [:path :string]]] [:maybe :string]])

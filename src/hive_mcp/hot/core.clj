@@ -249,6 +249,9 @@
 
 (defn- soft [sym] (try (requiring-resolve sym) (catch Throwable _ nil)))
 
+(m/=> soft [:=> [:cat :qualified-symbol]
+            [:maybe [:fn {:gen/elements [#'clojure.core/inc]} var?]]])
+
 (defn- jvm-start-ms []
   (try (.getStartTime (java.lang.management.ManagementFactory/getRuntimeMXBean))
        (catch Throwable _ nil)))

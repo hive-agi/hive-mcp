@@ -3,7 +3,8 @@
    protocol dispatch failure (missing method impl, class never extended,
    or real protocol-class poisoning) and produce an accurate operator hint."
   (:require [clojure.string :as str]
-            [malli.core :as m]))
+            [malli.core :as m]
+            [hive-mcp.resilience.swallow :as swallow]))
 
 (def ^:private protocol-poison-pattern
   "Regex for Clojure's protocol dispatch failure, the IllegalArgumentException
@@ -31,8 +32,7 @@
   "The protocol map named by `protocol-name` (\"ns/Proto\"), or nil when the
    var is not loaded or does not hold a protocol."
   [protocol-name]
-  (let [p (try (some-> protocol-name symbol find-var deref)
-               (catch Exception _ nil))]
+  (let [p (swallow/attempt-ex (some-> protocol-name symbol find-var deref))]
     (when (and (map? p) (contains? p :on-interface)) p)))
 
 (defn- loaded-class
@@ -40,9 +40,8 @@
    DynamicClassLoader so classes defined at the REPL or by eval (whose newest
    definition lives in its shared in-memory cache) resolve to the newest one."
   [class-name]
-  (try (Class/forName class-name false
-                      (clojure.lang.DynamicClassLoader. (clojure.lang.RT/baseLoader)))
-       (catch Throwable _ nil)))
+  (swallow/attempt (Class/forName class-name false
+                      (clojure.lang.DynamicClassLoader. (clojure.lang.RT/baseLoader)))))
 
 (defn- named-impls
   "Impl maps the protocol holds for any Class named `class-name`."

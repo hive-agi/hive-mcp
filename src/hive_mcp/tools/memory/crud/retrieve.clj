@@ -232,3 +232,5 @@
 (m/=> handle-check-duplicate [:=> [:cat [:maybe :map]] core/McpResponse])
 
 (m/=> handle-update-tags [:=> [:cat [:maybe :map]] core/McpResponse])
+
+(malli.core/=> in-kanban-store? [:=> #:provenance{:kind :inferred-static, :source "hive-carto.candidate.mallify.static"} [:cat :any] :boolean])

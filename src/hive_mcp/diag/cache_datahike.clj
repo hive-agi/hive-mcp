@@ -15,7 +15,9 @@
    fatal."
   (:require [hive-spi.diag.ports :as p]
             [hive-dsl.result :as r]
-            [malli.core :as m]))
+            [malli.core :as m]
+            [hive-mcp.extensions.soft :as ext-soft]
+            [hive-mcp.resilience.swallow :as swallow]))
 
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
@@ -25,26 +27,21 @@
 (defn- cache-atom
   "The datahike.query/query-result-cache atom, or nil when datahike is absent."
   []
-  (try
-    (some-> (requiring-resolve 'datahike.query/query-result-cache) deref)
-    (catch Throwable _ nil)))
+  (some-> (ext-soft/resolve-soft 'datahike.query/query-result-cache) deref))
 
 (defn- cache-capacity
   "Current *query-cache-size* snapshot-count cap, or nil when datahike is absent."
   []
-  (try
-    (some-> (requiring-resolve 'datahike.query/*query-cache-size*) deref)
-    (catch Throwable _ nil)))
+  (some-> (ext-soft/resolve-soft 'datahike.query/*query-cache-size*) deref))
 
 (defn- lru->buckets
   "The {snapshot -> bucket} map inside a datahike.lru.LRU, or nil. Reflective;
    reads the field only — never realizes cached values."
   [lru]
-  (letfn [(field [nm] (try
+  (letfn [(field [nm] (swallow/attempt
                         (let [f (.getDeclaredField (class lru) nm)]
                           (.setAccessible f true)
-                          (.get f lru))
-                        (catch Throwable _ nil)))]
+                          (.get f lru))))]
     (or (field "key_value") (field "key-value"))))
 
 (defn- result-size
@@ -87,8 +84,7 @@
              {:cache-id cache-kw :reason "datahike.query/query-result-cache not resolvable"})))
 
   (evict-cache! [_]
-    (if-let [clear! (try (requiring-resolve 'datahike.query/clear-query-cache!)
-                         (catch Throwable _ nil))]
+    (if-let [clear! (ext-soft/resolve-soft 'datahike.query/clear-query-cache!)]
       (let [rt (Runtime/getRuntime)
             used #(- (.totalMemory rt) (.freeMemory rt))
             before (used)]

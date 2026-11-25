@@ -610,3 +610,5 @@
 (m/=> handle-native-catchup [:=> [:cat [:maybe :map]] CatchupResponse])
 
 (m/=> handle-native-wrap [:=> [:cat [:maybe :map]] CatchupResponse])
+
+(malli.core/=> caller-identity [:=> #:provenance{:kind :inferred-static, :source "hive-carto.candidate.mallify.static"} [:cat :any :any] :map])

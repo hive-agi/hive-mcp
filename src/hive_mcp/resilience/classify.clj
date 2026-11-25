@@ -63,6 +63,8 @@
     (instance? Throwable v) (or (.getMessage ^Throwable v) (str v))
     :else               (str v)))
 
+(m/=> ->msg [:=> [:cat :any] :string])
+
 (defn- ex-data-class
   "Examine the ex-data of a single throwable link. Returns an
    `ErrorClass` variant or nil if the link's ex-data carries no

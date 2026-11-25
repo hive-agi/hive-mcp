@@ -91,6 +91,9 @@
       (log/error e (str (name category) " failed"))
       (result/err category {:message (.getMessage e)}))))
 
+(m/=> try-result [:=> [:cat :keyword ifn?]
+                  [:or [:map [:ok :any]] [:map [:error :keyword] [:message [:maybe :string]]]]])
+
 (defn- result->mcp
   "Convert Result to MCP response.
    {:ok data} -> (mcp-json data), {:error ...} -> (mcp-error message)."
@@ -618,3 +621,5 @@
                                          :description "cleanup-synthetics: preview without mutating (default: false)"}}
                  :required ["command"]}
    :handler #'handle-kg})
+
+(malli.core/=> result->mcp [:=> #:provenance{:kind :inferred-static, :source "hive-carto.candidate.mallify.static"} [:cat :any] :map])

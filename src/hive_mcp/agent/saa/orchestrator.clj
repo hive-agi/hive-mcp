@@ -65,11 +65,6 @@
   [agent-id]
   (get @agent-states agent-id))
 
-(defn- clear-agent-state!
-  "Remove SAA state for an agent."
-  [agent-id]
-  (swap! agent-states dissoc agent-id))
-
 (defn- shout-phase!
   "Broadcast phase transition to hivemind via requiring-resolve."
   [agent-id phase message]
@@ -362,6 +357,11 @@
    [:phase-started-at {:optional true} :int]
    [:error {:optional true} [:maybe :string]]])
 
+(m/=> get-agent-state [:=> [:cat AgentId] [:maybe SaaState]])
+
+;; nil when :shout? is off; otherwise whatever the hivemind shout answers
+(m/=> maybe-shout! [:=> [:cat [:maybe :map] AgentId SaaPhase :string] :any])
+
 (def OrchestratorValue
   "An orchestrator: a record whose :config carries the three injected ports
    and the turn budgets, caller overrides merged over the defaults."
@@ -448,7 +448,7 @@
                                 (#{:complete :error} (:phase state))))
                       (map first))]
     (doseq [agent-id to-clear]
-      (clear-agent-state! agent-id))
+      (swap! agent-states dissoc agent-id))
     {:cleared (count to-clear)}))
 
 (m/=> clear-completed-states! [:=> [:cat] [:map [:cleared [:int {:min 0}]]]])

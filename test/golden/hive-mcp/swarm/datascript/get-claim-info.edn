@@ -1,0 +1,7 @@
+{:calls
+ {"get-claim-info"
+  {:ns "hive-datascript.swarm.lings", :var "get-claim-info"}},
+ :values
+ {"default-stale-threshold-ms" nil,
+  "stdout-buffer-max-lines" nil,
+  "stdout-buffers" nil}}

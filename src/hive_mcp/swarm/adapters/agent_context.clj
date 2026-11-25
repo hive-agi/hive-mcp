@@ -27,7 +27,8 @@
   (:require [hive-spi.swarm.ports.agent-context :as spi]
             [hive-mcp.context.request :as ctx]
             [hive-mcp.extensions.soft :as soft]
-            [malli.core :as m]))
+            [malli.core :as m]
+            [hive-mcp.resilience.swallow :as swallow]))
 
 (defn make-adapter
   "An IAgentCallContext + IBudgetGuardrail reify delegating to hive-mcp's
@@ -40,17 +41,13 @@
       (ctx/current-directory))
     spi/IBudgetGuardrail
     (register-budget! [_this agent-id max-budget-usd opts]
-      (try
-        (soft/host-or 'hive-mcp.agent.hooks.budget/register-budget!
+      (swallow/attempt-ex (soft/host-or 'hive-mcp.agent.hooks.budget/register-budget!
                       #(spi/register-budget! spi/noop agent-id max-budget-usd opts)
-                      agent-id max-budget-usd opts)
-        (catch Exception _ nil)))
+                      agent-id max-budget-usd opts)))
     (deregister-budget! [_this agent-id]
-      (try
-        (soft/host-or 'hive-mcp.agent.hooks.budget/deregister-budget!
+      (swallow/attempt-ex (soft/host-or 'hive-mcp.agent.hooks.budget/deregister-budget!
                       #(spi/deregister-budget! spi/noop agent-id)
-                      agent-id)
-        (catch Exception _ nil)))))
+                      agent-id)))))
 
 (def Adapter
   "Something that fills the agent-context port: both protocols at once."

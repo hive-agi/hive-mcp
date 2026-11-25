@@ -23,14 +23,18 @@
             [hive-addon.mount.port :as port]
             [hive-dsl.result :as r]
             [hive-mcp.extensions.mount-host :as mount-host]
-            [malli.core :as m]))
+            [malli.core :as m]
+            [hive-mcp.resilience.swallow :as swallow]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
 
 (defn- soft [sym]
-  (try (requiring-resolve sym) (catch Throwable _absent nil)))
+  (swallow/attempt (requiring-resolve sym)))
+
+(m/=> soft [:=> [:cat :qualified-symbol]
+            [:maybe [:fn {:gen/elements [#'clojure.core/inc]} var?]]])
 
 ;; =============================================================================
 ;; Pure
@@ -178,14 +182,13 @@
 
 (defn- default-project-paths [path]
   (when-let [f (soft 'hive-addon.hot.inject/project-paths)]
-    (try (vec (f path)) (catch Throwable _degrades-to-empty nil))))
+    (swallow/attempt (vec (f path)))))
 
 (defn- default-path-ids [path]
   (let [paths (default-project-paths path)
         under (soft 'hive-addon.hot.inject/manifests-under)]
     (when (and (seq paths) under)
-      (try (seq (mapv :addon/id (:specs (under paths))))
-           (catch Throwable _degrades-to-empty nil)))))
+      (swallow/attempt (seq (mapv :addon/id (:specs (under paths))))))))
 
 (defn- default-unhot! [specs]
   (if-let [f (soft 'hive-addon.hot/unhot!)]
@@ -205,7 +208,7 @@
       [(str target)]))
 
 (defn- registered? [host id]
-  (some? (try (port/registered host id) (catch Throwable _degrades-to-empty nil))))
+  (some? (swallow/attempt (port/registered host id))))
 
 ;; =============================================================================
 ;; Boundary

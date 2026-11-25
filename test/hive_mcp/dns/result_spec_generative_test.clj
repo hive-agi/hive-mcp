@@ -100,6 +100,26 @@
   (testing "r/err passes stest/check: keyword? [map?] -> ::err-result, :fn preserves category"
     (is (check-passed? `r/err 200))))
 
+(deftest err-fdef-holds-for-reserved-key-data
+  (let [{args :args ret :ret fn-spec :fn} (s/get-spec `r/err)
+        admitted-holds? (fn [argv]
+                          (or (not (s/valid? args argv))
+                              (let [result (apply r/err argv)]
+                                (and (s/valid? ret result)
+                                     (s/valid? fn-spec {:args (s/conform args argv)
+                                                        :ret  result})))))]
+    (testing "regression: [:A/A {:ok 0}], the shrunk input of the PR #751 CI flake"
+      (is (admitted-holds? [:A/A {:ok 0}])))
+    (testing "data carrying a reserved Result key never yields a broken contract"
+      (doseq [argv [[:a/b {:ok nil}]
+                    [:a/b {:error :c/d}]
+                    [:a/b {:error "x"}]
+                    [:a/b {:error :c/d :ok 1}]]]
+        (is (admitted-holds? argv) (pr-str argv))))
+    (testing "data without reserved keys is admitted and holds"
+      (is (s/valid? args [:a/b {:message "boom" :n 1}]))
+      (is (admitted-holds? [:a/b {:message "boom" :n 1}])))))
+
 (deftest stest-check-ok?
   (testing "r/ok? passes stest/check: any? -> boolean?"
     (is (check-passed? `r/ok? 200))))

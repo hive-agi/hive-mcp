@@ -45,3 +45,27 @@
                  (ports/invoke-registered-tool! (constantly []) "nope" {})))
     (is (= {:a 1} (ports/invoke-registered-tool!
                    (constantly [{:name "t" :handler identity}]) "t" {:a 1})))))
+
+(deftest the-invoke-port-reaches-the-unadvertised-hivemind-tool
+  ;; Card 20261122154814-7285d16a: hive-emacs's cider reaper shouts with
+  ;; (invoke "hivemind" {:command "shout" ...}). hivemind is a consolidated
+  ;; leaf the advertised surface does not list, so the port found no tool.
+  (let [called  (atom nil)
+        roster  [["hivemind" 'x/handle-hivemind] ["memory" 'x/handle-memory] ["gone" 'x/gone]]
+        resolve {'x/handle-hivemind (fn [args] (reset! called args) :shouted)}
+        catalog (ports/host-catalog [{:name "memory" :handler (constantly :advertised)}]
+                                    roster resolve)]
+    (testing "an addon's shout reaches the hivemind handler"
+      (is (= :shouted (ports/invoke-registered-tool!
+                       (constantly catalog) "hivemind"
+                       {:command "shout" :agent_id "hive-emacs" :message "reaped"})))
+      (is (= {:command "shout" :agent_id "hive-emacs" :message "reaped"} @called)))
+    (testing "an advertised tool keeps its advertised handler"
+      (is (= :advertised (ports/invoke-registered-tool! (constantly catalog) "memory" {}))))
+    (testing "a roster tool whose handler does not resolve refuses like an unknown one"
+      (is (thrown? clojure.lang.ExceptionInfo
+                   (ports/invoke-registered-tool! (constantly catalog) "gone" {}))))
+    (testing "building the catalog resolves nothing"
+      (is (= ["memory" "hivemind" "gone"]
+             (mapv :name (ports/host-catalog [{:name "memory" :handler identity}] roster
+                                             (fn [_] (throw (ex-info "resolved eagerly" {}))))))))))

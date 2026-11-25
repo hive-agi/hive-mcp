@@ -11,7 +11,8 @@
             [clojure.data.json :as json]
             [clojure.walk :as walk]
             [hive-mcp.tools.kanban.schema :as ks]
-            [malli.core :as m])
+            [malli.core :as m]
+            [hive-mcp.resilience.swallow :as swallow])
   (:import [java.time ZonedDateTime]
            [java.time.format DateTimeFormatter]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
@@ -70,8 +71,7 @@
   (let [raw (:content entry)]
     (cond
       (map? raw) raw
-      (string? raw) (let [v (try (json/read-str raw :key-fn keyword)
-                                 (catch Exception _ nil))]
+      (string? raw) (let [v (swallow/attempt-ex (json/read-str raw :key-fn keyword))]
                       (when (map? v) v))
       :else nil)))
 
@@ -180,6 +180,8 @@
    cannot read a stale value through the string key."
   [content k v]
   (-> content (dissoc (name k)) (assoc k v)))
+
+(m/=> put-field [:=> [:cat :map :keyword :any] :map])
 
 (defn append-description
   "Pure: `current` description with the non-blank `addition` appended after a

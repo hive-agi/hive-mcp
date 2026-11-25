@@ -17,7 +17,8 @@
             [hive-dsl.result :as r]
             [clojure.java.io :as io]
             [clojure.string :as str]
-            [malli.core :as m])
+            [malli.core :as m]
+            [hive-mcp.resilience.swallow :as swallow])
   (:import [java.lang.management ManagementFactory MemoryUsage]))
 
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -33,12 +34,10 @@
   "Process resident-set size in bytes, parsed from /proc/self/status 'VmRSS:'
    (reported in kB), or nil when unreadable (non-Linux, sandboxed /proc, …)."
   []
-  (try
-    (some->> (str/split-lines (slurp "/proc/self/status"))
+  (swallow/attempt (some->> (str/split-lines (slurp "/proc/self/status"))
              (some (fn [line]
                      (when (str/starts-with? line "VmRSS:")
-                       (some-> (re-find #"(\d+)" line) second parse-long (* 1024))))))
-    (catch Throwable _ nil)))
+                       (some-> (re-find #"(\d+)" line) second parse-long (* 1024))))))))
 
 (defn- pool-maps
   "Per-pool occupancy from ManagementFactory/getMemoryPoolMXBeans, skipping any
@@ -100,16 +99,14 @@
     ;; histogram rather than throw.
     (let [now (System/currentTimeMillis)
           {:keys [entries total]}
-          (try
-            (let [srv (ManagementFactory/getPlatformMBeanServer)
+          (or (swallow/attempt (let [srv (ManagementFactory/getPlatformMBeanServer)
                   on (javax.management.ObjectName. "com.sun.management:type=DiagnosticCommand")
                   out (.invoke srv on "gcClassHistogram"
                                (into-array Object [(make-array String 0)])
                                (into-array String ["[Ljava.lang.String;"]))
                   lines (str/split-lines (str out))]
               {:entries (->> lines (keep parse-histogram-line) (take n) vec)
-               :total (parse-total-bytes lines)})
-            (catch Throwable _ {:entries [] :total nil}))]
+               :total (parse-total-bytes lines)})) {:entries [] :total nil})]
       (schema/->class-histogram
        (cond-> {:diag/entries entries :diag/at-ms now}
          total (assoc :diag/total-bytes total)))))

@@ -30,7 +30,9 @@
             [hive-mcp.tools.memory.crud.edge-outcome :as edge-outcome]
             [hive-mcp.extensions.registry :as ext]
             [malli.core :as m]
-            [hive-mcp.memory.write-latency :as write-latency]))
+            [hive-mcp.memory.write-latency :as write-latency]
+            [hive-mcp.resilience.swallow :as swallow]
+            [hive-dsl.result :as r]))
 
 (def ^:const ^:private memory-write-timeout-ms
   "Timeout budget for a single memory write (Chroma add + KG tx + fetch).
@@ -42,6 +44,23 @@
    `memory-write-timeout-ms`; a dynamic var so a test can shrink it without
    waiting 30 s on a stalled store stub."
   memory-write-timeout-ms)
+
+(def ^:dynamic *write-pool*
+  "ExecutorService `handle-add` runs `do-add!` on, read at call time. nil
+   (the default) means the shared `pool/memory-pool`. A test binds its own
+   pool so the write it drives never queues behind other writes."
+  nil)
+
+(def ^:dynamic *await-write!*
+  "Port `handle-add` blocks on the pooled write through, read at call time.
+   Contract (the one `hive-weave.pool/await!` has):
+   (fn [pool f {:keys [timeout-ms fallback name]}]) submits `f` to `pool`
+   and answers `f`'s value, or `fallback` when the wait ends first (timeout,
+   rejection, failure), cancelling `f` with interrupt. The default is
+   `await!`, whose wait is a wall clock. A test binds an await whose wait
+   ends on an event instead (the store stub entered the stage under test),
+   so the stage a timeout is attributed to does not depend on host load."
+  (fn [pool f opts] (wpool/await! pool f opts)))
 
 (def ^:const ^:private store-stage-heal-budget-ms
   "Heal-wait budget for a store stage whose backend already wraps its own
@@ -329,7 +348,7 @@
   "Resolve a `hive-spi.role.card` var, or nil when the role SPI leaf is not
    on the classpath. Keeps this ns loadable without a hard compile-time dep."
   [sym]
-  (try (requiring-resolve sym) (catch Throwable _ nil)))
+  (swallow/attempt (requiring-resolve sym)))
 
 (defonce ^:private role-card-validator (atom nil))
 
@@ -545,8 +564,46 @@
           over? (merge (select-keys data [:budget-ms :elapsed-ms]))
           (not over?) (assoc :error (or (.getMessage e) (.getName (class e)))))))))
 
+(defn- canonical-receipt
+  "Promote: the receipt that may stand in for read-after-write, or nil. Only
+   a receipt naming ENTRY-ID, on a write that requested no KG edges, can."
+  [entry-id requests receipt]
+  (when (and (empty? requests) (map? receipt) (= entry-id (:id receipt)))
+    receipt))
+
+(defn- finalize-receipt
+  "Pipeline: the add's response body, on the Result railway. (ok receipt)
+   when the entry was retrieved, else an err whose :message is the retrieval
+   failure the caller reads. `requested`/`gate-reason` name a type the review
+   gate parked the entry under (nil when none)."
+  [entry-id {:keys [created pending edge-ids edge-errors link-pending kg-check
+                    requested parked-as gate-reason]}]
+  (if created
+    (r/ok (cond-> (assoc (fmt/entry->receipt created) :id entry-id)
+            pending (assoc :embedding_deferred true :reembed_id entry-id
+                           :embedding_error (some-> pending :deferred/last-error :error str))
+            (seq edge-ids) (assoc :kg_edges_created edge-ids)
+            (seq edge-errors) (assoc :kg_edge_errors edge-errors)
+            link-pending (assoc :kg_outgoing_pending link-pending)
+            kg-check (assoc :kg_check kg-check)
+            requested
+            (assoc :queued_for_review
+                   {:requested_type requested
+                    :parked_as      parked-as
+                    :reason         gate-reason})))
+    (r/err :memory/retrieval-failed
+           {:message (str "Entry indexed as " entry-id " but retrieval failed. Check memory store connectivity."
+                          (when (seq edge-errors)
+                            (str " KG edges also failed: " (pr-str edge-errors)))
+                          (when kg-check
+                            (str " Check edges with: " (:how kg-check))))})))
+
 (defn- finalize-entry!
   "Wire KG edges, fetch created entry, notify the write, and format response.
+
+   Stages: the edge, link and fetch writes (Collect, in this fn),
+   canonical-receipt (Promote), finalize-receipt (Pipeline), and the log,
+   notify and mcp-json/mcp-error (Boundary).
 
    `:store-key` (passed via `entry-ctx`) routes the read-after-write +
    `:kg-outgoing` link write to the same slot the entry was indexed in.
@@ -581,7 +638,8 @@
           (edge-outcome/attempt-edges
            #(run-stage! progress :kg-edges
                         (fn [] (create-kg-edges! entry-id kg-params project-id agent-id)))
-           requests)
+           requests
+           entry-id)
           {:edge-ids [] :edge-errors []})
         pending (if (and pending (seq edge-ids))
                   (do (deferred/amend! entry-id {:kg-outgoing edge-ids})
@@ -589,12 +647,22 @@
                   pending)
         link-pending (when (and (seq edge-ids) (not pending))
                        (link-outgoing! progress store entry-id edge-ids))
-        kg-check (edge-outcome/outcome-check entry-id edge-errors link-pending)
+        kg-check (edge-outcome/outcome-check entry-id edge-errors link-pending requests)
         created (or pending
-                    (when (and (empty? requests) (map? receipt)
-                               (= entry-id (:id receipt)))
-                      receipt)
-                    (run-stage! progress :fetch #(fetch-with-retry store entry-id)))]
+                    (canonical-receipt entry-id requests receipt)
+                    (run-stage! progress :fetch #(fetch-with-retry store entry-id)))
+        requested (when created (type-registry/requested-type-of tags-with-scope))
+        outcome (finalize-receipt entry-id
+                                  {:created      created
+                                   :parked-as    type
+                                   :pending      pending
+                                   :edge-ids     edge-ids
+                                   :edge-errors  edge-errors
+                                   :link-pending link-pending
+                                   :kg-check     kg-check
+                                   :requested    requested
+                                   :gate-reason  (when requested
+                                                   (:reason (type-registry/gate-of requested)))})]
     (when-not created
       (log/error "Failed to retrieve entry after indexing:" entry-id))
     (log/info "Created memory entry:" entry-id
@@ -604,25 +672,9 @@
               (when (seq knowledge-gaps) (str " gaps:" (count knowledge-gaps))))
     (write-events/notify! :added {:id entry-id :memory-type type
                                   :tags tags-with-scope :project-id project-id})
-    (if created
-      (let [requested (type-registry/requested-type-of tags-with-scope)]
-        (mcp-json (cond-> (assoc (fmt/entry->receipt created) :id entry-id)
-                    pending (assoc :embedding_deferred true :reembed_id entry-id
-                                   :embedding_error (some-> pending :deferred/last-error :error str))
-                    (seq edge-ids) (assoc :kg_edges_created edge-ids)
-                    (seq edge-errors) (assoc :kg_edge_errors edge-errors)
-                    link-pending (assoc :kg_outgoing_pending link-pending)
-                    kg-check (assoc :kg_check kg-check)
-                    requested
-                    (assoc :queued_for_review
-                           {:requested_type requested
-                            :parked_as      type
-                            :reason         (:reason (type-registry/gate-of requested))}))))
-      (mcp-error (str "Entry indexed as " entry-id " but retrieval failed. Check memory store connectivity."
-                      (when (seq edge-errors)
-                        (str " KG edges also failed: " (pr-str edge-errors)))
-                      (when kg-check
-                        (str " Check edges with: " (:how kg-check))))))))
+    (if (r/ok? outcome)
+      (mcp-json (:ok outcome))
+      (mcp-error (:message outcome)))))
 
 (defn effective-duration
   "Duration an add lands with: the caller's `duration` when given, else
@@ -640,8 +692,55 @@
 
 (m/=> effective-duration [:=> [:cat :any [:maybe [:or :string :keyword]]] :string])
 
+(def ^:private IndexReceipt
+  [:or
+   [:map [:ok [:map [:entry-id :string] [:receipt [:maybe :map]]]]]
+   [:map [:error [:= :memory/no-entry-id]] [:message :string]]])
+
+(defn- index-receipt
+  "Promote: read the primary index's answer into (ok {:entry-id :receipt}),
+   or an err naming a degraded backend.
+
+   add-entry! answers a bare id or a receipt map. Only a receipt carrying the
+   canonical entry (its :entry naming the same id) can bypass the later fetch,
+   and it is the only map answer accepted: queued/failure maps and malformed
+   receipts remain errors, as does a nil or blank id."
+  [add-result]
+  (let [entry-id (if (map? add-result) (:id add-result) add-result)
+        receipt (when (and (map? add-result)
+                           (map? (:entry add-result))
+                           (= entry-id (get-in add-result [:entry :id])))
+                  (:entry add-result))]
+    (if (and (string? entry-id) (not (str/blank? entry-id))
+             (or (not (map? add-result)) receipt))
+      (r/ok {:entry-id entry-id :receipt receipt})
+      (r/err :memory/no-entry-id
+             {:message (str "Memory store add-entry! did not return an id "
+                            "(got " (pr-str add-result) "). "
+                            "Backend is likely degraded or offline — "
+                            "check store health and retry.")}))))
+
+(defn- dedup-merged-tags
+  "Pipeline: a duplicate keeps its own tags and gains the new write's, in
+   that order, each once."
+  [existing-tags new-tags]
+  (distinct (concat existing-tags new-tags)))
+
+(defn- kg-link-params
+  "Promote: the coerced KG vectors under the param names create-kg-edges!
+   and edge-outcome read."
+  [kg-vecs]
+  {:kg_implements (:kg-implements-vec kg-vecs)
+   :kg_supersedes (:kg-supersedes-vec kg-vecs)
+   :kg_depends_on (:kg-depends-on-vec kg-vecs)
+   :kg_refines    (:kg-refines-vec kg-vecs)})
+
 (defn- do-add!
-  "Inner core of handle-add. Runs the memory-store/KG IO path through
+  "Inner core of handle-add.
+
+   Stages: the dedup lookup, the index write and finalize-entry! (Collect and
+   Boundary, run through run-stage!), index-receipt and kg-link-params
+   (Promote), dedup-merged-tags (Pipeline). Runs the memory-store/KG IO path through
    the IMemoryStore registered under `:store-key` (default `:default`).
 
    `:store-key` propagates to dedup find/update, primary index, and
@@ -697,7 +796,7 @@
                                  #(with-stage-resilience
                                     (mem-proto/find-duplicate store type content-hash {:project-id project-id})))]
         (if existing
-          (let [merged-tags (distinct (concat (:tags existing) tags-with-scope))
+          (let [merged-tags (dedup-merged-tags (:tags existing) tags-with-scope)
                 updated (run-stage! progress :dedup-update
                                     #(with-stage-resilience
                                        (mem-proto/update-entry! store (:id existing) {:tags merged-tags})))]
@@ -715,26 +814,14 @@
                            :knowledge-gaps knowledge-gaps :agent-id agent-id
                            :store-key store-key :progress progress}
                 add-result (run-stage! progress :index #(index-entry! entry-ctx))
-                ;; Only a receipt carrying the canonical entry can bypass fetch.
-                ;; Queued/failure maps (and malformed receipts) remain errors.
-                entry-id (if (map? add-result) (:id add-result) add-result)
-                receipt (when (and (map? add-result)
-                                   (map? (:entry add-result))
-                                   (= entry-id (get-in add-result [:entry :id])))
-                          (:entry add-result))]
-            (if-not (and (string? entry-id) (not (str/blank? entry-id))
-                         (or (not (map? add-result)) receipt))
-              (mcp-error (str "Memory store add-entry! did not return an id "
-                              "(got " (pr-str add-result) "). "
-                              "Backend is likely degraded or offline — "
-                              "check store health and retry."))
-              (let [_ (recall/register-created-id! entry-id project-id type)
+                indexed (index-receipt add-result)]
+            (if (r/err? indexed)
+              (mcp-error (:message indexed))
+              (let [{:keys [entry-id receipt]} (:ok indexed)
+                    _ (recall/register-created-id! entry-id project-id type)
                     _ (when (= type "plan")
                         (index-plan-entry! entry-id entry-ctx))
-                    kg-params {:kg_implements (:kg-implements-vec kg-vecs)
-                               :kg_supersedes (:kg-supersedes-vec kg-vecs)
-                               :kg_depends_on (:kg-depends-on-vec kg-vecs)
-                               :kg_refines    (:kg-refines-vec kg-vecs)}]
+                    kg-params (kg-link-params kg-vecs)]
                 (finalize-entry! entry-id kg-params project-id agent-id
                                  (assoc entry-ctx :receipt receipt))))))))))
 
@@ -793,8 +880,8 @@
                                                 :embed-ms @embed-ms
                                                 :total-ms (quot (- (System/nanoTime) started-ns) 1000000)
                                                 :outcome  outcome})))
-            result (wpool/await!
-                    (pool/memory-pool)
+            result (*await-write!*
+                    (or *write-pool* (pool/memory-pool))
                     (let [budgets *stage-budgets-ms*]
                       #(binding [*stage-budgets-ms* budgets
                                  write-latency/*embed-ms* embed-ms]
@@ -889,3 +976,9 @@
 (m/=> timeout-message [:=> [:cat [:maybe :map]] :string])
 
 (m/=> handle-add [:=> [:cat [:maybe :map]] core/McpResponse])
+
+(m/=> index-receipt [:=> [:cat :any] IndexReceipt])
+(m/=> dedup-merged-tags [:=> [:cat [:maybe [:sequential :any]] [:maybe [:sequential :any]]] [:sequential :any]])
+(m/=> kg-link-params [:=> [:cat [:maybe :map]] [:map-of :keyword :any]])
+(m/=> canonical-receipt [:=> [:cat :string [:maybe [:sequential :any]] :any] [:maybe :map]])
+(m/=> finalize-receipt [:=> [:cat :string :map] [:map-of :keyword :any]])

@@ -13,7 +13,8 @@
             [hive-mcp.tools.core :as tc]
             [clojure.string :as str]
             [hive-mcp.config.io :as config-io]
-            [hive-mcp.config.secrets :as secrets]))
+            [hive-mcp.config.secrets :as secrets]
+            [hive-mcp.config.sensitive :as sensitive]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -22,13 +23,9 @@
 
 ;; ── Secret redaction (response edge) ─────────────────────────────────────────
 
-(def ^:private sensitive-name-re
-  #"(?i)(token|secret|passw|passphrase|credential|api[-_]?key|private[-_]?key|(^|[-_.])keys?($|[-_.]))")
-
 (defn- sensitive-key?
   [k]
-  (boolean (when (or (keyword? k) (string? k) (symbol? k))
-             (re-find sensitive-name-re (name k)))))
+  (sensitive/sensitive-name? k))
 
 (defn- blank-secret?
   [v]
@@ -92,6 +89,9 @@
     (and secret? (or (string? v) (number? v))) (redact-leaf v)
     :else     v))
 
+;; the tree comes back in its own shape, secret leaves replaced
+(m/=> redact-tree [:=> [:cat :any :boolean] :any])
+
 (defn- redact-secrets-map
   [m raw]
   (if (map? m)
@@ -120,6 +120,10 @@
   "Redact `v` found at `path`; the declared secrets are read only on demand."
   ([v] (redact-config [] v))
   ([path v] (redact-at path v (delay (raw-secrets)))))
+
+(m/=> redact-config [:function
+                     [:=> [:cat :any] :any]
+                     [:=> [:cat [:sequential :any] :any] :any]])
 
 (defn- redact-errors
   "Malli explanation errors: each :value is redacted by its own :in path, and

@@ -15,7 +15,8 @@
    Ports are injected, so the gate is testable without touching the heap:
      :probe  (fn [] {:committed bytes :used bytes})   default `heap-usage`
      :gc!    (fn [] any)                               default Runtime.gc"
-  (:require [malli.core :as m]))
+  (:require [malli.core :as m]
+            [hive-mcp.resilience.swallow :as swallow]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -96,7 +97,7 @@
      :or   {probe heap-usage
             gc!   #(.gc (Runtime/getRuntime))}}]
    (let [thresholds (merge defaults thresholds)
-         before     (try (probe) (catch Exception _ nil))]
+         before     (swallow/attempt-ex (probe))]
      (cond
        (nil? before)
        (report false :probe-failed zero-reading zero-reading thresholds)
@@ -105,9 +106,9 @@
        (report false :not-fragmented before before thresholds)
 
        :else
-       (if (try (gc!) true (catch Exception _ false))
+       (if (swallow/attempt-ex (gc!) true)
          (report true :fragmented before
-                 (or (try (probe) (catch Exception _ nil)) before) thresholds)
+                 (or (swallow/attempt-ex (probe)) before) thresholds)
          (report false :gc-failed before before thresholds))))))
 
 (m/=> gc-hint! [:function

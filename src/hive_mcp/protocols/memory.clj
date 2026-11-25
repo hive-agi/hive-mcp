@@ -15,7 +15,8 @@
             [hive-spi.memory.ports :as ports]
             [malli.core :as m]
             [hive-spi.memory.registry :as sreg]
-            [hive-mcp.protocols.memory-read :as mread]))
+            [hive-mcp.protocols.memory-read :as mread]
+            [hive-mcp.resilience.swallow :as swallow]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -178,9 +179,7 @@
    registry entries untouched. Never deletes store data."
   []
   (when-let [store (:default (registered-stores))]
-    (try
-      (disconnect! store)
-      (catch Exception _)))
+    (swallow/attempt-ex (disconnect! store)))
   (unregister-store! :default)
   nil)
 
@@ -199,9 +198,10 @@
    store is registered, false when the health check throws."
   []
   (when (store-set?)
-    (try
-      (:healthy? (health-check (get-store)))
-      (catch Exception _ false))))
+    ;; a vector box keeps a nil :healthy? distinct from a throw (false)
+    (if-let [[healthy?] (swallow/attempt-ex [(:healthy? (health-check (get-store)))])]
+      healthy?
+      false)))
 
 (m/=> active-store-healthy? [:=> [:cat] [:maybe :boolean]])
 

@@ -17,11 +17,14 @@
   (:require [clojure.data.json :as json]
             [clojure.string :as str]
             [hive-mcp.nats.streams :as streams]
-            [malli.core :as m])
+            [malli.core :as m]
+            [hive-mcp.resilience.swallow :as swallow]
+            [hive-mcp.nats.client :as client])
   (:import [io.nats.client Connection JetStreamApiException PublishOptions
             FetchConsumeOptions Message]
            [io.nats.client.api ConsumerConfiguration AckPolicy DeliverPolicy
             ConsumerInfo]
+           [io.nats.client.impl Headers]
            [java.time Duration]
            [java.util UUID]))
 
@@ -100,7 +103,7 @@
    delivered as its raw text under :body, never dropped."
   [^bytes data seq]
   (let [s (String. data "UTF-8")
-        e (try (json/read-str s :key-fn keyword) (catch Exception _ nil))]
+        e (swallow/attempt-ex (json/read-str s :key-fn keyword))]
     (if (and (map? e) (contains? e :body))
       (assoc (select-keys e [:id :from :body :meta :ts]) :seq seq)
       {:seq seq :body s})))
@@ -109,8 +112,10 @@
 
 (defn encode-inbox-id
   "Pure: the canonical inbox id for `id`. The coordinator lane spells its
-   session `coordinator:<pid>`; ':' is no subject-token character, so every
-   ':' becomes '-' (`coordinator:134462` -> `coordinator-134462`). A valid id
+   session `coordinator:<pid>` or `coordinator:<first 8 hex of the session
+   id>`; ':' is no subject-token character, so every ':' becomes '-'
+   (`coordinator:134462` -> `coordinator-134462`, `coordinator:72216f39` ->
+   `coordinator-72216f39`). A valid id
    is returned unchanged, so encoding is idempotent. `valid-inbox-id?` stays
    the one strict grammar: an id that still fails it after encoding throws
    :inbox/invalid-id naming the given and the encoded form."
@@ -150,7 +155,7 @@
 (defn safe-encode-inbox-id
   "`encode-inbox-id`, or nil when `id` cannot be made a valid inbox id."
   [id]
-  (try (encode-inbox-id id) (catch clojure.lang.ExceptionInfo _ nil)))
+  (swallow/attempt-ex (encode-inbox-id id)))
 
 (m/=> safe-encode-inbox-id [:=> [:cat :any] [:maybe :string]])
 
@@ -230,16 +235,24 @@
 
 (defn send!
   "Publish one message to inbox `to` with a broker ack. Returns the stream
-   seq. The inbox need not be armed yet: the stream keeps the message."
+   seq. The inbox need not be armed yet: the stream keeps the message. The
+   message carries the trace and CloudEvents headers of
+   hive-mcp.nats.client/outbound-headers (ce-id the envelope id) when the
+   server takes headers; the body is the envelope either way."
   [^Connection conn {:keys [to] :as msg}]
-  (let [to  (encode-inbox-id to)
-        msg (assoc msg :to to)
-        _   (ensure-stream! conn)
-        env (envelope msg)
-        pa  (.publish (.jetStream conn) ^String (subject to)
-                      (.getBytes ^String (json/write-str env) "UTF-8")
-                      (-> (PublishOptions/builder) (.messageId (:id env)) (.build)))]
-    {:id (:id env) :to to :subject (subject to)
+  (let [to    (encode-inbox-id to)
+        msg   (assoc msg :to to)
+        _     (ensure-stream! conn)
+        env   (envelope msg)
+        subj  ^String (subject to)
+        body  (.getBytes ^String (json/write-str env) "UTF-8")
+        opts  (-> (PublishOptions/builder) (.messageId (:id env)) (.build))
+        h     (client/outbound-headers conn subj (:id env))
+        js    (.jetStream conn)
+        pa    (if h
+                (.publish js subj ^Headers h ^bytes body ^PublishOptions opts)
+                (.publish js subj ^bytes body ^PublishOptions opts))]
+    {:id (:id env) :to to :subject subj
      :seq (.getSeqno pa) :duplicate? (.isDuplicate pa)}))
 
 (m/=> send! [:=> [:cat :any [:map [:to :string]]] SendReceipt])
@@ -268,6 +281,40 @@
                   acc))]
      {:inbox id :messages msgs
       :pending (or (:pending (info->status id (consumer-info conn id))) 0)})))
+
+(def Fetched
+  "One message pulled but NOT acked: the caller acks after it has handed the
+   message on (hive-mcp.nats.inbox-stream acks after the SSE write)."
+  [:map [:message Delivered] [:ack! ifn?] [:nak! ifn?]])
+
+(defn fetch!
+  "Pull up to `n` (default 10, max 256) messages from armed inbox `id`
+   WITHOUT acking them. Each answer is a `Fetched`: call :ack! once the
+   message is delivered, :nak! to have the broker redeliver it now. One left
+   alone is redelivered after the durable's 30 s ack wait. `wait-ms` (default
+   0) waits that long for a first message. Throws :inbox/not-armed."
+  ([conn id] (fetch! conn id nil))
+  ([^Connection conn raw-id {:keys [n wait-ms]}]
+   (let [id   (encode-inbox-id raw-id)
+         _    (when-not (consumer-info conn id)
+                (throw (ex-info (str "inbox " id " is not armed: run `inbox arm` first")
+                                {:error :inbox/not-armed :inbox id})))
+         n    (-> (or n 10) long (max 1) (min 256))
+         wait (-> (or wait-ms 0) long (max 0) (min 30000))
+         b    (-> (FetchConsumeOptions/builder) (.maxMessages (int n)))
+         opts (.build (if (pos? wait) (.noWaitExpiresIn b wait) (.noWait b)))
+         cc   (.getConsumerContext conn stream-name (durable id))
+         fr   (.fetch cc opts)]
+     (loop [acc []]
+       (if-let [^Message msg (.nextMessage fr)]
+         (recur (conj acc {:message (decode (.getData msg) (.streamSequence (.metaData msg)))
+                           :ack!    (fn [] (.ackSync msg (Duration/ofSeconds 5)) true)
+                           :nak!    (fn [] (.nak msg) true)}))
+         acc)))))
+
+(m/=> fetch! [:function
+              [:=> [:cat :any :string] [:vector Fetched]]
+              [:=> [:cat :any :string [:maybe :map]] [:vector Fetched]]])
 
 (m/=> read! [:function
              [:=> [:cat :any :string] ReadResult]

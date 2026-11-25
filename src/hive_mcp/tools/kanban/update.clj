@@ -34,7 +34,8 @@
    (`events/move-fx`) answers that refusal alone: neither half is written.
    Returns nil for a missing or non-kanban entry."
   [{:keys [:kanban/entry] :as coeffects}
-   [_ {:keys [task-id new-status title description append-description priority agent-id owner steal-claim?]}]]
+   [_ {:keys [task-id new-status title description append-description priority agent-id owner steal-claim?
+              add-tags remove-tags]}]]
   (when-let [move (events/move-fx coeffects [:kanban/move {:task-id task-id :new-status new-status
                                                            :owner owner :steal-claim? steal-claim?}])]
     (if (:kanban/claim-refused move)
@@ -48,7 +49,9 @@
                                                    :description        description
                                                    :append-description append-description
                                                    :priority           priority
-                                                   :agent-id           agent-id}])
+                                                   :agent-id           agent-id
+                                                   :add-tags           add-tags
+                                                   :remove-tags        remove-tags}])
             content (get-in edit [:kanban/facade-update :payload :content])
             tags    (or (get-in edit [:kanban/facade-update :payload :tags]) moved-tags)
             final   (assoc moved :content content :tags tags)]
@@ -76,8 +79,9 @@
 
 (defn- request-error
   "The Result error for an update request that cannot be dispatched, or nil."
-  [{:keys [task-id new-status title description append-description priority]}]
-  (let [given? (fn [v] (and (string? v) (not (str/blank? v))))]
+  [{:keys [task-id new-status title description append-description priority add-tags remove-tags]}]
+  (let [given? (fn [v] (or (and (string? v) (not (str/blank? v)))
+                           (and (sequential? v) (boolean (seq v)))))]
     (cond
       (not (given? (some-> task-id str)))
       (r/err :kanban/invalid-task-id {:message "Update requires :task-id" :given task-id})
@@ -87,9 +91,9 @@
              {:message (str "Invalid status: " new-status ". Valid: todo, doing, review, done")
               :given   new-status})
 
-      (not (some given? [title description append-description priority]))
+      (not (some given? [title description append-description priority add-tags remove-tags]))
       (r/err :kanban/nothing-to-edit
-             {:message "Update requires at least one of :title, :description, :append-description, :priority"
+             {:message "Update requires at least one of :title, :description, :append-description, :priority, :add-tags, :remove-tags"
               :task-id task-id})
 
       (and (given? priority) (not (#{"high" "medium" "low"} priority)))
@@ -107,8 +111,17 @@
    (:kanban/write-rejected, :kanban/write-failed)."
   [event-payload]
   (register!)
-  (let [normalized (update event-payload :new-status pred/normalize-status)]
-    (or (request-error normalized)
+  (let [add-tags    (pred/coerce-tags (:add-tags event-payload))
+        remove-tags (pred/coerce-tags (:remove-tags event-payload))
+        normalized  (-> event-payload
+                        (update :new-status pred/normalize-status)
+                        (assoc :add-tags add-tags :remove-tags remove-tags))
+        reserved    (when-not (some #{:invalid} [add-tags remove-tags])
+                      (pred/reserved-tags (concat add-tags remove-tags)))]
+    (or (when (some #{:invalid} [add-tags remove-tags])
+          (events/invalid-tags-error (select-keys event-payload [:add-tags :remove-tags])))
+        (when (seq reserved) (events/reserved-tag-error reserved))
+        (request-error normalized)
         (events/dispatch-committed! [:kanban/update normalized] (:task-id normalized)))))
 
 (m/=> update-fx [:=> [:cat ks/Coeffects ks/Event] [:maybe ks/FxMap]])

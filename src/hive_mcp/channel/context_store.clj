@@ -110,6 +110,8 @@
    [:access-count [:int {:min 0}]]
    [:last-accessed [:maybe :int]]])
 
+(m/=> expired? [:=> [:cat Entry] :boolean])
+
 (defn context-put!
   "Store data in the context store, returns ctx-id."
   [data & {:keys [tags ttl-ms] :or {tags #{} ttl-ms default-ttl-ms}}]

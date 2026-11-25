@@ -9,7 +9,9 @@
             [taoensso.timbre :as log]
             [hive-mcp.agent.identity :as agent-identity]
             [hive-mcp.system.child-scope :as child-scope]
-            [malli.core :as m])
+            [malli.core :as m]
+            [hive-mcp.context.request :as request-ctx]
+            [hive-ttracking.tracecontext :as tc])
   (:import [java.lang ProcessBuilder]
            [java.io BufferedReader InputStreamReader BufferedWriter OutputStreamWriter]
            [java.util.concurrent ConcurrentHashMap]))
@@ -34,7 +36,7 @@
 ;; Process Registry
 ;; ===========================================================================
 
-(defonce ^:private process-registry
+(defonce ^:private ^ConcurrentHashMap process-registry
   (ConcurrentHashMap.))
 
 (defonce ^:private shutdown-hook-registered?
@@ -239,8 +241,35 @@
   ["ANTHROPIC_API_KEY" "ANTHROPIC_AUTH_TOKEN" "ANTHROPIC_BASE_URL"
    "OPENAI_API_KEY" "MOONSHOT_API_KEY" "KIMI_API_KEY"])
 
+(defonce ^:private trace-random
+  ;; One SecureRandom for every span id a spawn draws (not one per spawn).
+  (delay (tc/secure-random-fn)))
+
+(defn trace-env
+  "STD-04 O1: {\"TRACEPARENT\" ..} (and \"TRACESTATE\" when non-empty) for a
+   child of the W3C trace context bound in the request context (:trace):
+   same trace-id, flags and tracestate, fresh parent-id.
+
+   Carrier rules: the child ling reads env TRACEPARENT / TRACESTATE (the
+   upper-cased W3C header names). Nothing is invented outside a trace: empty
+   when no valid context is bound. Fail open: any failure gives {} and the
+   spawn proceeds untraced. The 0-arity draws from one shared SecureRandom."
+  ([] (try (trace-env (:trace (request-ctx/request-ctx)) @trace-random)
+           (catch Throwable _ {})))
+  ([trace-ctx random-fn]
+   (try
+     (let [child (when trace-ctx (tc/child trace-ctx (tc/new-span-id random-fn)))]
+       (into {} (map (fn [[k v]] [(str/upper-case k) v])) (tc/->headers child)))
+     (catch Throwable _ {}))))
+
+(m/=> trace-env [:function
+                 [:=> [:cat] [:map-of :string :string]]
+                 [:=> [:cat [:maybe map?] ifn?] [:map-of :string :string]]])
+
 (defn build-child-env
-  "Build environment variable map for a child ling process (pure calculation).
+  "Build environment variable map for a child ling process. Not pure: it
+   reads the process environment, the bound request context (:trace) and a
+   SecureRandom (TRACEPARENT span id); it performs no writes.
 
    Merges (in priority order, later wins):
    1. Forwarded parent env vars (OPENROUTER_API_KEY, etc.)
@@ -273,6 +302,7 @@
           cwd (assoc "BB_MCP_PROJECT_DIR" cwd)
           (and model (not= model "claude")) (assoc "OPENROUTER_MODEL" model))
         (merge (agent-identity/child-env env-extra ling-id credential))
+        (merge (trace-env))
         (#(apply dissoc % withheld-env-vars)))))
 
 (defn- configure-process-env!
@@ -304,7 +334,7 @@
    `child-scope/*prefix*` at call time, the seam tests bind."
   [cmd-parts cwd]
   (doto (ProcessBuilder. ^java.util.List (vec cmd-parts))
-    (.directory (java.io.File. cwd))
+    (.directory (java.io.File. ^String cwd))
     (.redirectErrorStream false)))
 
 (defn- start-process!
@@ -360,11 +390,6 @@
 ;; ===========================================================================
 ;; Kill Helpers (decomposed from kill-headless!)
 ;; ===========================================================================
-
-(defn- close-writer-quietly!
-  "Close a writer, ignoring any exceptions."
-  [^BufferedWriter writer]
-  (result/rescue nil (.close writer)))
 
 (defn- terminate-process!
   "Terminate process gracefully or forcibly."
@@ -437,7 +462,7 @@
                        pid (:pid entry)
                        ^BufferedWriter writer (:stdin-writer entry)]
                    (log/info "Killing headless ling" {:ling-id ling-id :pid pid :force? force?})
-                   (close-writer-quietly! writer)
+                   (result/rescue nil (.close writer)) ; best effort: the process is being killed anyway
                    (terminate-process! process {:force? force? :timeout-ms timeout-ms
                                                 :ling-id ling-id :pid pid})
                    (let [exit-code (await-exit-code process)]

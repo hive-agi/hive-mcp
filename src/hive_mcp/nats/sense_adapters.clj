@@ -17,8 +17,11 @@
   (:require [hive-mcp.nats.client :as client]
             [hive-mcp.nats.inbox :as inbox]
             [hive-mcp.nats.sense-republish :as sr]
+            [hive-mcp.nats.sense-replay :as replay]
             [taoensso.timbre :as log]
-            [malli.core :as m])
+            [malli.core :as m]
+            [hive-mcp.extensions.soft :as ext-soft]
+            [hive-mcp.resilience.swallow :as swallow])
   (:import [java.util.concurrent ThreadPoolExecutor TimeUnit
             ArrayBlockingQueue ThreadFactory RejectedExecutionException]))
 
@@ -75,10 +78,8 @@
    built here survives a sensorium remount — resolve it once, call it for the
    life of the process."
   []
-  (try
-    (when-let [sp (requiring-resolve 'hive-agent.sixth-sense.api/sense-port)]
-      (:drain! (sp)))
-    (catch Throwable _ nil)))
+  (when-let [sp (ext-soft/resolve-soft 'hive-agent.sixth-sense.api/sense-port)]
+    (swallow/attempt (:drain! (sp)))))
 
 (m/=> resolve-drain [:=> [:cat] [:maybe ifn?]])
 
@@ -93,14 +94,12 @@
    drain is the read path. A hive-agent without `sense-port` yields a port
    with no `:drain!`, which is a working push-only port, never an error."
   []
-  (try
-    (let [l (requiring-resolve 'hive-agent.sixth-sense.api/listen!)
-          u (requiring-resolve 'hive-agent.sixth-sense.api/unlisten!)]
-      (when (and l u)
-        (if-let [d (resolve-drain)]
-          {:listen! l :unlisten! u :drain! d}
-          {:listen! l :unlisten! u})))
-    (catch Throwable _ nil)))
+  (let [l (ext-soft/resolve-soft 'hive-agent.sixth-sense.api/listen!)
+        u (ext-soft/resolve-soft 'hive-agent.sixth-sense.api/unlisten!)]
+    (when (and l u)
+      (if-let [d (resolve-drain)]
+        {:listen! l :unlisten! u :drain! d}
+        {:listen! l :unlisten! u}))))
 
 (m/=> host-sense-port [:=> [:cat] [:maybe SensePort]])
 
@@ -248,22 +247,44 @@
 
 (defonce ^:private executor* (delay (bounded-executor)))
 
+;; wakes coalesce (at most one queued), so a tiny queue is enough
+(defonce ^:private replay-executor* (delay (bounded-executor 4)))
+
 (defn start!
   "Install the process republisher (sixth-sense -> HIVE_INBOX) when none is
    installed. Idempotent; call at boot and on every NATS connect: a JVM where
-   hive-agent mounts later is picked up then. Never throws."
+   hive-agent mounts later is picked up then. Never throws.
+
+   When the host exposes the sense drain (`resolve-drain`), the republisher
+   runs in REPLAY mode (hive-mcp.nats.sense-replay): the feed only wakes the
+   replayer, which drains the persisted sense-log cursor and republishes, so
+   senses missed while NATS was down or the parent unbound still arrive. A
+   call while already installed is a wake (this is the reconnect path).
+   Without a drain it is the push-only republisher, as before."
   []
   (try
     (if (sr/installed?)
-      {:installed? true :feed :sixth-sense}
-      (let [r   (sr/republisher (sixth-sense-feed) (nats-inbox-publisher)
-                                {:execute @executor*})
-            res (sr/install! r)]
-        (when (:installed? res)
-          (log/info "[sense-republish] senses republish into parent inboxes"))
-        res))
+      (do (replay/wake-current!)
+          {:installed? true :feed :sixth-sense :replay? (replay/installed?)})
+      (let [r     (sr/republisher (sixth-sense-feed) (nats-inbox-publisher)
+                                  {:execute @executor*})
+            drain (resolve-drain)]
+        (if drain
+          (let [port {:drain! drain}
+                rp   (replay/replayer r {:drain   #(drain-senses port %)
+                                         :store   (replay/file-store)
+                                         :execute @replay-executor*})
+                res  (sr/install! r (replay/wake-listener rp))]
+            (when (:installed? res)
+              (replay/install! rp)
+              (log/info "[sense-republish] senses republish into parent inboxes (replay mode)"))
+            (assoc res :replay? (:installed? res)))
+          (let [res (sr/install! r)]
+            (when (:installed? res)
+              (log/info "[sense-republish] senses republish into parent inboxes"))
+            (assoc res :replay? false)))))
     (catch Throwable t
       (log/warn "[sense-republish] start failed (non-fatal):" (.getMessage t))
-      {:installed? false :feed :sixth-sense})))
+      {:installed? false :feed :sixth-sense :replay? false})))
 
-(m/=> start! [:=> [:cat] [:map [:installed? :boolean] [:feed :any]]])
+(m/=> start! [:=> [:cat] [:map [:installed? :boolean] [:feed :any] [:replay? :boolean]]])

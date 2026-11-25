@@ -15,7 +15,8 @@
             [clojure.string :as str]
             [hive-spi.editor.services :as svc]
             [clojure.data.json :as json]
-            [malli.core :as m]))
+            [malli.core :as m]
+            [hive-mcp.resilience.swallow :as swallow]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -86,6 +87,10 @@
    what it points at, so a dangling link is present, not deleted."
   [^String abs]
   (if-let [k (:kind *repo-port*)] (k abs) (real-kind abs)))
+
+(m/=> path-kind [:=> [:cat :string]
+                 [:map [:type [:enum :symlink :dir :file :absent]]
+                  [:target-exists? {:optional true} :boolean]]])
 
 (defn- exists-follow?
   "java.io.File#exists over `path-kind`: a file, a directory, or a link whose
@@ -391,6 +396,8 @@
   [error]
   (str/trim (str/replace (str error) #"\s*Plain CLI git works meanwhile\.?" "")))
 
+(m/=> scrub [:=> [:cat :any] :string])
+
 (defn- invoke-vessel
   "[envelope elapsed-ms] of one editor dispatch of OP."
   [op timeout-ms]
@@ -663,6 +670,9 @@
       (log/error e (str (name category) " failed"))
       (result/err category {:message (.getMessage e)}))))
 
+(m/=> try-result [:=> [:cat :keyword ifn?]
+                  [:or [:map [:ok :any]] [:map [:error :keyword]]]])
+
 (defn- result->mcp
   "Convert Result to MCP response.
    {:ok data} -> (mcp-success data), {:error ...} -> (mcp-error message).
@@ -672,10 +682,14 @@
     (mcp-success (val entry))
     (mcp-error (str "Error: " (get r :message (get r :error "unknown"))))))
 
+(m/=> result->mcp [:=> [:cat [:or [:map [:ok :any]] [:map [:error :keyword]]]] core/McpResponse])
+
 (defn- handle-op
   "Run a closed magit op through the Result boundary."
   [category op timeout-ms]
   (result->mcp (try-result category #(dispatch->result op timeout-ms))))
+
+(m/=> handle-op [:=> [:cat :keyword [:map [:op :keyword]] [:maybe :int]] core/McpResponse])
 
 ;; ============================================================
 ;; Magit Integration Tools (requires hive-mcp-magit addon)
@@ -730,8 +744,12 @@
   [rel entry]
   (or (= rel ".") (= entry rel) (str/starts-with? entry (str rel "/"))))
 
+(m/=> names? [:=> [:cat :string :string] :boolean])
+
 (defn- abs-in [^String root ^String rel]
   (.getPath (java.io.File. root rel)))
+
+(m/=> abs-in [:=> [:cat :string :string] :string])
 
 (defn- staged-paths
   "Read the index directly, without asking the shared Emacs buffer to choose a repo.
@@ -791,9 +809,7 @@
         listed (str/join " " paths)]
     (if-let [entry (find r :ok)]
       (let [raw (str (val entry))
-            out (try (json/read-str raw :key-fn keyword)
-                     ;; An unparseable verdict falls through to :magit/stage-failed below.
-                     (catch Exception _unparseable-verdict nil))
+            out (swallow/attempt-ex (json/read-str raw :key-fn keyword))
             status (when (map? out) (:status out))]
         (case status
           "missing" (result/err :magit/path-not-found
@@ -1314,3 +1330,23 @@
 (def tools
   "REMOVED: Flat magit tools no longer exposed. Use consolidated `magit` tool."
   [])
+
+(malli.core/=> invoke-with-handshake-retry [:=> #:provenance{:kind :inferred-static, :source "hive-carto.candidate.mallify.static"} [:cat :any :any] :map])
+
+(def ^:private GitRun
+  "One git run: its exit code and its combined output."
+  [:map [:exit :int] [:out :string]])
+
+(def ^:private GitArgs [:sequential :string])
+
+(m/=> git-ok [:=> [:cat GitRun :keyword]
+              [:or [:map [:ok :string]] [:map [:error :keyword] [:message :string]]]])
+
+(m/=> git! [:function
+            [:=> [:cat :string GitArgs] GitRun]
+            [:=> [:cat :string GitArgs [:maybe :string]] GitRun]
+            [:=> [:cat :string GitArgs [:maybe :string] [:maybe :int]] GitRun]])
+
+(m/=> git-out [:=> [:cat :string GitArgs] [:maybe :string]])
+
+(m/=> git-lines [:=> [:cat :string GitArgs] [:vector :string]])

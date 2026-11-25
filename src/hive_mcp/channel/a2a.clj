@@ -265,6 +265,8 @@
   [s]
   (when (and (string? s) (not (str/blank? s))) s))
 
+(m/=> non-blank [:=> [:cat :any] [:maybe :string]])
+
 (defn hive->a2a
   "Project an internal shout map onto an A2A Message.
 

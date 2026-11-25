@@ -10,6 +10,7 @@
             [hive-mcp.channel.audience :as audience]
             [hive-mcp.nats.client :as client]
             [hive-mcp.nats.inbox :as inbox]
+            [hive-mcp.nats.inbox-stream :as inbox-stream]
             [hive-mcp.protocols.event-backbone :as eb]
             [hive-mcp.tools.core :refer [mcp-json mcp-error]]
             [malli.core :as m]
@@ -28,6 +29,8 @@
 (defn- env-inbox [] (System/getenv "HIVE_INBOX_ID"))
 
 (defn- blank->nil [s] (when-not (str/blank? (str s)) (str s)))
+
+(m/=> blank->nil [:=> [:cat :any] [:maybe :string]])
 
 (defn resolve-inbox-id
   "Pure over its inputs: the inbox a call addresses. `inbox`, then `id`, then
@@ -74,8 +77,8 @@
 (defn auto-arm!
   "Bind a coordinator caller to its own inbox without an explicit `inbox arm`.
    `caller` is the transport's caller id; only a coordinator lane that names a
-   session (`coordinator:<pid>`) is armed, under its encoded id
-   (`coordinator-<pid>`). Arms the durable, binds the caller so the senses of
+   session (`coordinator:<pid>` or `coordinator:<8 hex of the session id>`)
+   is armed, under its encoded id (`coordinator-<session>`). Arms the durable, binds the caller so the senses of
    its lings are republished there, and starts the sense adapters. Never
    throws: -> {:armed? true :inbox id} | {:armed? false :reason kw}."
   [caller]
@@ -96,6 +99,28 @@
 
 (m/=> auto-arm! [:=> [:cat :any] :map])
 
+(defn- channel-port
+  "The :9999 channel server's port when it runs, else nil. Resolved late so
+   this ns does not load the HTTP server."
+  []
+  (when-let [st (try (requiring-resolve 'hive-mcp.channel.websocket/status)
+                     (catch Throwable _ nil))]
+    (when (:running? (st)) (:port (st)))))
+
+(defn monitor-for
+  "The Monitor spec of inbox `id` (hive-mcp.nats.inbox-stream/monitor-spec)
+   on channel `port`, minting its token; {:available? false :reason ..}
+   when no channel server runs."
+  [id port]
+  (if port
+    (assoc (inbox-stream/monitor-spec {:port port :id id
+                                       :token (inbox-stream/issue-token! id)})
+           :available? true)
+    {:available? false
+     :reason "no channel server (services :channel) in this JVM: use `inbox read`"}))
+
+(m/=> monitor-for [:=> [:cat :string [:maybe :int]] :map])
+
 (defn handle-arm
   "Create or keep the durable for an inbox. Re-arm keeps the cursor. The
    caller (`_caller_id`) is bound to the inbox, so the terminal and attention
@@ -111,10 +136,11 @@
                       (when caller (sense-republish/bind-inbox! caller id))
                       (sense-adapters/start!)
                       (cond-> (assoc armed
+                                     :monitor (monitor-for id (channel-port))
                                      :how-to-receive
-                                     (str "inbox read inbox=" id
-                                          " (pulls and acks; wait_ms long-polls). A push"
-                                          " endpoint for Monitor is a later slice."))
+                                     (str "Push: start a Monitor with :monitor :command (one SSE"
+                                          " `data:` JSON line per message, acked after it is written)."
+                                          " Pull: inbox read inbox=" id " (wait_ms long-polls)."))
                         caller (assoc :senses-from-lings-of
                                       (sense-republish/binding-key caller)))))))))
 
@@ -149,8 +175,11 @@
    sense republisher's state (bindings, counts, degraded?)."
   [params]
   (let [id (resolve-inbox-id params (env-inbox))]
-    (with-conn "status" #(assoc (inbox/status % id)
-                                :sense-republish (sense-republish/status)))))
+    (with-conn "status" #(cond-> (assoc (inbox/status % id)
+                                        :sense-republish (sense-republish/status))
+                           (inbox/safe-encode-inbox-id id)
+                           (assoc :reader (inbox-stream/stream-status
+                                           (inbox/safe-encode-inbox-id id)))))))
 
 (def ^:private Reply hive-mcp.tools.core/McpResponse)
 (m/=> handle-arm    [:=> [:cat [:maybe :map]] Reply])
