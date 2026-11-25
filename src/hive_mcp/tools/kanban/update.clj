@@ -111,8 +111,17 @@
    (:kanban/write-rejected, :kanban/write-failed)."
   [event-payload]
   (register!)
-  (let [normalized (update event-payload :new-status pred/normalize-status)]
-    (or (request-error normalized)
+  (let [add-tags    (pred/coerce-tags (:add-tags event-payload))
+        remove-tags (pred/coerce-tags (:remove-tags event-payload))
+        normalized  (-> event-payload
+                        (update :new-status pred/normalize-status)
+                        (assoc :add-tags add-tags :remove-tags remove-tags))
+        reserved    (when-not (some #{:invalid} [add-tags remove-tags])
+                      (pred/reserved-tags (concat add-tags remove-tags)))]
+    (or (when (some #{:invalid} [add-tags remove-tags])
+          (events/invalid-tags-error (select-keys event-payload [:add-tags :remove-tags])))
+        (when (seq reserved) (events/reserved-tag-error reserved))
+        (request-error normalized)
         (events/dispatch-committed! [:kanban/update normalized] (:task-id normalized)))))
 
 (m/=> update-fx [:=> [:cat ks/Coeffects ks/Event] [:maybe ks/FxMap]])

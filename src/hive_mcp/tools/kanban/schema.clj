@@ -222,8 +222,10 @@
    [:task-id {:optional true} :any]
    [:new-status {:optional true} :any]
    [:new-project-id {:optional true} :any]
-   [:add-tags {:optional true} TagsIn]
-   [:remove-tags {:optional true} TagsIn]
+   ;; :any, not TagsIn: update/edit accept one tag string and refuse a bad
+   ;; shape themselves (pred/coerce-tags -> :kanban/invalid-tags).
+   [:add-tags {:optional true} :any]
+   [:remove-tags {:optional true} :any]
    [:title {:optional true} :any]
    [:description {:optional true} :any]
    [:append-description {:optional true} :any]

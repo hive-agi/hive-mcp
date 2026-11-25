@@ -177,11 +177,15 @@
         (assoc :kanban/temporal-record
                {:entry-id   task-id
                 :op         :kanban-edit
-                :data       {:changed      (vec (sort (map name changed)))
-                             :old-title    old-title
-                             :new-title    new-title
-                             :old-priority old-priority
-                             :new-priority new-priority}
+                :data       (cond-> {:changed      (vec (sort (map name changed)))
+                                     :old-title    old-title
+                                     :new-title    new-title
+                                     :old-priority old-priority
+                                     :new-priority new-priority}
+                              ;; the audit trail can reconstruct a verdict change
+                              (contains? changed :tags)
+                              (assoc :added-tags   (vec (remove (set (:tags entry)) new-tags))
+                                     :removed-tags (vec (remove (set new-tags) (:tags entry)))))
                 :project-id project-id})))))
 
 (defn- result-from-fx
@@ -381,6 +385,24 @@
     :else
     (dispatch-committed! [:kanban/retag event-payload] task-id)))
 
+(defn reserved-tag-error
+  "The Result error refusing the reserved `tags` (`pred/reserved-tags`) a
+   tag delta on update/edit asked to add or remove."
+  [tags]
+  (r/err :kanban/reserved-tag
+         {:message (str "add_tags/remove_tags cannot add or remove reserved tags " (pr-str (vec tags))
+                        ": status moves with new_status, priority with priority, scope with "
+                        "retag new_project_id, and the kanban tag is never removed")
+          :tags    (vec tags)}))
+
+(defn invalid-tags-error
+  "The Result error for a tag delta that is neither a tag string nor a
+   collection of tag strings (`pred/coerce-tags` answered :invalid)."
+  [given]
+  (r/err :kanban/invalid-tags
+         {:message "add_tags/remove_tags take a tag string or an array of tag strings"
+          :given   given}))
+
 (defn dispatch-edit!
   "Public boundary entry point. Synchronously dispatch a `:kanban/edit` event
    and return a Result wrapping the effect map. Effects run before this returns.
@@ -402,9 +424,14 @@
      (r/err :kanban/nothing-to-edit ...)    when no editable field was given
      (r/err :kanban/invalid-priority ...)   when priority is outside the enum
      (r/err :kanban/invalid-task ...)       when entry missing or non-kanban"
-  [{:keys [task-id title description append-description priority add-tags remove-tags] :as event-payload}]
+  [{:keys [task-id title description append-description priority] :as raw-payload}]
   (init!)
-  (let [given?     (fn [v] (or (and (string? v) (not (clojure.string/blank? v)))
+  (let [add-tags      (pred/coerce-tags (:add-tags raw-payload))
+        remove-tags   (pred/coerce-tags (:remove-tags raw-payload))
+        event-payload (assoc raw-payload :add-tags add-tags :remove-tags remove-tags)
+        reserved      (when-not (some #{:invalid} [add-tags remove-tags])
+                        (pred/reserved-tags (concat add-tags remove-tags)))
+        given?     (fn [v] (or (and (string? v) (not (clojure.string/blank? v)))
                                (and (sequential? v) (boolean (seq v)))))
         priorities #{"high" "medium" "low"}]
     (cond
@@ -413,6 +440,12 @@
       (r/err :kanban/invalid-task-id
              {:message "Edit requires :task-id"
               :given   task-id})
+
+      (some #{:invalid} [add-tags remove-tags])
+      (invalid-tags-error (select-keys raw-payload [:add-tags :remove-tags]))
+
+      (seq reserved)
+      (reserved-tag-error reserved)
 
       (not (some given? [title description append-description priority add-tags remove-tags]))
       (r/err :kanban/nothing-to-edit
@@ -442,4 +475,6 @@
 (m/=> init! [:=> [:cat] [:= true]])
 (m/=> dispatch-move! [:=> [:cat ks/DispatchPayload] ks/Result])
 (m/=> dispatch-retag! [:=> [:cat ks/DispatchPayload] ks/Result])
+(m/=> reserved-tag-error [:=> [:cat [:sequential :string]] :map])
+(m/=> invalid-tags-error [:=> [:cat :any] :map])
 (m/=> dispatch-edit! [:=> [:cat ks/DispatchPayload] ks/Result])

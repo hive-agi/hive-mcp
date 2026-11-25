@@ -358,8 +358,10 @@
                     :description        description
                     :append-description append_description
                     :priority           priority
-                    :add-tags           (when (seq add_tags) (vec add_tags))
-                    :remove-tags        (when (seq remove_tags) (vec remove_tags))
+                    ;; passed as given: dispatch coerces a tag string to [tag]
+                    ;; and refuses a bad shape or a reserved tag
+                    :add-tags           add_tags
+                    :remove-tags        remove_tags
                     :agent-id           (or agent_id (swallow/attempt (ctx/current-agent-id)))
                     :directory          directory}
         result     (if new-status
