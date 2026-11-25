@@ -32,6 +32,25 @@
   "Rows a bare, unfiltered, unlimited list answers with (token budget)."
   100)
 
+(def all-statuses
+  "The `status` value that asks for every status: no status tag is pushed to
+   the store and the answer is not cut to `bare-page-cap`, so one
+   tag-filtered call is a run's whole result table (RUN-LEDGER-2)."
+  "all")
+
+(defn all-statuses?
+  "True iff `status` asks for every status: exactly \"all\", the same
+   case-sensitive spelling `ListStatus` and the MCP enum accept."
+  [status]
+  (= all-statuses status))
+
+(defn status-filter
+  "The status pushed to the store: nil for none or \"all\", else the
+   normalised status."
+  [status]
+  (when (and status (not (all-statuses? status)))
+    (kp/normalize-status status)))
+
 (defn tag-mode
   "Normalise `tag_match` (string, keyword or nil) to :all | :any."
   [tag_match]
@@ -42,7 +61,7 @@
    the AND-tags. These filter the whole scoped board server-side."
   [{:keys [status tags tag_match]}]
   (vec (concat ["kanban"]
-               (when status [(kp/normalize-status status)])
+               (when-let [st (status-filter status)] [st])
                (when (and (= :all (tag-mode tag_match)) (seq tags)) tags))))
 
 (defn page-cap
@@ -156,6 +175,8 @@
          (#(kf/paginate % offset limit))
          (mapv #(kf/project-fields % fields)))))
 
+(m/=> all-statuses? [:=> [:cat :any] :boolean])
+(m/=> status-filter [:=> [:cat :any] [:maybe :string]])
 (m/=> tag-mode      [:=> [:cat [:maybe [:or :string :keyword]]] [:enum :all :any]])
 (m/=> opt-in?       [:=> [:cat :any] :boolean])
 (m/=> hidden-tags   [:=> [:cat [:maybe [:map [:tags {:optional true} ks/TagsIn]

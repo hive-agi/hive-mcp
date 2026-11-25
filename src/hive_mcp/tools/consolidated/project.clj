@@ -197,12 +197,12 @@
                               "new_project_id" {:type "string"
                                                 :description "[kanban retag] Target project scope (preserves entry id + KG edges)"}
                               "add_tags" {:type "array" :items {:type "string"}
-                                          :description "[kanban retag] Extra tags to add"}
+                                          :description "[kanban retag|update] Extra tags to add. On update they are written in the SAME commit as new_status, so a verdict close is one call: update new_status=done add_tags=[verdict:pass]"}
                               "remove_tags" {:type "array" :items {:type "string"}
-                                             :description "[kanban retag] Tags to remove"}
+                                             :description "[kanban retag|update] Tags to remove (applied after add; on update, in the same commit as new_status)"}
                               "status" {:type "string"
-                                        :enum ["todo" "inprogress" "inreview" "done"]
-                                        :description "[kanban create] Initial status (default: todo) / [kanban list] Filter by status. Aliases inprogress→doing, inreview→review are normalized."}
+                                        :enum ["todo" "inprogress" "inreview" "done" "all"]
+                                        :description "[kanban create] Initial status (default: todo) / [kanban list] Filter by status; status=\"all\" returns EVERY status, done included (with tags, one call is a run's result table). Without status (with hive-knowledge mounted) the default board hides done cards. Aliases inprogress→doing, inreview→review are normalized."}
                               "include_descendants" {:type "boolean"
                                                      :description "[kanban] Include DESCENDANT (child) project tasks (HCR). Default true. Ancestor (parent) tasks are ALWAYS included regardless of this flag ('child sees parent')."}
                               "scope" {:type "string"

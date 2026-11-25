@@ -694,6 +694,13 @@
       :step-required step-required
       :step-enums    step-enums
       :example       schema/example-plan
+      :tag-vocabulary (str "Step :tags use a FIXED vocabulary, no synonyms (agentic run ledger, "
+                           "convention 20261125100357-6730324c): run:<RUN-ID>, scenario:<card-id> "
+                           "(not card:<id>), persona:<p>, verdict:pass|fail-product|fail-product-known|"
+                           "blocked-safety|inconclusive, known:<finding-id>, evidence:<sha256-12>, "
+                           "cleanup:pending|done, system:fb|pg|ui, needs-pedro. Close a step with "
+                           "`kanban update new_status=done add_tags=[verdict:<v>]`; read a run with "
+                           "`kanban list tags=[run:<RUN-ID>] status=all`.")
       :how-to        (str "1) Write a memory: type=plan whose content embeds the plan as an "
                           "```edn fenced block matching :json-schema. "
                           "2) Run `kanban plan-to-kanban` with plan_id=<memory-id> (or plan_path=<file>). "

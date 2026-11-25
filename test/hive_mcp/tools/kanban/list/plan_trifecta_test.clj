@@ -26,7 +26,9 @@
    :rel (fn [{:keys [status offset limit query tags tag_match] :as req}
              {:keys [required-tags window page post-filters]}]
           (and (= "kanban" (first required-tags))
+               ;; status=all pushes no status tag (run-ledger-test pins it)
                (or (nil? status)
+                   (plan/all-statuses? status)
                    (some #{(kp/normalize-status status)} required-tags))
                ;; AND-tags are pushed down; OR-tags stay client-side.
                (if (and (seq tags) (= :any (plan/tag-mode tag_match)))
