@@ -211,22 +211,24 @@
                      #(catchup-git/gather-git-info directory)))))
 
 (defn- launch-status-future
-  [{:keys [project-id]}]
+  [{:keys [project-id private?]}]
   (let [status-providers (or (ext/get-extension :catchup/status-providers) {})]
     (pool/with-io
-      ((tt/timed-query "catchup/status-providers-total"
-                       #(reduce-kv (fn [acc k provider-fn]
-                                     (assoc acc k
-                                            (rescue nil (block-cache/run-status-provider k provider-fn project-id))))
-                                   {} status-providers))))))
+      (pv/in-view private?
+                  (tt/timed-query "catchup/status-providers-total"
+                                  #(reduce-kv (fn [acc k provider-fn]
+                                                (assoc acc k
+                                                       (rescue nil (block-cache/run-status-provider k provider-fn project-id))))
+                                              {} status-providers))))))
 
 (defn- launch-blocks-future
-  [{:keys [project-id directory caller-id]}]
+  [{:keys [project-id directory caller-id private?]}]
   (pool/with-io
-    ((tt/timed-query "catchup/blocks-total"
-                     #(compose-blocks {:project-id project-id
-                                       :directory  directory
-                                       :caller-id  caller-id})))))
+    (pv/in-view private?
+                (tt/timed-query "catchup/blocks-total"
+                                #(compose-blocks {:project-id project-id
+                                                  :directory  directory
+                                                  :caller-id  caller-id})))))
 
 (defn- launch-catchup-queries
   "Fire the four parallel queries. Returns a map of futures:

@@ -117,28 +117,32 @@
   "The value for `key`, computing it with `compute-fn` (0-arity) when the cache
    holds nothing usable for the current store. See the ns doc for `policy`.
 
+     private (bundle-cache/*private-view*) -> compute; nothing read or stored
      fresh  (age < :fresh-ms)                  -> cached value
      stale  (:fresh-ms <= age < :max-age-ms)   -> cached value; refresh in background
      cold   (absent, other store, too old)     -> compute under single-flight"
   [key policy compute-fn]
-  (ensure-subscribed!)
-  (let [{:keys [fresh-ms max-age-ms]} policy
-        store (current-store)
-        hit   (let [e (get @entries key)]
-                (when (and e (same-store? e store)) e))
-        age   (when hit (- (now-ms) (:stored-at hit)))]
-    (cond
-      (and hit (< age fresh-ms))
-      (do (count! :hit) (:value hit))
+  (if bundle-cache/*private-view*
+    (do (count! :private) (compute-fn))
+    (do
+      (ensure-subscribed!)
+      (let [{:keys [fresh-ms max-age-ms]} policy
+            store (current-store)
+            hit   (let [e (get @entries key)]
+                    (when (and e (same-store? e store)) e))
+            age   (when hit (- (now-ms) (:stored-at hit)))]
+        (cond
+          (and hit (< age fresh-ms))
+          (do (count! :hit) (:value hit))
 
-      (and hit (< age max-age-ms))
-      (do (count! :stale)
-          (refresh-in-background! key policy compute-fn)
-          (:value hit))
+          (and hit (< age max-age-ms))
+          (do (count! :stale)
+              (refresh-in-background! key policy compute-fn)
+              (:value hit))
 
-      :else
-      (do (count! :miss)
-          (bundle-cache/single-flight [::entry key] #(compute-and-store! key policy compute-fn))))))
+          :else
+          (do (count! :miss)
+              (bundle-cache/single-flight [::entry key] #(compute-and-store! key policy compute-fn))))))))
 
 ;; =============================================================================
 ;; Blocks and status providers
