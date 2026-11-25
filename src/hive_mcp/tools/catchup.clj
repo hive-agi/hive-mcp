@@ -445,11 +445,12 @@
 ;; -----------------------------------------------------------------------------
 
 (defn- enqueue-piggyback!
-  [{:keys [raw-caller-id piggyback-entries context-refs]}]
+  [{:keys [raw-caller-id piggyback-entries context-refs private?]}]
   (when (seq piggyback-entries)
     (memory-piggyback/enqueue! raw-caller-id
                                (mapv fmt/cap-piggyback-entry piggyback-entries)
-                               context-refs)))
+                               context-refs
+                               {:private? private?})))
 
 ;; -----------------------------------------------------------------------------
 ;; Top-level orchestration: run-catchup-pipeline
@@ -559,7 +560,8 @@
 
         _ (enqueue-piggyback! {:raw-caller-id     raw-caller-id
                                :piggyback-entries piggyback-entries
-                               :context-refs      context-refs})]
+                               :context-refs      context-refs
+                               :private?          private?})]
 
     (fit-inline-budget
      args (or project-id "global") share?
