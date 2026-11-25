@@ -78,6 +78,8 @@
 
 (m/=> kw-keys [:=> [:cat :any] :any])
 
+(m/=> refusal [:=> [:cat :keyword :string :map] [:fn #(instance? clojure.lang.ExceptionInfo %)]])
+
 (defn spec-of
   "The source-specific spec of `subscription`: its :spec map, keywordised.
    Pure."
@@ -273,3 +275,6 @@
     ;; a close that raced the schedule: cancel what was just scheduled
     (when @stopped? (when-let [c @cancel] (c)))
     (fn close [] (stop!))))
+
+(m/=> check! [:=> [:cat :keyword PollSpec :map [:fn ifn?]] :nil])
+(m/=> open-polling [:=> [:cat :keyword PollSpec :map [:fn ifn?] [:fn ifn?]] [:fn ifn?]])

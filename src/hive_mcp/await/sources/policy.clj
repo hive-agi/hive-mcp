@@ -64,3 +64,7 @@
       (throw (refusal :prom-predicate (str "target " (pr-str target) " has no configured URL")
                       [:prom :targets])))
     (str/replace url #"/+$" "")))
+
+(m/=> refusal [:=> [:cat :keyword :string [:vector :any]] [:fn #(instance? clojure.lang.ExceptionInfo %)]])
+(m/=> allowed! [:=> [:cat :keyword [:vector :any] :any :string] :any])
+(m/=> prom-target-url [:=> [:cat :any] :string])

@@ -177,3 +177,10 @@
 (def default-resolver
   "The process resolver: the scheme registry."
   (->RegistryResolver))
+
+(m/=> valid-vault-id? [:=> [:cat :any] :boolean])
+(m/=> register-resolver! [:=> [:cat :string :map] :string])
+(m/=> unregister-resolver! [:=> [:cat :string] [:vector :string]])
+(m/=> schemes [:=> [:cat] [:vector :string]])
+(m/=> check-ref! [:=> [:cat :keyword :any [:set :string]] Ref])
+(m/=> resolve-ref [:=> [:cat :any] :string])

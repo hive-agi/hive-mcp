@@ -72,3 +72,6 @@
   [^Pattern pattern ^String s budget-ms]
   (let [m (.matcher pattern (DeadlineChars. s (+ (System/nanoTime) (* 1000000 (long budget-ms)))))]
     (when (.find m) (.group m))))
+
+(m/=> check-pattern! [:=> [:cat :any [:fn ifn?]] [:fn #(instance? java.util.regex.Pattern %)]])
+(m/=> find-in [:=> [:cat [:fn #(instance? java.util.regex.Pattern %)] :string :int] [:maybe :string]])

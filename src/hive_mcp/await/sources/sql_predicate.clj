@@ -221,6 +221,10 @@
                    (bound-query (port/adapter-for (:dialect parsed)) parsed)
                    parsed))))
 
+(m/=> bound-query [:=> [:cat port/Adapter Parsed] [:map [:sql :string] [:params [:vector :any]]]])
+(m/=> probe-fn [:=> [:cat Parsed port/Adapter :any] [:fn ifn?]])
+(m/=> check! [:=> [:cat :map] :nil])
+
 (defmethod ports/check-subscription :sql-predicate
   [_subscription awaiter]
   (check! awaiter))

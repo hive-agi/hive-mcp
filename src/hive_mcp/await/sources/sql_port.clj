@@ -87,6 +87,8 @@
             :port :sql-runner :dialect dialect :registered (registered)
             :hint (str "load addon " default-addon)}))
 
+(m/=> missing [:=> [:cat :any] [:fn #(instance? clojure.lang.ExceptionInfo %)]])
+
 (defn adapter-for
   "The adapter for `dialect` (an id, or nil for the only one), or throw the
    :await/source-adapter-missing refusal."
