@@ -151,8 +151,68 @@
 (deftest summarize-is-short
   (is (= {"count" 3 "ids" ["a" "b" "c"]}
          (budget/summarize [{"id" "a"} {"id" "b"} {"id" "c"}])))
-  (is (= {"n" 1 "s" "ok"} (budget/summarize {"_block" "x" "hint" "h" "n" 1 "s" "ok"})))
-  (is (< (count (budget/summarize (filler 500))) 100)))
+  (is (= {"n" 1 "s" "ok" "hint" "h"} (budget/summarize {"_block" "x" "hint" "h" "n" 1 "s" "ok"})))
+  (is (< (count (budget/summarize (filler 500))) 100))
+  (testing "a long hint is kept, cut to about 160 chars"
+    (let [h (get (budget/summarize {"hint" (filler 500)}) "hint")]
+      (is (string? h))
+      (is (< 150 (count h) 170)))))
+
+(deftest summarize-keeps-row-identifiers
+  (testing "forge-inbox style rows keep their refs"
+    (is (= {"count" 2 "ids" ["hive-agi/x#1" "hive-agi/y#7"]}
+           (budget/summarize [{"ref" "hive-agi/x#1" "title" "Fix it"}
+                              {"ref" "hive-agi/y#7" "title" "Add it"}]))))
+  (testing "id wins, then ref, number, qn, name"
+    (is (= ["a"] (get (budget/summarize [{"id" "a" "ref" "r"}]) "ids")))
+    (is (= [42] (get (budget/summarize [{"number" 42 "name" "n"}]) "ids")))
+    (is (= ["ns/f"] (get (budget/summarize [{"qn" "ns/f" "name" "f"}]) "ids")))
+    (is (= ["f"] (get (budget/summarize [{"name" "f"}]) "ids")))
+    (is (= {"count" 1} (budget/summarize [{"title" "no id"}]))))
+  (testing "a shed block of {ref ...} rows keeps its refs in the stub summary"
+    (let [rows (block {:_block "pr-queue"
+                       :prs (vec (for [i (range 8)] {:ref (str "hive-agi/x#" i) :title (filler 400)}))})
+          blocks [(first (answer)) rows]
+          [_ put!] (atom-store)
+          fitted (budget/fit-blocks blocks {:budget 1500 :put-ref! put!})
+          s (json/read-str (:text (by-name fitted "pr-queue")))]
+      (is (true? (get s "shed")))
+      (is (= ["hive-agi/x#0" "hive-agi/x#1" "hive-agi/x#2" "hive-agi/x#3" "hive-agi/x#4"]
+             (get-in s ["summary" "prs" "ids"]))))))
+
+(deftest a-stub-has-an-expiry-and-a-fallback
+  (let [blocks (answer)
+        [_ put!] (atom-store)
+        now 1795621872490
+        fitted (budget/fit-blocks blocks {:budget 9000 :put-ref! put! :now-ms now})
+        stubs (filter #(get % "shed") (parsed fitted))]
+    (is (seq stubs))
+    (doseq [s stubs]
+      (is (= (str (java.time.Instant/ofEpochMilli (+ now budget/ref-ttl-ms)))
+             (get s "expires"))
+          (get s "_block"))
+      (is (= budget/fallback-call (get s "fallback")))
+      (is (re-find #"not-found" (get s "fallback")))
+      (is (re-find #"workflow catchup\" inline_budget=0" (get s "fallback"))))
+    (testing "without :now-ms the expiry is about an hour from now"
+      (let [s (first (filter #(get % "shed")
+                             (parsed (budget/fit-blocks blocks {:budget 9000 :put-ref! put!}))))
+            exp (.toEpochMilli (java.time.Instant/parse (get s "expires")))
+            delta (- exp (System/currentTimeMillis))]
+        (is (< (- budget/ref-ttl-ms 60000) delta (+ budget/ref-ttl-ms 1000)))))))
+
+(deftest forge-inbox-stays-inline-under-a-tight-budget
+  (let [inbox (block {:_block "forge-inbox" :count 3
+                      :owed (vec (for [i (range 3)]
+                                   {:ref (str "hive-agi/x#" i) :title (filler 300)
+                                    :url (str "https://example/x/" i)
+                                    :last-author "outsider" :last-at "2026-11-22"}))
+                      :hint "Outside issues/PRs where a maintainer owes the reply."})
+        blocks (conj (answer) inbox)
+        [_ put!] (atom-store)
+        fitted (budget/fit-blocks blocks {:budget 2000 :put-ref! put!})]
+    (is (= inbox (by-name fitted "forge-inbox")))
+    (is (not (some #{"forge-inbox"} (get (json/read-str (:text (second fitted))) "shed-blocks"))))))
 
 (defspec fit-blocks-holds-its-promises 50
   (prop/for-all [b (gen/choose 0 40000)]

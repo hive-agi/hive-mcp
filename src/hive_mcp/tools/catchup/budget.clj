@@ -5,13 +5,14 @@
    block. Every coordinator recycle pays for the whole answer in its
    context, so the inline part is kept under a byte budget:
 
-   - Pinned blocks (header, axiom-review, kanban) always stay inline and
-     whole: they are what an agent needs to resume.
+   - Pinned blocks (header, axiom-review, kanban, forge-inbox) always stay
+     inline and whole: they are what an agent needs to resume.
    - Every other block is sheddable. While the answer is over budget, the
      next sheddable block (bulkiest and least needed first, see
      `shed-rank`) is moved to the context store and replaced inline by a
-     stub: its name, its byte size, a ref, the call that fetches it, and a
-     short summary (counts, ids, short scalars).
+     stub: its name, its byte size, a ref, the call that fetches it, when
+     the ref expires, the fallback for a dead ref, and a short summary
+     (counts, ids, short scalars, the hint).
    - If the stubs alone still overflow, their summaries are dropped in the
      same order. The refs always stay.
    - When anything was shed, one small `inline-budget` block after the
@@ -38,8 +39,9 @@
   "catchup.inline-budget-bytes")
 
 (def pinned-blocks
-  "Blocks that never leave the inline answer."
-  #{"header" "axiom-review" "kanban" "inline-budget"})
+  "Blocks that never leave the inline answer. forge-inbox lists the PRs and
+   issues owing a maintainer reply, so it stays inline with the kanban."
+  #{"header" "axiom-review" "kanban" "forge-inbox" "inline-budget"})
 
 (def shed-rank
   "Shedding order for known blocks: lower sheds first. A block not named
@@ -83,26 +85,43 @@
   (get (parse-block block) "_block"))
 
 (def ^:private summary-string-cap 80)
+(def ^:private summary-hint-cap 160)
 (def ^:private summary-ids 5)
+
+(def id-keys
+  "Keys a list row's identifier is read from, first present wins: \"id\",
+   else a forge \"ref\" (owner/repo#n), a \"number\", a carto \"qn\" or a
+   \"name\"."
+  ["id" "ref" "number" "qn" "name"])
+
+(defn- cut [s cap]
+  (if (<= (count s) cap) s (str (subs s 0 cap) " …")))
+
+(defn- row-id
+  "The identifier of a list row: the value of its first present `id-keys`."
+  [row]
+  (when (map? row)
+    (some #(let [x (get row %)] (when (some? x) x)) id-keys)))
 
 (defn summarize
   "A short, shape-preserving summary of a parsed JSON value: scalars and
    short strings stay, long strings are cut, sequences become their count
-   (plus the first ids when their entries carry one), maps recurse to
-   `depth` and then become their key count. `_block` and `hint` are dropped."
+   (plus the first ids when their entries carry one of `id-keys`), maps
+   recurse to `depth` and then become their key count. `_block` is dropped;
+   a string `hint` is kept, cut to about 160 chars."
   ([v] (summarize v 2))
   ([v depth]
    (cond
      (or (nil? v) (number? v) (boolean? v)) v
-     (string? v) (if (<= (count v) summary-string-cap)
-                   v
-                   (str (subs v 0 summary-string-cap) " …"))
-     (sequential? v) (let [ids (keep #(when (map? %) (get % "id")) v)]
+     (string? v) (cut v summary-string-cap)
+     (sequential? v) (let [ids (keep row-id v)]
                        (cond-> {"count" (count v)}
                          (seq ids) (assoc "ids" (vec (take summary-ids ids)))))
      (map? v) (if (pos? depth)
-                (into {} (map (fn [[k x]] [k (summarize x (dec depth))]))
-                      (dissoc v "_block" "hint"))
+                (let [hint (get v "hint")]
+                  (cond-> (into {} (map (fn [[k x]] [k (summarize x (dec depth))]))
+                                (dissoc v "_block" "hint"))
+                    (string? hint) (assoc "hint" (cut hint summary-hint-cap))))
                 {"keys" (count v)})
      :else (str v))))
 
@@ -111,13 +130,28 @@
   [ref]
   (str "project command=\"context-get\" ctx_id=" ref))
 
+(def fallback-call
+  "What to do when a stub's ref is dead. The context store is in memory,
+   evicts its oldest entry at 2000 entries and is wiped by a JVM restart, so
+   `context-get` can answer {not-found true} before the TTL is up."
+  (str "if context-get answers not-found, re-run "
+       "project command=\"workflow catchup\" inline_budget=0"))
+
+(defn expires-at
+  "The ISO-8601 instant a ref stored at `now-ms` (epoch ms) expires:
+   now + `ref-ttl-ms`."
+  [now-ms]
+  (str (java.time.Instant/ofEpochMilli (+ now-ms ref-ttl-ms))))
+
 (defn- stub
-  [name data ref bytes summary?]
-  (cond-> {"_block" name
-           "shed"   true
-           "bytes"  bytes
-           "ref"    ref
-           "fetch"  (fetch-call ref)}
+  [name data ref bytes summary? expires]
+  (cond-> {"_block"   name
+           "shed"     true
+           "bytes"    bytes
+           "ref"      ref
+           "fetch"    (fetch-call ref)
+           "expires"  expires
+           "fallback" fallback-call}
     summary? (assoc "summary" (summarize data))))
 
 (defn- text-block [data] {:type "text" :text (json/write-str data)})
@@ -164,7 +198,7 @@
    `default-inline-budget`); an answer already under budget is returned
    unchanged. Pinned blocks are never shed, so a pinned part larger than
    the budget is answered whole and marked over-budget."
-  [blocks {:keys [budget put-ref!]}]
+  [blocks {:keys [budget put-ref! now-ms]}]
   (let [budget (if (nil? budget) default-inline-budget budget)
         before (answer-bytes blocks)]
     (if (or (not (pos-int? budget)) (<= before budget))
@@ -183,6 +217,7 @@
             ;; The note costs bytes too; reserve its size up front.
             reserve (utf8-bytes (:text (note-block budget before before
                                                    (mapv #(items %) order))))
+            expires (expires-at (or now-ms (System/currentTimeMillis)))
             fits? (fn [its] (<= (+ (answer-bytes (map :block its)) reserve) budget))
             shed-one (fn [its i summary?]
                        (let [{:keys [name data bytes ref]} (its i)
@@ -190,7 +225,7 @@
                          (if (nil? ref)
                            its
                            (update its i assoc :shed? true :ref ref
-                                   :block (text-block (stub name data ref bytes summary?))))))
+                                   :block (text-block (stub name data ref bytes summary? expires))))))
             pass (fn [its summary?]
                    (reduce (fn [its i]
                              (if (fits? its)
@@ -231,7 +266,8 @@
 (def FitOpts
   [:map
    [:budget {:optional true} [:maybe nat-int?]]
-   [:put-ref! {:optional true} [:maybe ifn?]]])
+   [:put-ref! {:optional true} [:maybe ifn?]]
+   [:now-ms {:optional true} [:maybe :int]]])
 
 (m/=> utf8-bytes [:=> [:cat :any] nat-int?])
 (m/=> answer-bytes [:=> [:cat [:sequential TextBlock]] nat-int?])
@@ -240,5 +276,6 @@
                  [:=> [:cat :any] :any]
                  [:=> [:cat :any :int] :any]])
 (m/=> fetch-call [:=> [:cat :string] :string])
+(m/=> expires-at [:=> [:cat :int] :string])
 (m/=> fit-blocks [:=> [:cat [:sequential TextBlock] FitOpts] [:sequential TextBlock]])
 (m/=> resolve-budget [:=> [:cat [:maybe :map] :any] nat-int?])
