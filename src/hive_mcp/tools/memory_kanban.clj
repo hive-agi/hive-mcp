@@ -348,14 +348,18 @@
    Like `move*`, the slim view is derived from the committed effect payload
    rather than a read-back, because some vector backends are eventual here.
    A move to done also lists the card's open KG children."
-  [{:keys [task_id id new_status status title description append_description priority directory agent_id] :as params}]
+  [{:keys [task_id id new_status status title description append_description priority directory agent_id
+           add_tags remove_tags] :as params}]
   (let [task-id    (or task_id id)
         new-status (or new_status status)
+        tag-deltas? (or (seq add_tags) (seq remove_tags))
         payload    {:task-id            task-id
                     :title              title
                     :description        description
                     :append-description append_description
                     :priority           priority
+                    :add-tags           (when (seq add_tags) (vec add_tags))
+                    :remove-tags        (when (seq remove_tags) (vec remove_tags))
                     :agent-id           (or agent_id (swallow/attempt (ctx/current-agent-id)))
                     :directory          directory}
         result     (if new-status
@@ -364,7 +368,8 @@
                      (kanban-events/dispatch-edit! payload))]
     (if (r/ok? result)
       (let [{:keys [content tags]} (get-in result [:ok :kanban/facade-update :payload])]
-        (mcp-json (with-open-children (kt/task->slim {:id task-id :content content :tags tags})
+        (mcp-json (with-open-children (cond-> (kt/task->slim {:id task-id :content content :tags tags})
+                                        tag-deltas? (assoc :tags tags))
                     task-id new-status)))
       (mcp-error (or (:message result)
                      (str "Edit failed: " (:error result)))))))
@@ -375,11 +380,14 @@
    `new_status`/`status` moves; `title`/`description`/`priority` edit. When
    both are given `edit*` sends them as ONE commit, so the returned slim view
    carries both changes or the call fails with nothing applied.
-   `append_description` extends the existing description without replacing it."
-  [{:keys [new_status status title description append_description priority] :as params}]
+   `append_description` extends the existing description without replacing it.
+   `add_tags`/`remove_tags` ride the same commit as the move and the edit, so
+   closing a card with a verdict tag is one call (RUN-LEDGER-3)."
+  [{:keys [new_status status title description append_description priority add_tags remove_tags] :as params}]
   (let [given? (fn [v] (and (string? v) (not (str/blank? v))))
         move?  (some given? [new_status status])
-        edit?  (some given? [title description append_description priority])]
+        edit?  (or (some given? [title description append_description priority])
+                   (seq add_tags) (seq remove_tags))]
     (cond
       edit?  (edit* (cond-> params (not move?) (dissoc :new_status :status)))
       :else  (move* params))))

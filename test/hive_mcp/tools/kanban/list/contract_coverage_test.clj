@@ -20,8 +20,8 @@
 
 (deftest tools-kanban-list-gate-is-not-vacuous
   (let [report (coverage/coverage {:paths [list-dir]})]
-    (is (= 14 (count (:universe report))) "list/plan 12 + list/source 2")
-    (is (= 14 (count (:covered report))))))
+    (is (= 16 (count (:universe report))) "list/plan 14 + list/source 2")
+    (is (= 16 (count (:covered report))))))
 
 (deftest seq-source-contract-is-registered
   (is (some? (get-in (m/function-schemas) ['hive-mcp.tools.kanban.list.source '->seq-source])))

@@ -67,7 +67,7 @@
   {:created_after "UbDdG0y5G58X2Qc2nw5", :updated_after "3OPp283Kt"}},
  :case-4
  {:out
-  {:required-tags ["kanban" "done"],
+  {:required-tags ["kanban" "doing"],
    :window 20000,
    :post-filters
    {:query nil,
@@ -77,7 +77,7 @@
     :or-tags nil},
    :page {:offset nil, :limit nil, :fields nil}},
   :in
-  {:status "done",
+  {:status "doing",
    :tags nil,
    :query nil,
    :updated_after nil,

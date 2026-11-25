@@ -146,8 +146,12 @@
        `kt/edit-transition` for why the tag must travel with the content.
      * `:kanban/temporal-record` op = `:kanban-edit`, emitted only when a
        field actually changed, so a no-op edit leaves no audit noise.
+     * `:add-tags` / `:remove-tags` apply to the (priority-moved) tags in the
+       SAME commit, so a verdict tag rides the update that sets it
+       (RUN-LEDGER-3). Scope is untouched: a scope move stays `retag`.
      * No completion hooks, no movement tracking, no delete effect"
-  [{:keys [:kanban/entry]} [_ {:keys [task-id title description append-description priority agent-id]}]]
+  [{:keys [:kanban/entry]} [_ {:keys [task-id title description append-description priority agent-id
+                                      add-tags remove-tags]}]]
   (when (and entry (pred/kanban-entry? entry))
     (let [{:keys [changed new-content new-tags
                   old-title new-title old-priority new-priority]}
@@ -156,6 +160,14 @@
                                      :append-description append-description
                                      :priority           priority
                                      :agent-id           agent-id})
+          deltas?    (or (seq add-tags) (seq remove-tags))
+          base-tags  (or new-tags (vec (:tags entry)))
+          new-tags   (if deltas?
+                       (:new-tags (kt/retag-transition (assoc entry :tags base-tags) nil
+                                                       {:add-tags add-tags :remove-tags remove-tags}))
+                       new-tags)
+          changed    (cond-> (set changed)
+                       (and deltas? (not= new-tags (vec (:tags entry)))) (conj :tags))
           project-id (kt/extract-project-id-from-tags entry)]
       (cond-> {:kanban/facade-update
                {:task-id task-id
@@ -390,9 +402,10 @@
      (r/err :kanban/nothing-to-edit ...)    when no editable field was given
      (r/err :kanban/invalid-priority ...)   when priority is outside the enum
      (r/err :kanban/invalid-task ...)       when entry missing or non-kanban"
-  [{:keys [task-id title description append-description priority] :as event-payload}]
+  [{:keys [task-id title description append-description priority add-tags remove-tags] :as event-payload}]
   (init!)
-  (let [given?     (fn [v] (and (string? v) (not (clojure.string/blank? v))))
+  (let [given?     (fn [v] (or (and (string? v) (not (clojure.string/blank? v)))
+                               (and (sequential? v) (boolean (seq v)))))
         priorities #{"high" "medium" "low"}]
     (cond
       (or (nil? task-id)
@@ -401,9 +414,9 @@
              {:message "Edit requires :task-id"
               :given   task-id})
 
-      (not (some given? [title description append-description priority]))
+      (not (some given? [title description append-description priority add-tags remove-tags]))
       (r/err :kanban/nothing-to-edit
-             {:message "Edit requires at least one of :title, :description, :append-description, :priority"
+             {:message "Edit requires at least one of :title, :description, :append-description, :priority, :add-tags, :remove-tags"
               :task-id task-id})
 
       (and (given? priority) (not (priorities priority)))

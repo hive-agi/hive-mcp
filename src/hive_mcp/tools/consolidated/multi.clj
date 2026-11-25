@@ -548,10 +548,10 @@
                                           :description "[session/workflow] Kanban task IDs"}
                               "add_tags" {:type "array"
                                           :items {:type "string"}
-                                          :description "[kanban retag] Extra tags to add"}
+                                          :description "[kanban retag|update] Extra tags to add; on update, in the same commit as new_status"}
                               "remove_tags" {:type "array"
                                              :items {:type "string"}
-                                             :description "[kanban retag] Tags to remove"}
+                                             :description "[kanban retag|update] Tags to remove; on update, in the same commit as new_status"}
                               "exclude_tags" {:type "array"
                                               :items {:type "string"}
                                               :description "[memory query/search] Tags to exclude from results"}
