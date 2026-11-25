@@ -202,7 +202,7 @@
                                              :description "[kanban retag|update] Tags to remove (applied after add; on update, in the same commit as new_status)"}
                               "status" {:type "string"
                                         :enum ["todo" "inprogress" "inreview" "done" "all"]
-                                        :description "[kanban create] Initial status (default: todo) / [kanban list] Filter by status; status=\"all\" returns EVERY status, done included (with tags, one call is a run's result table). Without status the board hides done cards. Aliases inprogress→doing, inreview→review are normalized."}
+                                        :description "[kanban create] Initial status (default: todo) / [kanban list] Filter by status; status=\"all\" returns EVERY status, done included (with tags, one call is a run's result table). Without status (with hive-knowledge mounted) the default board hides done cards. Aliases inprogress→doing, inreview→review are normalized."}
                               "include_descendants" {:type "boolean"
                                                      :description "[kanban] Include DESCENDANT (child) project tasks (HCR). Default true. Ancestor (parent) tasks are ALWAYS included regardless of this flag ('child sees parent')."}
                               "scope" {:type "string"

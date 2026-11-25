@@ -39,9 +39,10 @@
   "all")
 
 (defn all-statuses?
-  "True iff `status` asks for every status (\"all\", any case)."
+  "True iff `status` asks for every status: exactly \"all\", the same
+   case-sensitive spelling `ListStatus` and the MCP enum accept."
   [status]
-  (boolean (and (string? status) (= all-statuses (str/lower-case (str/trim status))))))
+  (= all-statuses status))
 
 (defn status-filter
   "The status pushed to the store: nil for none or \"all\", else the
