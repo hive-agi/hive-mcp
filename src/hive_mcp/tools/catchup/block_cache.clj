@@ -60,7 +60,7 @@
 
 (defonce ^:private entries    (atom {}))
 (defonce ^:private refreshing (atom #{}))
-(defonce ^:private counters   (atom {:hit 0 :stale 0 :miss 0 :dropped 0}))
+(defonce ^:private counters   (atom {:hit 0 :stale 0 :miss 0 :dropped 0 :private 0}))
 
 (defn- count! [k] (swap! counters update k (fnil inc 0)))
 
@@ -76,7 +76,7 @@
   []
   (reset! entries {})
   (reset! refreshing #{})
-  (reset! counters {:hit 0 :stale 0 :miss 0 :dropped 0})
+  (reset! counters {:hit 0 :stale 0 :miss 0 :dropped 0 :private 0})
   nil)
 
 ;; =============================================================================
