@@ -223,6 +223,22 @@
     (is (= ["cleanup:pending"] (:removed-tags data)))
     (is (some #{"tags"} (:changed data)))))
 
+(deftest all-is-never-a-target-status
+  (testing "update refuses new_status=all and leaves the card alone"
+    (is (= :kanban/invalid-status
+           (:error (ku/dispatch-update! {:task-id "s1" :new-status "all" :add-tags ["x:y"]}))))
+    (is (= :kanban/invalid-status
+           (:error (kevents/dispatch-move! {:task-id "s1" :new-status "all"}))))
+    (doseq [params [{:task_id "s1" :new_status "all"}
+                    {:task_id "s1" :status "all"}
+                    {:task_id "s1" :new_status "all" :add_tags ["x:y"]}]]
+      (is (:isError (mk/handle-mem-kanban-move params)) (pr-str params)))
+    (is (= "todo" (get-in (kanban-facade/get-entry-by-id "s1") [:content :status]))))
+  (testing "create refuses status=all"
+    (let [res (mk/handle-mem-kanban-create {:title "x" :status "all" :directory "/tmp/run-ledger"})]
+      (is (:isError res))
+      (is (re-find #"Invalid kanban status" (:text res))))))
+
 (deftest status-all-is-case-sensitive-like-list-status
   (is (plan/all-statuses? "all"))
   (doseq [s ["ALL" "All" " all" nil "done"]]

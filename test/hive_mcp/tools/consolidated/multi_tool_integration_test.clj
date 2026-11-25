@@ -672,8 +672,13 @@
       (is (contains? props "directory")))))
 
 (deftest test-kanban-status-enum
-  (testing "kanban status enum is correct"
-    (let [enum (get-in kanban/tool-def [:inputSchema :properties "status" :enum])]
+  (testing "kanban status enum is the four statuses plus list-only all"
+    (let [prop (get-in kanban/tool-def [:inputSchema :properties "status"])]
+      (is (= #{"todo" "inprogress" "inreview" "done" "all"} (set (:enum prop))))
+      (is (re-find #"\[list\]" (:description prop)))
+      (is (re-find #"not all" (:description prop)) "documented as invalid for create")))
+  (testing "new_status, the update target, never offers all"
+    (let [enum (get-in kanban/tool-def [:inputSchema :properties "new_status" :enum])]
       (is (= #{"todo" "inprogress" "inreview" "done"} (set enum))))))
 
 ;; =============================================================================
