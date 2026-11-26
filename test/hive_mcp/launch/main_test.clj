@@ -2,6 +2,13 @@
   "argv parity between the bb launcher and bin/hive-mcp-legacy, plus the pure
    `argv` function and the stdout promise.
 
+   ^:bb-only on every deftest: this WHOLE namespace is the bb launcher's suite,
+   and the JVM tier excludes it (deps.edn :test / :test-unit, -e :bb-only).
+   The tag goes on the VARS because cognitect's runner filters on var metadata,
+   not namespace metadata; a ns-level tag would be silently ignored. The
+   subprocess cases spawn `bb`, which the Unit Tests job deliberately does not
+   install, so the JVM run selects none of them; `bb test:launch` runs them all.
+
    Every case runs the two launchers as subprocesses with an EXPLICIT,
    minimal environment map (babashka.process :env REPLACES the environment, it
    does not merge), pointing HOME and the three XDG directories at a temp dir
@@ -177,16 +184,34 @@
            "\n  legacy: " (:legacy result))))
 
 ;; =============================================================================
+;; The JVM-tier exclusion, asserted
+;; =============================================================================
+
+(deftest ^:bb-only every-test-var-is-tagged-bb-only
+  ;; The guard is on the VARS because that is what cognitect's runner filters
+  ;; (`var-filter` reads (meta var), never namespace metadata). So a new deftest
+  ;; here that forgets ^:bb-only would be selected by the JVM tier and fail on a
+  ;; missing `bb` -- this assertion makes that mistake fail HERE instead, in the
+  ;; suite that actually runs these tests.
+  (let [vars (->> (ns-publics 'hive-mcp.launch.main-test)
+                  (filter (fn [[_ v]] (:test (meta v))))
+                  (map (fn [[n v]] [n (boolean (:bb-only (meta v)))])))
+        untagged (into [] (comp (remove second) (map first)) vars)]
+    (is (seq vars) "the namespace still holds tests")
+    (is (empty? untagged)
+        (str "every test var carries ^:bb-only; missing: " (pr-str untagged)))))
+
+;; =============================================================================
 ;; The six parity fixtures
 ;; =============================================================================
 
-(deftest parity-no-config
+(deftest ^:bb-only parity-no-config
   (testing "no config.edn anywhere: both launchers use bin/hive-mcp's defaults"
     (let [root (temp-dir! "lc3-none")
           project (project! root)]
       (assert-parity "no config" (parity root project {})))))
 
-(deftest parity-env-overrides
+(deftest ^:bb-only parity-env-overrides
   (testing "HIVE_MCP_XMX and HIVE_PROFILE: every knob still works through env"
     (let [root (temp-dir! "lc3-env")
           project (project! root)
@@ -202,7 +227,7 @@
         (is (some #{"-J-Xms3g"} (:new-argv result)))
         (is (some #{"-J-XX:SoftMaxHeapSize=20g"} (:new-argv result)))))))
 
-(deftest parity-fast-boot-fresh
+(deftest ^:bb-only parity-fast-boot-fresh
   (testing "HIVE_FAST_BOOT=1 with a stamp newer than every source: :mcp:fast-boot"
     (let [root (temp-dir! "lc3-fresh")
           project (project! root)
@@ -214,7 +239,7 @@
         (testing "and both took the fast-boot alias"
           (is (some #{"-M:mcp:fast-boot"} (:new-argv result))))))))
 
-(deftest parity-fast-boot-stale
+(deftest ^:bb-only parity-fast-boot-stale
   (testing "HIVE_FAST_BOOT=1 with a source newer than the stamp: declines"
     (let [root (temp-dir! "lc3-stale")
           project (project! root)
@@ -232,7 +257,7 @@
           (is (some #{"-M:mcp"} (:new-argv result)))
           (is (not-any? #{"-M:mcp:fast-boot"} (:new-argv result))))))))
 
-(deftest parity-local-deps-only
+(deftest ^:bb-only parity-local-deps-only
   (testing "no :launch :deps, a local.deps.edn present: the deprecated fallback"
     (let [root (temp-dir! "lc3-local")
           project (project! root)
@@ -252,7 +277,7 @@
             (is payload?
                 "the -Sdeps payload is the file text without its trailing newline")))))))
 
-(deftest parity-config-launch-only
+(deftest ^:bb-only parity-config-launch-only
   (testing "a config.edn carrying only :launch restating the defaults, no :deps"
     ;; The legacy script reads NO config.edn: it has no :launch layer. So this
     ;; fixture is parity WHERE IT MUST HOLD -- a :launch section that restates
@@ -278,7 +303,7 @@
 ;; stdout is the transport: it must stay empty
 ;; =============================================================================
 
-(deftest stdout-stays-empty
+(deftest ^:bb-only stdout-stays-empty
   (testing "--print-argv and --dry-run write stderr only, through the shim"
     (let [root (temp-dir! "lc3-stdout")
           project (project! root)
@@ -292,7 +317,7 @@
           (is (= 0 (:exit via-bb)) (str flag " through bb: exit"))
           (is (= "" (:stdout via-bb)) (str flag " through bb: stdout must be empty")))))))
 
-(deftest dry-run-prints-the-plan
+(deftest ^:bb-only dry-run-prints-the-plan
   (testing "--dry-run answers the LaunchPlan as EDN on stderr"
     (let [root (temp-dir! "lc3-dry")
           project (project! root)
@@ -319,7 +344,7 @@
    :passthrough []
    :env-exports {"MALLOC_ARENA_MAX" "4"}})
 
-(deftest argv-golden
+(deftest ^:bb-only argv-golden
   (testing "no overlay: no -Sdeps at all, exactly as bin/hive-mcp with no local.deps.edn"
     (is (= ["clojure" "-J-Xmx10g" "-J-Xms2g" "-M:mcp" "-m" "hive-mcp.server.core"]
            (main/argv base-plan nil)))
@@ -352,7 +377,7 @@
     (is (= "\"a\nb\"" (main/edn-string "a\nb")))
     (is (= "\"[\\\"x\\\"]\"" (main/edn-string "[\"x\"]")))))
 
-(deftest flags-are-consumed-before-passthrough
+(deftest ^:bb-only flags-are-consumed-before-passthrough
   (testing "--print-argv and --dry-run never reach the server's argument list"
     (is (= {:dry-run? true :print-argv? false :args []}
            (main/split-flags ["--dry-run"])))
@@ -365,7 +390,7 @@
 ;; The config boundary: never a crash, always a notice
 ;; =============================================================================
 
-(deftest read-config-is-total
+(deftest ^:bb-only read-config-is-total
   (testing "a missing path, a missing file, bad EDN and a non-map all answer nil plus a notice"
     (let [root (temp-dir! "lc3-cfg")
           bad (str (fs/path root "bad.edn"))
@@ -385,7 +410,7 @@
           (is (map? config))
           (is (nil? notice)))))))
 
-(deftest config-path-follows-the-precedence
+(deftest ^:bb-only config-path-follows-the-precedence
   (testing "HIVE_MCP_CONFIG, else XDG_CONFIG_HOME, else HOME/.config"
     (let [root (temp-dir! "lc3-path")
           home (str (fs/path root "h"))

@@ -448,7 +448,12 @@
    ;; non-loopback host or a live-service port is refused and fails the run.
    ;; Live suites live in test-e2e/ and run under :test-e2e only.
    :jvm-opts ["-Xmx2g" "-Dhive.test=true" "-Dhive.mcp.config=target/test-config/config.edn" "-Dhive.kg.backend=datascript"]
+   ;; :bb-only excludes the suites that need babashka on PATH (the launcher's
+   ;; argv/parity tests). They belong to `bb test:launch`, run by CI's Launcher
+   ;; job; the Unit Tests job installs no bb, so selecting them here would fail
+   ;; a JVM run over a missing binary.
    :main-opts ["-m" "hive-mcp.test-runner" "-e" ":integration" "-e" ":e2e"
+               "-e" ":bb-only"
                "-r" "^hive-mcp\\.(?!backends\\.).*-test$"]}
 
   ;; CI-friendly: Run only unit tests (excludes tests requiring Emacs)
@@ -469,10 +474,16 @@
                 ;; must not be able to fail at load.
                 io.github.hive-agi/hive-schemas {:mvn/version "0.2.2"}}
    :jvm-opts ["-Xmx2g" "-Dhive.test=true" "-Dhive.mcp.config=target/test-config/config.edn" "-Dhive.kg.backend=datascript"]
+   ;; :bb-only excludes the suites that need babashka on PATH (the launcher's
+   ;; argv/parity tests, ^:bb-only). They belong to `bb test:launch`, run by
+   ;; CI's Launcher job; this job installs no bb, so selecting them here would
+   ;; fail a JVM run over a missing binary. The exclusion is the SAME mechanism
+   ;; :integration and :e2e already use.
    :main-opts ["-m" "hive-mcp.test-runner" "-e" ":integration" "-e" ":e2e"
+               "-e" ":bb-only"
                "-r" "^hive-mcp\\.(?!backends\\.).*-test$"]
    :exec-fn cognitect.test-runner.api/test
-   :exec-args {:excludes [:integration :e2e]
+   :exec-args {:excludes [:integration :e2e :bb-only]
                :patterns ["^hive-mcp\\.(?!backends\\.).*-test$"]}}
 
   ;; THE E2E TIER: suites that need a real service. They live in test-e2e/

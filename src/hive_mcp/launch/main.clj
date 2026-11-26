@@ -182,6 +182,15 @@
    rather than pretending otherwise."
   (delay (shell/make-shell)))
 
+(def CmdResult
+  "What a captured question answers: the exit status (nil when the effect
+   could not run at all), the two streams, and the error tag in that case."
+  [:map
+   [:exit [:maybe :int]]
+   [:stdout :string]
+   [:stderr :string]
+   [:error {:optional true} :keyword]])
+
 (defn capture
   "Run CMD and answer {:exit N :stdout S :stderr S}.
 
@@ -194,6 +203,11 @@
      (if (r/ok? res)
        (select-keys (:ok res) [:exit :stdout :stderr])
        {:exit nil :stdout "" :stderr "" :error (:error res)}))))
+
+;; Multi-arity, so :function over one arrow per arity.
+(m/=> capture [:function
+               [:=> [:cat [:sequential :any]] CmdResult]
+               [:=> [:cat [:sequential :any] :map] CmdResult]])
 
 ;; =============================================================================
 ;; Host inputs: the config, the checkout, the AOT facts
@@ -213,6 +227,10 @@
   (if-let [override (env/present src "HIVE_MCP_CONFIG")]
     (path/expand-tilde override (xdg/home src))
     (xdg/app-dir src :config "hive-mcp" "config.edn")))
+
+;; An IEnvSource, not a map: hive-system.xdg reads the variable through the
+;; port, and a bare map would answer nil to every lookup.
+(m/=> config-path [:=> [:cat [:fn (fn [x] (satisfies? env/IEnvSource x))]] [:maybe :string]])
 
 (defn read-config
   "The config map at PATH, as {:config M :notice S-or-nil}.
@@ -251,6 +269,10 @@
 
         :else {:config (:ok read) :notice nil}))))
 
+(m/=> read-config
+      [:=> [:cat [:maybe :string]]
+       [:map [:config [:maybe :map]] [:notice [:maybe :string]]]])
+
 (defn project-dir
   "The hive-mcp checkout the launcher belongs to.
 
@@ -264,6 +286,9 @@
         (str (fs/normalize (fs/parent config))))
       (get props "user.dir")
       "."))
+
+(m/=> project-dir
+      [:=> [:cat [:fn (fn [x] (satisfies? env/IEnvSource x))] :map] :string])
 
 (defn resolve-overlay
   "The -Sdeps overlay for LAUNCH-CFG, with local.deps.edn as a DEPRECATED input.
@@ -307,6 +332,12 @@
 
       :else {:overlay nil :map nil :notices []})))
 
+(m/=> resolve-overlay
+      [:=> [:cat [:maybe :map] :string]
+       [:map [:overlay [:maybe [:or :map :string]]]
+        [:map [:maybe :map]]
+        [:notices [:vector :string]]]])
+
 (defn aot-facts
   "The two AOT facts hive-mcp.launch.plan reads: is the stamp there, and is any
    source newer than it.
@@ -328,6 +359,10 @@
                          {})]
         {:aot-stamp? true
          :aot-stale? (not (str/blank? (:stdout res)))}))))
+
+(m/=> aot-facts
+      [:=> [:cat :string]
+       [:map [:aot-stamp? :boolean] [:aot-stale? :boolean]]])
 
 ;; =============================================================================
 ;; The supervising shell: bin/oom-policy.sh, sourced, not ported
@@ -499,6 +534,10 @@
     (if (:ok? claim)
       (process/exec {:cmd (chain plan argv project) :extra-env (exec-env plan)})
       (System/exit (:exit claim)))))
+
+;; Replaces the process image, so no shape comes back: :any is the honest
+;; answer, and babashka.process/exec never returns under that name.
+(m/=> launch! [:=> [:cat :map [:sequential :string] :string] :any])
 
 ;; =============================================================================
 ;; The boundary
