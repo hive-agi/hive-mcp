@@ -1,4 +1,7 @@
-{:paths ["src" "scripts"]
+{;; "resources" is on the path so `bb test:launch` resolves the preset
+ ;; resources (resources/hive_mcp/launch/presets/*.edn) and the repo's
+ ;; starter.deps.edn through io/resource, the same lookup the JVM uses.
+ :paths ["src" "scripts" "resources"]
 
  ;; malli and test.check: for `test:launch` (metosin/malli is also in deps.edn,
  ;; test.check on :test*).
@@ -8,9 +11,12 @@
 
  :tasks
  ;; :extra-paths is scoped to this task; other tasks load src alone.
- {test:launch {:doc "Test the :launch config layer (schema, defaults, env knobs) under babashka; no JVM, no server. Exits non-zero on failure"
+ {test:launch {:doc "Test the :launch config layer (schema, defaults, env knobs, deps overlay) under babashka; no JVM, no server. Exits non-zero on failure"
                :extra-paths ["test"]
                :task (exec 'hive-mcp.launch.test-runner/-main)}
+
+  launch:import {:doc "Print the :launch fragment for a local.deps.edn path as EDN on stdout; writes nothing. Reads no other file."
+                 :task (apply (requiring-resolve 'hive-mcp.launch.importer/-main) *command-line-args*)}
 
   test {:doc "Run tests"
         :task (shell "bin/clj-test -M:test")}
