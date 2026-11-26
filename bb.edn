@@ -4,7 +4,11 @@
  ;; test.check on :test*).
  :deps {babashka/process {:mvn/version "0.6.25"}
         metosin/malli {:mvn/version "0.20.2"}
-        org.clojure/test.check {:mvn/version "1.1.3"}}
+        org.clojure/test.check {:mvn/version "1.1.3"}
+        ;; Pinned to the version the root deps.edn pins. Without this, bb
+        ;; resolves Clojure transitively and can land on a version whose jar a
+        ;; cold Maven cache cannot serve, which failed CI's launch job once.
+        org.clojure/clojure {:mvn/version "1.12.6"}}
 
  :tasks
  ;; :extra-paths is scoped to this task; other tasks load src alone.
