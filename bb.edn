@@ -1,9 +1,24 @@
 {:paths ["src" "scripts"]
 
- :deps {babashka/process {:mvn/version "0.6.25"}}
+ ;; malli and test.check are here for `test:launch` only: hive-mcp.launch.*
+ ;; (the :launch config schema, its defaults and the env-knob table) is plain
+ ;; data plus total parsers, and it must stay runnable and testable with NO
+ ;; JVM and no server, so a schema edit is checked in a second rather than a
+ ;; cold clojure -M:test-unit. malli works under babashka; both are on the JVM
+ ;; classpath already (metosin/malli in deps.edn :deps, test.check on :test*).
+ :deps {babashka/process {:mvn/version "0.6.25"}
+        metosin/malli {:mvn/version "0.20.2"}
+        org.clojure/test.check {:mvn/version "1.1.3"}}
 
  :tasks
- {test {:doc "Run tests"
+ ;; :extra-paths is scoped to THIS task on purpose: the :launch tests must not
+ ;; widen the classpath of `bb test`, `bb serve` or any other task, which load
+ ;; src alone.
+ {test:launch {:doc "Test the :launch config layer only (schema, defaults, env knobs) under babashka; no JVM, no server. Exits non-zero on failure"
+               :extra-paths ["test"]
+               :task (exec 'hive-mcp.launch.test-runner/-main)}
+
+  test {:doc "Run tests"
         :task (shell "bin/clj-test -M:test")}
 
   repl {:doc "Start a scratch dev nREPL on an OS-assigned port (never 7910)"
