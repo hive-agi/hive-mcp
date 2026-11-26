@@ -12,7 +12,8 @@
   (:require [clojure.edn :as edn]
             [clojure.java.io :as io]
             [clojure.pprint :as pprint]
-            [hive-mcp.launch.deps :as deps]))
+            [hive-mcp.launch.deps :as deps]
+            [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -27,6 +28,8 @@
    read as EDN."
   [src]
   (deps/import-local-deps (edn/read-string {:default tagged-literal} src)))
+
+(m/=> fragment-for [:=> [:cat :string] [:map]])
 
 (defn -main
   "Print the :launch fragment for the file named by the first argument.
@@ -54,3 +57,5 @@
               (pprint/pprint fragment))
             (flush)
             (System/exit 0)))))))
+
+(m/=> -main [:=> [:cat [:* :string]] :any])
