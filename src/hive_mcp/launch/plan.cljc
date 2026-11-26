@@ -342,6 +342,14 @@
 ;; Contracts
 ;; =============================================================================
 
+(m/=> resolve-launch
+      [:=> [:cat [:map]]
+       [:map
+        [:launch :map]
+        [:ignored [:vector [:tuple :string :any]]]
+        [:passthrough [:vector :string]]
+        [:flag-notices [:vector :string]]]])
+
 (m/=> plan [:=> [:cat :map] LaunchPlan])
 
 (comment
