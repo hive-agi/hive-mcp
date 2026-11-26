@@ -31,6 +31,7 @@
 
    Every function here is pure except load-preset, which reads one resource."
   (:require [clojure.string :as str]
+            [hive-system.path :as path]
             [malli.core :as m]
             ;; cljs has neither clojure.edn nor a classpath resource stream.
             ;; babashka's feature set carries :clj, so :default serves it and
@@ -44,32 +45,8 @@
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
 
 ;; =============================================================================
-;; Paths: absolute, and a plain string join
+;; Paths: hive-system.path owns the arithmetic
 ;; =============================================================================
-
-;; Both path helpers below are PRIVATE and TEMPORARY: hive-system.path owns
-;; path arithmetic (plan SYSOPS-PATH, step SP3 replaces them). Nothing outside
-;; this namespace may depend on them.
-(defn- absolute-path?
-  "True when `p` is a POSIX absolute path: a string whose first character is
-   a slash. A tilde prefix is NOT absolute here, because expanding it is the
-   shell's act, not the launcher's."
-  [p]
-  (and (string? p)
-       (str/starts-with? p "/")))
-
-(defn- join-path
-  "`p` appended to `base` with exactly one separator between them.
-
-   A plain string join: no canonicalization, so `..` and `.` segments survive
-   into the overlay exactly as the caller wrote them. A nil or empty `base`
-   answers `p`."
-  [base p]
-  (cond
-    (not (string? base)) p
-    (empty? base) p
-    (str/ends-with? base "/") (str base p)
-    :else (str base "/" p)))
 
 (defn resolve-local-root
   "COORD with its relative `:local/root` resolved against WORKSPACE.
@@ -83,8 +60,8 @@
              (string? root)
              (string? workspace)
              (not (str/blank? workspace))
-             (not (absolute-path? root)))
-      (assoc coord :local/root (join-path workspace root))
+             (not (path/absolute? root)))
+      (assoc coord :local/root (path/join workspace root))
       coord)))
 
 (defn resolve-deps
