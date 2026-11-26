@@ -40,6 +40,7 @@
   "analysis"
   "kernel"
   "hot"
+  "launch"
   "scripts.aot-boot"
   "scheduler.housekeeping"
   "scheduler.gc-gate"
