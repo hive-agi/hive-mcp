@@ -90,8 +90,11 @@
           (is (= "armed" (get-in a [:awaiter :status])))
           (is (= "run-v1" (get-in a [:awaiter :owner :run-id]))))
         (is (wait-until 2000 #(= ["v1"] @woken)))
-        (is (= "woken" (:status (get-in (body (await-tool/handle-list {:status "woken"}))
-                                        [:awaiters 0])))))
+        ;; The resumer runs before resume! marks the row :woken, so wait for
+        ;; the status too instead of reading it right after the stub fired.
+        (is (= "woken" (wait-until 2000
+                                   #(:status (get-in (body (await-tool/handle-list {:status "woken"}))
+                                                     [:awaiters 0]))))))
       (testing "cancel stops v2 for good"
         (is (= "cancelled" (get-in (body (await-tool/handle-cancel {:id "v2"})) [:awaiter :status])))
         (await-tool/handle-fire {:data {}})
