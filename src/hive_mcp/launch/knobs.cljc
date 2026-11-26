@@ -1,26 +1,9 @@
 (ns hive-mcp.launch.knobs
-  "Every environment variable bin/hive-mcp reads, as DATA: the knob table.
+  "Every environment variable bin/hive-mcp reads, as data: the knob table.
 
-   LC0 delivers the table plus a TOTAL parser. Nothing here reads the
-   environment or applies a value; LC1's planner takes the table and answers a
-   LaunchPlan with the precedence flag > env > config :launch > defaults.
-
-   A knob is {:env VAR :path [:key ...] :parse KIND}. The :path is rooted at
-   the :launch section, so [:jvm :xmx] addresses :launch :jvm :xmx. :parse
-   names a KIND of parser, resolved by parse-knob through parsers, which
-   keeps the table plain data: salvageable from EDN, printable in docs, and
-   checkable against the schema by a test.
-
-   PARSERS ARE TOTAL. parse-knob answers nil on anything it cannot parse and
-   NEVER throws: the input is an environment variable, which is whatever bytes
-   whoever started the server put there, and a launcher that dies on a typo
-   cannot print the notice saying what it ignored. nil means ignore this knob
-   and take the next precedence layer.
-
-   THE SIZE PARSER PRESERVES SPELLING. :size answers the string unchanged
-   (trimmed and lower-cased) because bin/hive-mcp pastes it straight into
-   -J-Xmx<value> and the JVM parses it. LC3 compares the new argv against the
-   legacy script byte for byte, so 10G must not become 10737418240."
+   A knob is {:env VAR :path [:key ...] :parse KIND}, with :path rooted at the
+   :launch section. parse-knob is total and answers nil on junk. :size keeps
+   the caller's spelling: the value goes straight into -J-Xmx<value>."
   (:require [clojure.string :as str]
             [malli.core :as m]))
 

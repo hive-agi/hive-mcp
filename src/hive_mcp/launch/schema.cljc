@@ -1,19 +1,9 @@
 (ns hive-mcp.launch.schema
-  "The malli schema for the `:launch` section of ~/.config/hive-mcp/config.edn.
+  "The malli schema for the `:launch` section of config.edn.
 
-   LAUNCH-CONFIG LC0: DATA ONLY. Nothing reads this section yet; LC1's planner
-   turns it into a LaunchPlan, LC2 turns `:deps` into the -Sdeps overlay, and
-   LC3 makes bin/hive-mcp go through both. The `.cljc` extension is for that
-   downstream work: `hive-mcp.launch.knobs` (this addon's env-knob table) is
-   loaded under babashka by the `bb test:launch` task.
-
-   EVERY KEY IS OPTIONAL. A person's config.edn carries only what they differ
-   on, so an absent key means the default in `hive-mcp.launch.defaults`.
-   Validating `{}` passes; validating `defaults` passes.
-
-   `LaunchConfig` is deliberately OPEN (malli's default for :map): the same
-   config.edn holds `:addons`, `:memory`, `:services` and the rest, and a
-   future `:launch` key must not fail an older hive-mcp's validation."
+   Every key is optional; an absent key means the default in
+   hive-mcp.launch.defaults. LaunchConfig is an open map, because one
+   config.edn also holds :addons, :memory and :services."
   (:require [clojure.string :as str]
             [malli.core :as m]))
 

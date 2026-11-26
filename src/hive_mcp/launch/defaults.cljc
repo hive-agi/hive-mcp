@@ -1,36 +1,12 @@
 (ns hive-mcp.launch.defaults
-  "The `:launch` defaults: what bin/hive-mcp does today when nothing is set.
+  "The `:launch` defaults: the values bin/hive-mcp uses when nothing is set.
 
-   LC0 makes NO behaviour change. This namespace states today's script values
-   as DATA, so LC1's planner can fall back to them and a test can prove the
-   table still matches the script (`defaults` validates against
-   `hive-mcp.launch.schema/LaunchConfig`; bin/hive-mcp-launcher-test.sh keeps
-   the shell honest).
+   xmx 10g, xms 2g, soft-max-heap 8g, malloc-arena-max 4, coredump false,
+   oom score-adj -500 and oomd :avoid, restart lock on, supervise on with 5
+   restarts in 600 s, fast-boot false, profile nil.
 
-   Every value below was read out of bin/hive-mcp and bin/oom-policy.sh:
-
-     HIVE_MCP_XMX             10g              -J-Xmx
-     HIVE_MCP_XMS             2g               -J-Xms
-     HIVE_MCP_SOFT_MAX_HEAP   8g               -XX:SoftMaxHeapSize
-     MALLOC_ARENA_MAX         4                exported, not a -J flag
-     HIVE_MCP_COREDUMP        0 -> false       ulimit -c + CreateCoredumpOnCrash
-     HIVE_MCP_OOM_SCORE_ADJ   -500             oom_adj_set
-     HIVE_MCP_OOMD_PREFERENCE avoid            systemd user scope
-     HIVE_MCP_RESTART_LOCK    on -> true       flock on fd 9
-     HIVE_MCP_SUPERVISE       1 -> true        oom_supervise
-     HIVE_MCP_MAX_RESTARTS    5                oom_supervise
-     HIVE_MCP_RESTART_WINDOW  600              oom_supervise
-     HIVE_FAST_BOOT           unset -> false   the :mcp:fast-boot alias
-     profile                  unset -> nil     config.edn decides, else desktop
-
-   PATH DEFAULTS ARE NOT LITERALS. bin/hive-mcp resolves them at run time:
-
-     heap dumps    ${XDG_STATE_HOME:-$HOME/.local/state}/hive-mcp/heapdumps
-     restart lock  ${XDG_DATA_HOME:-$HOME/.local/share}/hive-mcp/restart-PORT.lock
-
-   Writing either as a string would bake one host's home directory into a
-   shareable launcher, so they are DESCRIPTORS: {:xdg :state :suffix .}. LC1
-   resolves one against the environment it was handed."
+   The two path defaults are descriptors ({:xdg :state :suffix ...}), not
+   literal paths; LC1 resolves them from the environment."
   (:require [hive-mcp.launch.schema :as schema]
             [malli.core :as m]))
 
