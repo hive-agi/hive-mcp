@@ -47,7 +47,10 @@
 ;; Paths: absolute, and a plain string join
 ;; =============================================================================
 
-(defn absolute-path?
+;; Both path helpers below are PRIVATE and TEMPORARY: hive-system.path owns
+;; path arithmetic (plan SYSOPS-PATH, step SP3 replaces them). Nothing outside
+;; this namespace may depend on them.
+(defn- absolute-path?
   "True when `p` is a POSIX absolute path: a string whose first character is
    a slash. A tilde prefix is NOT absolute here, because expanding it is the
    shell's act, not the launcher's."
@@ -55,7 +58,7 @@
   (and (string? p)
        (str/starts-with? p "/")))
 
-(defn join-path
+(defn- join-path
   "`p` appended to `base` with exactly one separator between them.
 
    A plain string join: no canonicalization, so `..` and `.` segments survive
@@ -192,8 +195,6 @@
 ;; Contracts
 ;; =============================================================================
 
-(m/=> absolute-path? [:=> [:cat :any] :boolean])
-(m/=> join-path [:=> [:cat [:maybe :string] :string] :string])
 (m/=> resolve-local-root [:=> [:cat [:maybe :string] :map] :map])
 (m/=> resolve-deps [:=> [:cat [:maybe :string] [:map-of :symbol :any]] [:map-of :symbol :any]])
 (m/=> overlay [:=> [:cat [:maybe :map] [:sequential [:maybe :map]]] [:map]])

@@ -424,12 +424,15 @@
                         :workspace)))))
 
 (deftest absolute-path-predicate
-  (is (deps/absolute-path? "/a"))
-  (is (not (deps/absolute-path? "a")))
-  (is (not (deps/absolute-path? "../a")))
-  (is (not (deps/absolute-path? "~/a")))
-  (is (not (deps/absolute-path? nil)))
-  (is (not (deps/absolute-path? ""))))
+  ;; Private by design: hive-system.path takes path arithmetic over, so this is
+  ;; reached through the var object. The assertions are the ones it always had.
+  (let [absolute-path? @#'deps/absolute-path?]
+    (is (absolute-path? "/a"))
+    (is (not (absolute-path? "a")))
+    (is (not (absolute-path? "../a")))
+    (is (not (absolute-path? "~/a")))
+    (is (not (absolute-path? nil)))
+    (is (not (absolute-path? "")))))
 
 ;; =============================================================================
 ;; 5. Empty sections omitted, and the answer is a valid -Sdeps map
