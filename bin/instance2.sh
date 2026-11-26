@@ -29,6 +29,9 @@
 #   INSTANCE=probe-a NREPL_PORT=7960 HTTP_PORT=7961 bin/instance2.sh start
 # LOCAL_ROOTS swaps a library for a checkout (space-separated lib=dir):
 #   LOCAL_ROOTS="io.github.hive-agi/hive-addon=$HOME/PP/hive/hive-addon" bin/instance2.sh start
+# INSTANCE2_OVERLAY swaps the config overlay (default dev/instance2.overlay.edn);
+# INSTANCE2_EXTRA_OVERLAY names a second overlay deep-merged after it:
+#   INSTANCE2_EXTRA_OVERLAY=$PWD/my.overlay.edn bin/instance2.sh start
 # BARE=1 boots the core with ZERO addons (profile :bare, dev/hive/profiles/bare.edn):
 #   INSTANCE=bare NREPL_PORT=7990 HTTP_PORT=7991 BARE=1 bin/instance2.sh start
 #
@@ -50,7 +53,10 @@ case "$PROJECT_DIR" in
   *)                     FLEET_DIR="$(cd "$PROJECT_DIR/.." && pwd)" ;;
 esac
 TEMPLATE="$PROJECT_DIR/dev/test-sandbox.config.edn"
-OVERLAY="$PROJECT_DIR/dev/instance2.overlay.edn"
+# INSTANCE2_OVERLAY replaces the base overlay; INSTANCE2_EXTRA_OVERLAY is
+# deep-merged after it, so a caller adds keys without copying the base one.
+OVERLAY="${INSTANCE2_OVERLAY:-$PROJECT_DIR/dev/instance2.overlay.edn}"
+EXTRA_OVERLAY="${INSTANCE2_EXTRA_OVERLAY:-}"
 
 INSTANCE="${INSTANCE:-instance2}"
 [[ "$INSTANCE" =~ ^[a-z0-9][a-z0-9-]*$ ]] || { echo "instance2: FATAL: INSTANCE must be [a-z0-9-]" >&2; exit 2; }
@@ -103,6 +109,7 @@ cmd_stop() {
 cmd_start() {
   running_pid >/dev/null && die "already running (bin/instance2.sh status)"
   [[ -f "$TEMPLATE" && -f "$OVERLAY" ]] || die "missing $TEMPLATE or $OVERLAY"
+  [[ -z "$EXTRA_OVERLAY" || -f "$EXTRA_OVERLAY" ]] || die "missing INSTANCE2_EXTRA_OVERLAY $EXTRA_OVERLAY"
   command -v clojure >/dev/null || die "clojure CLI not on PATH"
   command -v bb >/dev/null      || die "bb not on PATH (merges the config overlay)"
   for p in "$NREPL_PORT" "$HTTP_PORT"; do
@@ -135,13 +142,17 @@ cmd_start() {
   chmod 700 "$SBX/run"
   for c in .m2 .gitlibs .clojure; do [[ -e "$real_home/$c" ]] && ln -s "$real_home/$c" "$SBX/$c"; done
 
-  # config.edn = sandbox template, overlay deep-merged over it (as EDN, never as text).
-  # The per-instance ports are merged last, so the overlay never pins them.
-  bb -e '(let [[t o nrepl http] *command-line-args*
+  # config.edn = sandbox template, overlay (then the extra overlay, if any)
+  # deep-merged over it (as EDN, never as text). The per-instance ports are
+  # merged last, so no overlay pins them.
+  bb -e '(let [[t nrepl http & overlays] *command-line-args*
                deep (fn deep [a b] (if (and (map? a) (map? b)) (merge-with deep a b) b))
                ports {:services {:nrepl {:port (parse-long nrepl)} :mcp-http {:port (parse-long http)}}}]
-           (prn (reduce deep [(clojure.edn/read-string (slurp t)) (clojure.edn/read-string (slurp o)) ports])))' \
-     <(sed "s#__SANDBOX__#$SBX#g" "$TEMPLATE") "$OVERLAY" "$NREPL_PORT" "$HTTP_PORT" > "$SBX/.config/hive-mcp/config.edn"
+           (prn (reduce deep (concat [(clojure.edn/read-string (slurp t))]
+                                     (map (comp clojure.edn/read-string slurp) overlays)
+                                     [ports]))))' \
+     <(sed "s#__SANDBOX__#$SBX#g" "$TEMPLATE") "$NREPL_PORT" "$HTTP_PORT" "$OVERLAY" ${EXTRA_OVERLAY:+"$EXTRA_OVERLAY"} \
+     > "$SBX/.config/hive-mcp/config.edn"
   chmod 600 "$SBX/.config/hive-mcp/config.edn"
 
   # Classpath resolved IN the project (deps.edn + :dev + the addon roots).
@@ -179,5 +190,5 @@ case "${1:-}" in
   stop)   cmd_stop ;;
   status) cmd_status ;;
   log)    exec tail -n 60 "$LOGFILE" ;;
-  *)      sed -n '2,30p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 1 ;;
+  *)      sed -n '2,37p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 1 ;;
 esac
