@@ -12,11 +12,17 @@
    layer underneath stands.
 
    Paths resolve from env values only (HOME, XDG_STATE_HOME, XDG_DATA_HOME),
-   never a literal home directory, so the plan is shareable across hosts."
+   never a literal home directory, so the plan is shareable across hosts.
+   The XDG Base Directory specification is hive-system.xdg's, and the :env map
+   is read through a hive-system.env MapEnv, so the host environment is never
+   touched here: SystemEnv belongs to the -main boundary alone."
   (:require [clojure.string :as str]
             [hive-mcp.launch.defaults :as defaults]
             [hive-mcp.launch.knobs :as knobs]
             [hive-mcp.launch.schema :as schema]
+            [hive-system.env :as env]
+            [hive-system.path :as path]
+            [hive-system.xdg :as xdg]
             [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
@@ -47,50 +53,49 @@
 ;; Paths: descriptors resolved from env, never a literal home
 ;; =============================================================================
 
-(defn- env-value
-  "`k`'s value in `env` when it is a non-blank string, else nil."
-  [env k]
-  (let [v (get env k)]
-    (when (and (string? v) (pos? (count (str/trim v))))
-      (str/trim v))))
+(defn- script-base-dir
+  "The base directory of KIND in SRC, or the legacy script's expansion of it.
 
-(defn- xdg-var
-  "The environment variable naming the XDG base directory `k`."
-  [k]
-  (case k
-    :state "XDG_STATE_HOME"
-    :data "XDG_DATA_HOME"
-    :config "XDG_CONFIG_HOME"
-    :cache "XDG_CACHE_HOME"
-    nil))
+   Mirrors bin/hive-mcp, which writes ${XDG_STATE_HOME:-$HOME/.local/state}
+   (and its XDG_DATA_HOME twin) and lets bash substitute. bash expands a
+   missing or empty HOME to the empty string and then writes the separator
+   itself, so the answer is the fallback hung off the ROOT: unset HOME gives
+   the state base directory at the filesystem root, not a relative path and
+   not no path at all. A HOME that is set is kept verbatim, spaces included.
+   bin/hive-mcp is the parity oracle until LC3 replaces it, so the planner
+   keeps that answer. hive-system.xdg answers nil whenever it cannot name an
+   absolute base directory, so the script's expansion applies exactly then.
 
-(defn- join-path
-  "Join the non-blank `parts` with one slash."
-  [parts]
-  (str/join "/" (remove (fn [p] (or (nil? p) (= "" p))) parts)))
+   Answers [BASE FRAGILE?]: FRAGILE? is true when the answer is the script's
+   HOME-less expansion, which the caller reports in the plan's notices."
+  [src kind fallback]
+  (if-let [base (xdg/base-dir src kind)]
+    [base false]
+    [(apply path/join
+            (str (or (env/env-get src "HOME") "") (path/separator path/*flavor*))
+            fallback)
+     true]))
 
 (defn- resolve-path
-  "Resolve a path default to a string.
+  "Resolve a path default, answering [PATH FRAGILE?].
 
    Accepts a literal string (a config or env override, used as given) or a
    descriptor from hive-mcp.launch.defaults. A descriptor resolves its base
-   from its XDG variable, else from HOME plus its :fallback, else stays
-   relative; a :port descriptor splices the effective port into the name."
-  [env descriptor port]
+   through `script-base-dir`; a :port descriptor splices the effective port
+   into the name. FRAGILE? is true when the base came from the legacy script's
+   empty-HOME expansion rather than from a real HOME or XDG variable."
+  [src descriptor port]
   (cond
-    (string? descriptor) descriptor
-    (not (map? descriptor)) nil
+    (string? descriptor) [descriptor false]
+    (not (map? descriptor)) [nil false]
     :else
-    (let [xdg (env-value env (xdg-var (:xdg descriptor)))
-          home (env-value env "HOME")
-          base (or xdg
-                   (when home (join-path (into [home] (:fallback descriptor))))
-                   (join-path (:fallback descriptor)))
-          stem (join-path [base (:suffix descriptor)])
+    (let [[base fragile?] (script-base-dir src (:xdg descriptor) (:fallback descriptor))
+          stem (path/join base (:suffix descriptor))
           ported (if (:port descriptor) (str stem port) stem)]
-      (if (:port descriptor)
-        (str ported (:suffix-after-port descriptor))
-        ported))))
+      [(if (:port descriptor)
+         (str ported (:suffix-after-port descriptor))
+         ported)
+       fragile?])))
 
 ;; =============================================================================
 ;; Precedence
@@ -167,6 +172,14 @@
   (if (some? profile)
     (str notice-prefix "profile=" (name profile))
     (str notice-prefix "profile from config.edn [:system :profile], else desktop")))
+
+(defn- no-home-notice
+  "One notice when a path fell back to the legacy script's empty-HOME
+   expansion, else none."
+  [fragile?]
+  (if fragile?
+    [(str notice-prefix "HOME is unset or relative; resolving paths from the working directory, as bin/hive-mcp does")]
+    []))
 
 (defn- build-instructions
   "The rebuild hint the script prints when fast boot declines."
@@ -302,6 +315,9 @@
   [{:keys [config env args files]}]
   (let [{:keys [launch ignored passthrough flag-notices]}
         (resolve-launch {:config config :env env :args args})
+        ;; The planner's :env map, as a pure MapEnv: hive-system.env never
+        ;; consults the host here. SystemEnv is the LC3 -main boundary's.
+        src (env/map-env env)
         profile (:profile launch)
         port (or (:nrepl-port launch) default-nrepl-port)
         jvm (:jvm launch)
@@ -309,8 +325,10 @@
         stamp? (true? (:aot-stamp? files))
         stale? (true? (:aot-stale? files))
         fast? (and requested? stamp? (not stale?))
-        heap-dump-dir (resolve-path env (get-in launch [:forensics :heap-dump-dir]) port)
-        lock-file (resolve-path env (get-in launch [:restart-lock :file]) port)]
+        [heap-dump-dir heap-fragile?]
+        (resolve-path src (get-in launch [:forensics :heap-dump-dir]) port)
+        [lock-file lock-fragile?]
+        (resolve-path src (get-in launch [:restart-lock :file]) port)]
     {:java-opts (into [(str "-J-Xmx" (:xmx jvm))
                        (str "-J-Xms" (:xms jvm))
                        (str "-J-XX:SoftMaxHeapSize=" (:soft-max-heap jvm))
@@ -333,9 +351,10 @@
      :forensics {:coredump? (true? (get-in launch [:forensics :coredump?]))
                  :heap-dump-dir heap-dump-dir}
      :deps-overlay nil
-     :notices (into (into (into [(profile-notice profile)]
-                               (fast-boot-notices requested? stamp? stale?))
-                         flag-notices)
+     :notices (into (into (into (into [(profile-notice profile)]
+                                     (fast-boot-notices requested? stamp? stale?))
+                               flag-notices)
+                           (no-home-notice (or heap-fragile? lock-fragile?)))
                     (ignored-notices ignored))}))
 
 ;; =============================================================================

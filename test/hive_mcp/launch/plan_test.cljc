@@ -202,10 +202,15 @@
       (is (= "/xdg/data/hive-mcp/restart-7910.lock" (get-in p [:lock :file])))
       (is (= "/xdg/state/hive-mcp/heapdumps" (get-in p [:forensics :heap-dump-dir])))))
 
-  (testing "no HOME and no XDG leaves the fallback relative, never a crash"
+  (testing "no HOME and no XDG hangs the fallback off the root, as bash does"
+    ;; bin/hive-mcp expands ${XDG_STATE_HOME:-$HOME/.local/state}; bash writes
+    ;; the separator itself, so an empty HOME gives the state base directory at
+    ;; the root. This is the legacy script's answer, and the parity oracle now.
     (let [p (plan/plan {:config nil :env {} :args [] :files {}})]
-      (is (= ".local/state/hive-mcp/heapdumps" (get-in p [:forensics :heap-dump-dir])))
-      (is (= ".local/share/hive-mcp/restart-7910.lock" (get-in p [:lock :file]))))))
+      (is (= "/.local/state/hive-mcp/heapdumps" (get-in p [:forensics :heap-dump-dir])))
+      (is (= "/.local/share/hive-mcp/restart-7910.lock" (get-in p [:lock :file])))
+      (is (some (fn [s] (str/includes? s "HOME")) (:notices p))
+          "and the plan says HOME was missing"))))
 
 (deftest exports-and-passthrough
   (testing "a profile exports HIVE_PROFILE by name, not by keyword"

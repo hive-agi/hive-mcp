@@ -26,6 +26,7 @@
             [clojure.test.check.properties :as prop]
             [hive-mcp.launch.deps :as deps]
             [hive-mcp.launch.schema :as schema]
+            [hive-system.path :as path]
             [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
@@ -424,9 +425,10 @@
                         :workspace)))))
 
 (deftest absolute-path-predicate
-  ;; Private by design: hive-system.path takes path arithmetic over, so this is
-  ;; reached through the var object. The assertions are the ones it always had.
-  (let [absolute-path? @#'deps/absolute-path?]
+  ;; The predicate the launcher resolves a :local/root with is now
+  ;; hive-system.path/absolute?, so these are its assertions, unchanged. A
+  ;; tilde prefix stays NOT absolute: expanding one is the shell's act.
+  (let [absolute-path? path/absolute?]
     (is (absolute-path? "/a"))
     (is (not (absolute-path? "a")))
     (is (not (absolute-path? "../a")))

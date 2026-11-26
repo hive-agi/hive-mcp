@@ -190,8 +190,9 @@
         io.github.hive-agi/hive-ttracking {:mvn/version "0.2.3"}
 
         ;; hive-system — system-level abstractions (IProcess, INetwork,
-        ;; process liveness, secrets, shell, redaction).
-        io.github.hive-agi/hive-system {:mvn/version "0.4.4"}
+        ;; process liveness, secrets, shell, redaction) plus hive-system.path,
+        ;; .env and .xdg, which the launcher reads. Pinned to bb.edn's version.
+        io.github.hive-agi/hive-system {:mvn/version "0.4.5"}
 
         ;; Integrant — lifecycle framework for component-based systems
         ;; Replaces monolithic start! with declarative system map + profile merging

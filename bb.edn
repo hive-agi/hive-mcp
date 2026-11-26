@@ -4,8 +4,10 @@
  :paths ["src" "scripts" "resources"]
 
  ;; malli and test.check: for `test:launch` (metosin/malli is also in deps.edn,
- ;; test.check on :test*).
+ ;; test.check on :test*). hive-system supplies hive-system.path, .env and
+ ;; .xdg to the launcher; its version is pinned to deps.edn's.
  :deps {babashka/process {:mvn/version "0.6.25"}
+        io.github.hive-agi/hive-system {:mvn/version "0.4.5"}
         metosin/malli {:mvn/version "0.20.2"}
         org.clojure/test.check {:mvn/version "1.1.3"}
         ;; Pinned to the version the root deps.edn pins. Without this, bb
