@@ -1,9 +1,30 @@
-{:paths ["src" "scripts"]
+{;; "resources" is on the path so `bb test:launch` resolves the preset
+ ;; resources (resources/hive_mcp/launch/presets/*.edn) and the repo's
+ ;; starter.deps.edn through io/resource, the same lookup the JVM uses.
+ :paths ["src" "scripts" "resources"]
 
- :deps {babashka/process {:mvn/version "0.6.25"}}
+ ;; malli and test.check: for `test:launch` (metosin/malli is also in deps.edn,
+ ;; test.check on :test*). hive-system supplies hive-system.path, .env and
+ ;; .xdg to the launcher; its version is pinned to deps.edn's.
+ :deps {babashka/process {:mvn/version "0.6.25"}
+        io.github.hive-agi/hive-system {:mvn/version "0.4.5"}
+        metosin/malli {:mvn/version "0.20.2"}
+        org.clojure/test.check {:mvn/version "1.1.3"}
+        ;; Pinned to the version the root deps.edn pins. Without this, bb
+        ;; resolves Clojure transitively and can land on a version whose jar a
+        ;; cold Maven cache cannot serve, which failed CI's launch job once.
+        org.clojure/clojure {:mvn/version "1.12.6"}}
 
  :tasks
- {test {:doc "Run tests"
+ ;; :extra-paths is scoped to this task; other tasks load src alone.
+ {test:launch {:doc "Test the :launch config layer (schema, defaults, env knobs, deps overlay) under babashka; no JVM, no server. Exits non-zero on failure"
+               :extra-paths ["test"]
+               :task (exec 'hive-mcp.launch.test-runner/-main)}
+
+  launch:import {:doc "Print the :launch fragment for a local.deps.edn path as EDN on stdout; writes nothing. Reads no other file."
+                 :task (apply (requiring-resolve 'hive-mcp.launch.importer/-main) *command-line-args*)}
+
+  test {:doc "Run tests"
         :task (shell "bin/clj-test -M:test")}
 
   repl {:doc "Start a scratch dev nREPL on an OS-assigned port (never 7910)"

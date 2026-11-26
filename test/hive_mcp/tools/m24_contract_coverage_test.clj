@@ -38,8 +38,9 @@
     ;; 144 = 139 + memory-kanban create* stages (validate-create-params!,
     ;; resolve-create-priority, create-extra-tags, create-card-content,
     ;; create-card-tags)
-    (is (= 144 (count (:universe report))) "every public defn of the batch")
-    (is (= 144 (count (:covered report))))))
+    ;; 145 = 144 + memory-kanban/handle-mem-kanban-diff (kanban diff, #766)
+    (is (= 145 (count (:universe report))) "every public defn of the batch")
+    (is (= 145 (count (:covered report))))))
 
 (deftest every-m24-contract-generates-both-sides
   (doseq [ns-sym batch-nss

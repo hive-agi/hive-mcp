@@ -42,6 +42,7 @@
             [hive-mcp.extensions.soft :as soft]
             [hive-mcp.tools.catchup.block-cache :as block-cache]
             [hive-mcp.tools.catchup.caps :as catchup-caps]
+            [hive-mcp.tools.catchup.budget :as budget]
             [hive-mcp.tools.catchup.private-view :as pv]
             [malli.core :as m]
             [hive-mcp.tools.core :as core]))
@@ -210,22 +211,25 @@
                      #(catchup-git/gather-git-info directory)))))
 
 (defn- launch-status-future
-  [{:keys [project-id]}]
+  [{:keys [project-id private?]}]
   (let [status-providers (or (ext/get-extension :catchup/status-providers) {})]
     (pool/with-io
-      ((tt/timed-query "catchup/status-providers-total"
-                       #(reduce-kv (fn [acc k provider-fn]
-                                     (assoc acc k
-                                            (rescue nil (block-cache/run-status-provider k provider-fn project-id))))
-                                   {} status-providers))))))
+      (pv/in-view private?
+                  (tt/timed-query "catchup/status-providers-total"
+                                  #(reduce-kv (fn [acc k provider-fn]
+                                                (assoc acc k
+                                                       (rescue nil (block-cache/run-status-provider k provider-fn project-id))))
+                                              {} status-providers))))))
 
 (defn- launch-blocks-future
-  [{:keys [project-id directory caller-id]}]
+  [{:keys [project-id directory caller-id private?]}]
   (pool/with-io
-    ((tt/timed-query "catchup/blocks-total"
-                     #(compose-blocks {:project-id project-id
-                                       :directory  directory
-                                       :caller-id  caller-id})))))
+    (pv/in-view private?
+                (tt/timed-query "catchup/blocks-total"
+                                #(compose-blocks {:project-id project-id
+                                                  :directory  directory
+                                                  :caller-id  caller-id
+                                                  :private?   private?})))))
 
 (defn- launch-catchup-queries
   "Fire the four parallel queries. Returns a map of futures:
@@ -413,32 +417,42 @@
      :snippets             {:data snippets             :tags #{"catchup" "snippets" scope-tag}             :ttl-ms catchup-ttl}
      :recent-wraps         {:data recent-wraps         :tags #{"catchup" "recent-wraps" scope-tag}         :ttl-ms catchup-ttl}}))
 
+(defn- shared-store-writes?
+  "True when catchup may write this call's content to the process-global
+   context store: never under a private view."
+  [private?]
+  (not private?))
+
 (defn- persist-context-refs!
   "Dual-write the bundle's raw buckets into the context-store under a single
    shared refs key so callers sharing a cached bundle reuse refs. Returns the
-   {category -> ctx-id} map or nil on failure (non-fatal)."
-  [{:keys [scope-tag private? bundle buckets catchup-ttl]}]
-  (rescue nil
-          (block-cache/shared-context-refs
-           scope-tag (when-not private? (outcome/value-or bundle nil))
-           (fn []
-             (let [refs (context-store/context-put-batch!
-                         (context-store-payload buckets scope-tag catchup-ttl))]
-               (when (seq refs)
-                 (log/info "catchup: stored" (count refs) "categories in context-store"
-                           {:refs (keys refs)}))
-               refs)))))
+   {category -> ctx-id} map, or nil when `share?` is false (nothing is
+   written) or on failure (non-fatal)."
+  [{:keys [scope-tag share? bundle buckets catchup-ttl]}]
+  (when share?
+    (rescue nil
+            (block-cache/shared-context-refs
+             scope-tag (outcome/value-or bundle nil)
+             (fn []
+               (let [refs (context-store/context-put-batch!
+                           (context-store-payload buckets scope-tag catchup-ttl))]
+                 (when (seq refs)
+                   (log/info "catchup: stored" (count refs) "categories in context-store"
+                             {:refs (keys refs)}))
+                 refs))))))
 
 ;; -----------------------------------------------------------------------------
 ;; Boundary: piggyback enqueue
 ;; -----------------------------------------------------------------------------
 
 (defn- enqueue-piggyback!
-  [{:keys [raw-caller-id piggyback-entries context-refs]}]
-  (when (seq piggyback-entries)
+  [{:keys [raw-caller-id piggyback-entries context-refs private?]}]
+  (when (and (seq piggyback-entries)
+             (not (and private? (= "coordinator" raw-caller-id))))
     (memory-piggyback/enqueue! raw-caller-id
                                (mapv fmt/cap-piggyback-entry piggyback-entries)
-                               context-refs)))
+                               context-refs
+                               {:private? private?})))
 
 ;; -----------------------------------------------------------------------------
 ;; Top-level orchestration: run-catchup-pipeline
@@ -480,6 +494,34 @@
     :project-id                project-id
     :contributed-blocks        contributed}))
 
+(defn- configured-inline-budget
+  "The `catchup.inline-budget-bytes` config value, resolved softly; nil when
+   unset or the config is unreadable."
+  []
+  (when-let [get-value (soft/resolve-soft 'hive-mcp.config.core/get-config-value)]
+    (rescue nil (get-value budget/config-key))))
+
+(defn- fit-inline-budget
+  "Keep the inline catchup answer under its byte budget (see
+   catchup.budget). Shed blocks are stored in the context store under
+   `scope-tag` with the same TTL as the catchup context-refs. When `share?`
+   is false nothing is shed and the answer is returned unchanged. An error
+   answer is returned untouched, and a failure here never fails catchup."
+  [args scope-tag share? response]
+  (if-not (and share? (sequential? response))
+    response
+    (rescue response
+            (budget/fit-blocks
+             response
+             {:budget   (budget/resolve-budget args (configured-inline-budget))
+              :put-ref! (fn [block-name data]
+                          (context-store/context-put!
+                           data
+                           :tags #{"catchup" "catchup-shed"
+                                   (str "catchup-block:" block-name)
+                                   (str "scope:project:" scope-tag)}
+                           :ttl-ms budget/ref-ttl-ms))}))))
+
 (defn- run-catchup-pipeline
   "Sequence the catchup pipeline after the store guard. Returns the final
    fmt/build-catchup-response value. Throws propagate to the caller's
@@ -491,6 +533,7 @@
         buckets     (promote-bundle bundle)
         metadata    (entries->metadata buckets)
         {:keys [directory project-id project-name scopes caller-id private?]} catchup-ctx
+        share?      (shared-store-writes? private?)
         _ (run-enrichment! {:bundle bundle
                             :directory directory
                             :project-id project-id
@@ -512,24 +555,27 @@
 
         context-refs (persist-context-refs!
                       {:scope-tag   (or project-id "global")
-                       :private?    private?
+                       :share?      share?
                        :bundle      bundle
                        :buckets     buckets
                        :catchup-ttl 3600000})
 
         _ (enqueue-piggyback! {:raw-caller-id     raw-caller-id
                                :piggyback-entries piggyback-entries
-                               :context-refs      context-refs})]
+                               :context-refs      context-refs
+                               :private?          private?})]
 
-    (build-response {:bundle bundle
-                     :git-info git-info
-                     :addon-status addon-status
-                     :contributed contributed
-                     :metadata metadata
-                     :context-refs context-refs
-                     :project-id project-id
-                     :project-name project-name
-                     :scopes scopes})))
+    (fit-inline-budget
+     args (or project-id "global") share?
+     (build-response {:bundle bundle
+                      :git-info git-info
+                      :addon-status addon-status
+                      :contributed contributed
+                      :metadata metadata
+                      :context-refs context-refs
+                      :project-id project-id
+                      :project-name project-name
+                      :scopes scopes}))))
 
 ;; =============================================================================
 ;; Main Catchup Handler

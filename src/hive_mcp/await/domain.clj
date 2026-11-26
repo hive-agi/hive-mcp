@@ -279,13 +279,28 @@
 (m/=> arm [:=> [:cat Awaiter [:maybe :any]] ArmResult])
 
 (defn begin-wake
-  "`awaiter` handed to its resumer: :waking, `payload` as its wake, one more
-   attempt recorded. The registry persists this BEFORE it calls the resumer,
-   which is what makes a crash mid-resume recoverable. Pure."
+  "`awaiter` handed to its resumer: :waking, `payload` as its wake. The
+   registry persists this BEFORE it calls the resumer, which is what makes a
+   crash mid-resume recoverable. It does not count an attempt: each attempt
+   claims its own number with `begin-attempt` (review N1). Pure."
   [awaiter payload]
-  (-> awaiter
-      (assoc :status :waking :wake payload)
-      (update :attempt (fnil inc 0))))
+  (assoc awaiter :status :waking :wake payload))
+
+(m/=> begin-wake [:=> [:cat Awaiter [:maybe :map]] Awaiter])
+
+(defn begin-attempt
+  "`awaiter` with the next attempt number CLAIMED, or nil when no attempt
+   may run: it is not :waking, or `max-attempts` attempts were already
+   claimed. The registry persists the claim before the attempt runs, so a
+   crash at any later point makes the restore claim a NEW number: an
+   attempt number is never run twice, and each [awaiter-id attempt] in the
+   wake journal has exactly one outcome (review N1). Pure."
+  [awaiter max-attempts]
+  (let [n (long (or (:attempt awaiter) 0))]
+    (when (and (waking? awaiter) (< n (long max-attempts)))
+      (assoc awaiter :attempt (inc n)))))
+
+(m/=> begin-attempt [:=> [:cat Awaiter :int] [:maybe Awaiter]])
 
 (m/=> begin-wake [:=> [:cat Awaiter [:maybe :map]] Awaiter])
 
@@ -324,6 +339,49 @@
   (str (or (:prompt awaiter) "You were parked on an awaiter and it woke.")
        "\n\nWake payload (awaiter " (:id awaiter) "):\n"
        (pr-str payload)))
+
+(def WakeEntry
+  "One resume attempt as the registry's wake observer records it
+   (ports/IWakeJournal): which awaiter, which owner kind, which attempt,
+   when, and how it went. Plain EDN: keywords, strings, numbers, maps."
+  [:map
+   [:awaiter-id :string]
+   [:owner-kind :keyword]
+   [:attempt :int]
+   [:at :int]
+   [:ok? :boolean]
+   [:reason {:optional true} [:maybe :keyword]]
+   [:label {:optional true} [:maybe :string]]
+   [:inbox {:optional true} [:maybe :string]]
+   [:error {:optional true} [:maybe :string]]
+   [:error-kind {:optional true} [:maybe :keyword]]
+   [:deferred? {:optional true} :boolean]
+   [:payload {:optional true} [:maybe :map]]
+   [:value {:optional true} [:maybe :map]]])
+
+(defn wake-entry
+  "The WakeEntry for one resume attempt of `awaiter` (as it was handed to
+   its resumer: :waking, its :wake payload and :attempt) whose outcome was
+   `result` ({:ok? :value :error :data :deferred}), at `now`. Pure."
+  [awaiter result now]
+  (let [owner   (:owner awaiter)
+        payload (:wake awaiter)
+        kind    (get-in result [:data :error])]
+    (cond-> {:awaiter-id (str (:id awaiter))
+             :owner-kind (:kind owner)
+             :attempt    (long (or (:attempt awaiter) 1))
+             :at         (long now)
+             :ok?        (boolean (:ok? result))
+             :reason     (:reason payload)
+             :payload    payload}
+      (string? (:label owner))     (assoc :label (:label owner))
+      (string? (:inbox owner))     (assoc :inbox (:inbox owner))
+      (:error result)              (assoc :error (str (:error result)))
+      (keyword? kind)              (assoc :error-kind kind)
+      (:deferred result)           (assoc :deferred? true)
+      (map? (:value result))       (assoc :value (:value result)))))
+
+(m/=> wake-entry [:=> [:cat Awaiter :map :int] WakeEntry])
 
 (m/=> new-awaiter [:=> [:cat :map [:maybe :int]] Awaiter])
 (m/=> resume-prompt [:=> [:cat Awaiter [:maybe :map]] :string])

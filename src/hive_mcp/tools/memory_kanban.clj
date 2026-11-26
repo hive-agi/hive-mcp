@@ -651,6 +651,13 @@
 (defn handle-mem-kanban-stats [params]
   (safe-call :kanban/stats-failed #(with-store (stats* params))))
 
+(defn handle-mem-kanban-diff
+  "Read-only verdict diff of two runs: tags_a vs tags_b, every status, keyed
+   by scenario:<x> + persona:<p>, each key classed flipped | same | only-a |
+   only-b | unverdicted (RUN-LEDGER-5)."
+  [params]
+  (safe-call :kanban/diff-failed #(with-store (query/diff* params))))
+
 (defn handle-mem-kanban-get
   "Get a single task/entry by id, unified across the kanban store and the
    default memory store (separate backends). Surfaces full kanban fields +
@@ -695,6 +702,8 @@
 (m/=> handle-mem-kanban-delete [:=> [:cat [:maybe :map]] core/McpResponse])
 
 (m/=> handle-mem-kanban-stats [:=> [:cat [:maybe :map]] core/McpResponse])
+
+(m/=> handle-mem-kanban-diff [:=> [:cat [:maybe :map]] core/McpResponse])
 
 (m/=> handle-mem-kanban-get [:=> [:cat [:maybe :map]] core/McpResponse])
 

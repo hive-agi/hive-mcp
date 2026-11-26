@@ -80,10 +80,17 @@
 
    Supplying context-refs marks them undelivered so the next drain carries them.
 
+   opts may carry :private? true when the enqueuer's view of memory is private
+   to it. The flag is STICKY on the buffer: once private, the buffer stays
+   private even after a later non-private enqueue, and `adopt-buffer!` will
+   never hand it to another caller.
+
    Session-scoped: keyed by caller-id only (no project dimension)."
   ([caller-id entries]
    (enqueue! caller-id entries nil))
   ([caller-id entries context-refs]
+   (enqueue! caller-id entries context-refs nil))
+  ([caller-id entries context-refs opts]
    (let [buffer-key (ctx-id/caller-id-key (ctx-id/parse-caller-id caller-id))
          existing   (bget buffers buffer-key)
          formatted  (mapv format-entry entries)
@@ -101,7 +108,8 @@
                      :done (and (empty? (drop cursor merged))
                                 (or (nil? refs) refs-delivered?))
                      :seq-num (:seq-num existing 0)
-                     :sent (set (:sent existing))}
+                     :sent (set (:sent existing))
+                     :private? (boolean (or (:private? opts) (:private? existing)))}
               (some? refs)
               (assoc :context-refs refs :refs-delivered? refs-delivered?)))
      (log/info "memory-piggyback: enqueued" (count fresh) "new of" (count formatted)
@@ -112,7 +120,8 @@
 
 (m/=> enqueue! [:function
                 [:=> [:cat CallerId [:maybe [:sequential :map]]] :nil]
-                [:=> [:cat CallerId [:maybe [:sequential :map]] :any] :nil]])
+                [:=> [:cat CallerId [:maybe [:sequential :map]] :any] :nil]
+                [:=> [:cat CallerId [:maybe [:sequential :map]] :any [:maybe :map]] :nil]])
 
 ;; -----------------------------------------------------------------------------
 ;; drain! stages (CPPB): collect -> promote -> pipeline -> boundary
@@ -283,6 +292,7 @@
       (some? context-refs)
       (assoc :context-refs context-refs
              :refs-delivered? (or (boolean refs-delivered?) send-refs?))
+      (:private? buf) (assoc :private? true)
       (some? offers) (assoc :offers offers))))
 
 (m/=> next-buffer [:=> [:cat :map DrainCollected DrainStep] :map])
@@ -383,6 +393,8 @@
    This function finds a matching buffer from any coordinator instance
    and re-keys it to the new caller.
 
+   Never adopts a buffer flagged :private?.
+
    Session-scoped: matches by caller prefix only, no project dimension.
 
    Returns true if a buffer was adopted, false otherwise."
@@ -394,6 +406,7 @@
                              (let [buf (:data entry)]
                                (and (not= aid new-key)
                                     (clojure.string/starts-with? (str aid) "coordinator:")
+                                    (not (:private? buf))
                                     (not (:done buf))))))
                    first)]
     (when-let [[donor-key donor-entry] donor]

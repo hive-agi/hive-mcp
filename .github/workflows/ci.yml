@@ -131,6 +131,12 @@ jobs:
         with:
           bb: 'latest'
 
+      # The :launch planner (schema, defaults, knobs, plan) runs under bb, so
+      # its suite needs no JVM and no build. It is gated here because the argv
+      # the planner produces is what this job's launcher test drives.
+      - name: Launch config tests (bb)
+        run: timeout 120 bb test:launch
+
       # Every :test* alias in deps.edn must state an -Xmx heap ceiling.
       - name: Test heap-cap check
         run: |
