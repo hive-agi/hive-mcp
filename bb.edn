@@ -27,7 +27,11 @@
   test {:doc "Run tests"
         :task (shell "bin/clj-test -M:test")}
 
+  ;; :override-builtin true so babashka does not warn on EVERY invocation (the
+  ;; launcher runs `bb --config bb.edn -m hive-mcp.launch.main`, and a warning
+  ;; line on stderr per launch is noise next to the launcher's own notices).
   repl {:doc "Start a scratch dev nREPL on an OS-assigned port (never 7910)"
+        :override-builtin true
         :task (shell "clojure -M:dev-repl")}
 
   ;; The SERVING image. This boots hive-mcp.server.core, whose :hive/nrepl

@@ -1,0 +1,247 @@
+#!/usr/bin/env bash
+# hive-mcp startup script
+#
+# Usage:
+#   bin/hive-mcp                     # desktop profile (default)
+#   bin/hive-mcp --profile k8s-headless
+#   HIVE_PROFILE=k8s-minimal bin/hive-mcp
+#   HIVE_MCP_CONFIG=~/.config/hive-mcp/bare.edn bin/hive-mcp   # a second config.edn
+#
+# Env knobs: HIVE_MCP_XMX (10g) HIVE_MCP_XMS (2g) HIVE_MCP_SOFT_MAX_HEAP (8g)
+#            MALLOC_ARENA_MAX (4) HIVE_MCP_SUPERVISE (1: restart on OOM kill)
+#            HIVE_MCP_MAX_RESTARTS (5) HIVE_MCP_RESTART_WINDOW (600s)
+#            HIVE_MCP_OOM_SCORE_ADJ (-500) HIVE_MCP_OOMD_PREFERENCE (avoid)
+#            HIVE_MCP_COREDUMP (0: 1 raises ulimit -c for crash forensics)
+#            HIVE_MCP_RESTART_LOCK (on) HIVE_MCP_RESTART_LOCK_FILE
+#            HIVE_MCP_RESTART_BY (who launches; see "Restart lock" below)
+#
+# Profile precedence: --profile flag > HIVE_PROFILE env > config.edn
+# [:system :profile] > "desktop". Unset here means config.edn decides.
+#
+# Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+# Launcher notices: stderr only (stdout is the stdio JSON-RPC channel).
+notice() { echo "hive-mcp: $*" >&2; }
+
+# ── Profile resolution ──────────────────────────────────────────────
+# Parse --profile flag from args (consume it, pass rest to clj)
+PROFILE="${HIVE_PROFILE:-}"
+PASSTHROUGH_ARGS=()
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --profile)
+      PROFILE="${2:?'--profile requires a value (desktop, k8s-headless, k8s-minimal)'}"
+      shift 2
+      ;;
+    --profile=*)
+      PROFILE="${1#*=}"
+      shift
+      ;;
+    *)
+      PASSTHROUGH_ARGS+=("$1")
+      shift
+      ;;
+  esac
+done
+
+if [[ -n "$PROFILE" ]]; then
+  export HIVE_PROFILE="$PROFILE"
+  notice "profile=$HIVE_PROFILE"
+else
+  unset HIVE_PROFILE
+  notice "profile from config.edn [:system :profile], else desktop"
+fi
+
+# ── Local deps overlay ──────────────────────────────────────────────
+# Merge local.deps.edn (gitignored) via -Sdeps for sibling :local/root overrides.
+# The filename is local.deps.edn — matching .gitignore and the deps.edn comment.
+# (It was previously spelled deps.local.edn here, so the overlay never fired.)
+#
+# Must be a bash ARRAY: the EDN payload contains spaces, and an unquoted
+# "$SDEPS_ARG" scalar word-splits it into separate argv entries, so clj would
+# receive `-Sdeps` `{:deps` `{io.github…` and fail to read the map.
+SDEPS_ARG=()
+if [[ -f "$PROJECT_DIR/local.deps.edn" ]]; then
+  SDEPS_ARG=(-Sdeps "$(cat "$PROJECT_DIR/local.deps.edn")")
+  notice "merging local.deps.edn"
+fi
+
+# ── AOT boot classes (opt-in) ───────────────────────────────────────
+# HIVE_FAST_BOOT=1 puts target/boot-classes on the classpath, so the addon
+# constructor namespaces load as .class files instead of being compiled at
+# boot. Build them with:
+#
+#   clojure -Sdeps "$(cat local.deps.edn)" -X:aot-boot
+#
+# Clojure loads a .class only when it is newer than its .clj, so a partly
+# stale directory boots a MIXED image — edited namespaces from source, the
+# protocols they were compiled against from class files. Staleness therefore
+# DECLINES the optimization instead of warning past it: the env var asks for
+# a faster boot, never for a different program.
+ALIASES=":mcp"
+STAMP="$PROJECT_DIR/target/boot-classes/.aot-stamp.edn"
+
+fast_boot_requested() {
+  [[ "${HIVE_FAST_BOOT:-}" == "1" || "${HIVE_FAST_BOOT:-}" == "true" ]]
+}
+
+source_newer_than() {
+  find "$PROJECT_DIR/src" "$PROJECT_DIR"/../*/src -type f \
+       \( -name '*.clj' -o -name '*.cljc' \) -newer "$1" -print -quit 2>/dev/null
+}
+
+if fast_boot_requested; then
+  if [[ ! -f "$STAMP" ]]; then
+    notice "HIVE_FAST_BOOT set but no AOT classes — booting from source"
+    notice "  build them: clojure -Sdeps \"\$(cat local.deps.edn)\" -X:aot-boot"
+  else
+    STALE="$(source_newer_than "$STAMP" || true)"
+    if [[ -n "$STALE" ]]; then
+      notice "AOT classes are stale ($STALE is newer) — booting from source"
+      notice "  rebuild them: clojure -Sdeps \"\$(cat local.deps.edn)\" -X:aot-boot"
+    else
+      ALIASES=":mcp:fast-boot"
+      notice "fast boot — AOT classes from target/boot-classes"
+    fi
+  fi
+fi
+
+# ── Memory budget ───────────────────────────────────────────────────
+# -J flags land after the alias :jvm-opts; the JVM honours the last one.
+# RSS ~= heap + 1.5-2.5 GB native (metaspace, threads, malloc arenas).
+HIVE_MCP_XMX="${HIVE_MCP_XMX:-10g}"
+HIVE_MCP_XMS="${HIVE_MCP_XMS:-2g}"
+HIVE_MCP_SOFT_MAX_HEAP="${HIVE_MCP_SOFT_MAX_HEAP:-8g}"
+export MALLOC_ARENA_MAX="${MALLOC_ARENA_MAX:-4}"
+
+JVM_ARGS=(-J-Xmx"$HIVE_MCP_XMX" -J-Xms"$HIVE_MCP_XMS"
+          -J-XX:SoftMaxHeapSize="$HIVE_MCP_SOFT_MAX_HEAP")
+
+# ── Crash forensics ─────────────────────────────────────────────────
+# A native crash (SIGSEGV) leaves hs_err_pid<pid>.log in the project dir, but
+# a core dump only when the core limit is non-zero; most shells default to 0.
+# HIVE_MCP_COREDUMP=1 raises the soft limit as far as the hard limit allows,
+# for this JVM only. Cores go wherever /proc/sys/kernel/core_pattern says
+# (systemd-coredump: `coredumpctl list java`).
+if [[ "${HIVE_MCP_COREDUMP:-0}" == "1" ]]; then
+  ulimit -c "$(ulimit -H -c)" 2>/dev/null || true
+  notice "core dumps enabled (ulimit -c $(ulimit -c))"
+fi
+JVM_ARGS+=(-J-XX:+CreateCoredumpOnCrash)
+
+# An OOM heap dump lands WHERE IT IS FOUND. Without HeapDumpPath the JVM
+# writes an Xmx-sized .hprof (10 GB default here) into whatever cwd the
+# launcher had, and the next exit from the boot no one can prove looks like
+# it left none at all (kanban 20261014203049-18f1d5f2). Knob:
+# HIVE_MCP_HEAP_DUMP_DIR.
+HEAP_DUMP_DIR="${HIVE_MCP_HEAP_DUMP_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/hive-mcp/heapdumps}"
+mkdir -p "$HEAP_DUMP_DIR" 2>/dev/null || true
+JVM_ARGS+=(-J-XX:HeapDumpPath="$HEAP_DUMP_DIR")
+
+# ── OOM standing: the server outlives a runaway test JVM ────────────
+# Kernel OOM killer: try to lower our oom_score_adj (inherited by the JVM).
+# Lowering needs CAP_SYS_RESOURCE; unprivileged it stays put and test JVMs
+# raise theirs instead (bin/test-sandboxed.sh). systemd-oomd ignores the adj
+# and kills whole cgroups, so the JVM also runs in its own user scope with
+# ManagedOOMPreference=avoid. Knobs: HIVE_MCP_OOM_SCORE_ADJ (-500),
+# HIVE_MCP_OOMD_PREFERENCE (avoid|omit|none, "off" = no scope).
+# Proof: bin/oom-policy.sh check <jvm-pid>. See bin/oom-policy.sh.
+# shellcheck source=bin/oom-policy.sh
+source "$SCRIPT_DIR/oom-policy.sh"
+oom_adj_set "${HIVE_MCP_OOM_SCORE_ADJ:--500}"
+OOMD_PREF="${HIVE_MCP_OOMD_PREFERENCE:-avoid}"
+
+# :mcp carries :exec-fn and no :main-opts, so -M needs an explicit -m.
+CMD=(clojure "${JVM_ARGS[@]}" "${SDEPS_ARG[@]+"${SDEPS_ARG[@]}"}" -M"$ALIASES"
+     -m hive-mcp.server.core "${PASSTHROUGH_ARGS[@]+"${PASSTHROUGH_ARGS[@]}"}")
+
+# ── Restart lock: exactly one launch, and everyone learns who ─────────
+# hivemind lives inside this JVM, so while it is down nobody can announce a
+# restart there. The out-of-band channel is a file lock: a non-blocking flock
+# on $HIVE_MCP_RESTART_LOCK_FILE, held on fd 9 for the life of the launcher
+# and, through exec, the JVM (Java closes fds above 2 in what it spawns, so
+# lings never inherit it). The winner writes who it is beside the lock and
+# appends a line to restarts.log; a second launcher prints that holder and
+# exits 75 (EX_TEMPFAIL) without starting a JVM. The kernel drops the lock
+# when the holder dies, so a dead server never blocks the next launch.
+# Knobs: HIVE_MCP_RESTART_LOCK (on; off skips it), HIVE_MCP_RESTART_LOCK_FILE
+# (~/.local/share/hive-mcp/restart-<nREPL port>.lock, so a second instance
+# on another port is not blocked), HIVE_MCP_RESTART_BY (who is
+# launching, e.g. coordinator:52578; default the parent process).
+# ── Print argv and stop (LC3 parity) ─────────────────────────────────────────
+# HIVE_MCP_PRINT_ARGV=1 prints the final argv as one EDN vector on STDERR and
+# exits 0 BEFORE the lock is taken and before anything is executed, so a test
+# can compare this launcher's argv with hive-mcp.launch.main's --print-argv
+# without starting a JVM. STDERR, not STDOUT: stdout is the stdio JSON-RPC
+# channel in every mode.
+#
+# Each word is wrapped in a double quote with backslash and double quote
+# escaped; a newline inside -Sdeps stays a literal newline, legal inside an EDN
+# string. hive-mcp.launch.main/edn-string writes the same bytes, so the parity
+# test compares the printed TEXT, not merely the parsed vector.
+print_argv() {
+  local word out="[" sep=""
+  for word in "${CMD[@]}"; do
+    word="${word//\\/\\\\}"
+    word="${word//\"/\\\"}"
+    out+="$sep\"$word\""
+    sep=" "
+  done
+  printf '%s]\n' "$out" >&2
+}
+
+if [[ "${HIVE_MCP_PRINT_ARGV:-}" == "1" ]]; then
+  print_argv
+  exit 0
+fi
+
+# ── Restart lock: exactly one launch, and everyone learns who ────────────────
+RESTART_LOCK_EXIT=75
+if [[ "${HIVE_MCP_RESTART_LOCK:-on}" != "off" ]]; then
+  if command -v flock >/dev/null 2>&1; then
+    LOCK_FILE="${HIVE_MCP_RESTART_LOCK_FILE:-${XDG_DATA_HOME:-$HOME/.local/share}/hive-mcp/restart-${HIVE_MCP_NREPL_PORT:-7910}.lock}"
+    mkdir -p "$(dirname "$LOCK_FILE")"
+    exec 9>>"$LOCK_FILE"
+    if ! flock -n 9; then
+      notice "restart refused: another launcher holds $LOCK_FILE"
+      [[ -f "$LOCK_FILE.holder" ]] && notice "  holder: $(cat "$LOCK_FILE.holder")"
+      exit "$RESTART_LOCK_EXIT"
+    fi
+    BY="${HIVE_MCP_RESTART_BY:-ppid $PPID ($(ps -o comm= -p "$PPID" 2>/dev/null || echo '?'))}"
+    HOLDER="pid=$$ by=$BY started=$(date -Iseconds)"
+    printf '%s\n' "$HOLDER" > "$LOCK_FILE.holder"
+    printf '%s\n' "$HOLDER" >> "$(dirname "$LOCK_FILE")/restarts.log"
+    notice "restart lock held ($HOLDER)"
+  else
+    notice "flock not on PATH: launching without the restart lock"
+  fi
+fi
+
+# ── Launch ──────────────────────────────────────────────────────────
+cd "$PROJECT_DIR"
+
+if [[ "${HIVE_MCP_SUPERVISE:-1}" != "1" ]]; then
+  # One launch, so one scope; oom_scope_prefix has just started a real probe
+  # scope, so a start failure here would need the user manager to vanish in
+  # between. exec keeps the pid, which is what an unsupervised caller wants.
+  OOM_SCOPE_PREFIX=()
+  [[ "$OOMD_PREF" != "off" ]] && oom_scope_prefix hive-mcp "$OOMD_PREF"
+  exec ${OOM_SCOPE_PREFIX[@]+"${OOM_SCOPE_PREFIX[@]}"} "${CMD[@]}"
+fi
+
+# Restart after an OOM death (137 = SIGKILL, 3 = -XX:+ExitOnOutOfMemoryError).
+# Each launch builds its own scope: the dead JVM's scope can stay loaded while
+# its orphaned children live, and a reused unit name would fail to start.
+# The child keeps this shell's stdin (the stdio MCP transport).
+OOM_MAX_RESTARTS="${HIVE_MCP_MAX_RESTARTS:-5}"
+OOM_RESTART_WINDOW="${HIVE_MCP_RESTART_WINDOW:-600}"
+set +e
+oom_supervise hive-mcp "$OOMD_PREF" "${CMD[@]}"
+exit $?

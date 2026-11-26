@@ -82,6 +82,8 @@ run_launcher() { # env-assignments come from the caller's `env` prefix
 }
 
 # 1. Supervised restarts after two OOM kills, a fresh scope per launch.
+#    --profile is consumed by the PLANNER now (it becomes HIVE_PROFILE in the
+#    child's environment), so the stub sees only the passthrough tail.
 new_case sup 137 137 0
 HIVE_MCP_SUPERVISE=1 HIVE_MCP_OOMD_PREFERENCE=avoid run_launcher --profile k8s-minimal x; rc=$?
 expect "supervised: 137,137,0 -> three launches, exit 0" "rc=$rc launches=$(lines "$D/pids")" "rc=0 launches=3"
@@ -143,11 +145,14 @@ expect "SIGTERM: stub got TERM, launcher exit 143, no orphan" \
   "rc=$rc signals=$(cat "$D/signals" 2>/dev/null) orphan=$alive launches=$(lines "$D/pids")" \
   "rc=143 signals=term orphan=no launches=1"
 
-# 6. Notices never reach stdout. A copy of the launcher in a scratch project
-#    dir, so local.deps.edn and target/boot-classes can be staged per case.
+# 6. Notices never reach stdout. A scratch PROJECT DIR (HIVE_MCP_PROJECT_DIR),
+#    so local.deps.edn, bin/oom-policy.sh and target/boot-classes can be
+#    staged per case without touching the checkout's own files. The launcher
+#    itself is the real one: its classpath comes from the repo's bb.edn (the
+#    shim passes --config "$DIR/../bb.edn"), which a copied bb.edn could not
+#    reproduce.
 P="$TMP/proj"
 mkdir -p "$P/bin" "$P/src/x"
-cp "$LAUNCHER" "$P/bin/hive-mcp"
 cp "$SCRIPT_DIR/oom-policy.sh" "$P/bin/oom-policy.sh"
 echo '{}' > "$P/local.deps.edn"
 stamp="$P/target/boot-classes/.aot-stamp.edn"
@@ -155,7 +160,8 @@ notice_case() { # <name> <want-stderr-substring> [env...]
   local name="$1" want="$2"; shift 2
   new_case "notice-$name" 0
   env "$@" STUB_DIR="$D" HIVE_MCP_SUPERVISE=0 HIVE_MCP_OOMD_PREFERENCE=off \
-    PATH="$TMP/bin:$PATH" timeout 120 "$P/bin/hive-mcp" </dev/null >"$D/out" 2>"$D/err"
+    HIVE_MCP_PROJECT_DIR="$P" \
+    PATH="$TMP/bin:$PATH" timeout 120 "$LAUNCHER" </dev/null >"$D/out" 2>"$D/err"
   local rc=$? hit=no
   grep -qF -- "$want" "$D/err" && hit=yes
   expect "notice $name: stdout empty, notice on stderr" \

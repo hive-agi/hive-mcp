@@ -117,6 +117,16 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # bin/hive-mcp is now a shim that execs `bb -m hive-mcp.launch.main`, so
+      # bb must be on PATH BEFORE the launcher test drives it. It used to be
+      # installed further down, for `bb test:launch` alone; the launcher test
+      # now needs it too, and a launcher test that fails on a missing bb would
+      # be measuring the runner, not the launcher.
+      - name: Setup Babashka
+        uses: DeLaGuardo/setup-clojure@13.2
+        with:
+          bb: 'latest'
+
       - name: Run launcher test
         run: timeout 300 bin/hive-mcp-launcher-test.sh
 
@@ -125,11 +135,6 @@ jobs:
 
       - name: Signed-push hook self-test
         run: timeout 60 bin/pre-push-signed-test.sh
-
-      - name: Setup Babashka
-        uses: DeLaGuardo/setup-clojure@13.2
-        with:
-          bb: 'latest'
 
       # The :launch planner (schema, defaults, knobs, plan) runs under bb, so
       # its suite needs no JVM and no build. It is gated here because the argv
