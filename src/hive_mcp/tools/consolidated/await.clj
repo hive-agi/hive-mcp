@@ -17,6 +17,10 @@
             [hive-mcp.await.resumers.hive-agent-run]
             [hive-mcp.await.resumers.session]
             [hive-mcp.await.sources.manual :as manual]
+            [hive-mcp.await.sources.poll :as poll]
+            [hive-mcp.await.sources.sql-predicate]
+            [hive-mcp.await.sources.k8s-log-regex]
+            [hive-mcp.await.sources.prom-predicate]
             [hive-mcp.channel.audience :as audience]
             [hive-mcp.nats.inbox :as inbox]
             [hive-mcp.tools.core :as tc :refer [mcp-json mcp-error]]
@@ -207,7 +211,8 @@
          flt    (default-filter source (not-empty (keyword-keys (:filter params))) owner)
          dedup  (->kw (:dedup_key params))
          deadline (->long (:deadline params))
-         timeout  (->long (:timeout_ms params))]
+         timeout  (->long (:timeout_ms params))
+         poll-ms  (->long (:poll_ms params))]
      (cond
        (nil? (:kind owner))
        (r/err :await/bad-request {:message "await create: pass `owner` {kind ...} or `owner_kind`"})
@@ -218,9 +223,17 @@
        (and (some? (:timeout_ms params)) (not (and timeout (pos? timeout))))
        (r/err :await/bad-request {:message "await create: timeout_ms must be a positive integer"})
 
+       (and (some? (:poll_ms params)) (not (and poll-ms (pos? poll-ms))))
+       (r/err :await/bad-request {:message "await create: poll_ms must be a positive integer"})
+
+       (and (some? (:spec params)) (not (map? (:spec params))))
+       (r/err :await/bad-request {:message "await create: spec must be an object"})
+
        :else
        (r/ok (cond-> {:owner owner
-                      :subscription {:type source :filter flt :dedup-key dedup}
+                      :subscription (cond-> {:type source :filter flt :dedup-key dedup}
+                                      (map? (:spec params)) (assoc :spec (poll/kw-keys (:spec params)))
+                                      poll-ms (assoc :poll-ms poll-ms))
                       :prompt (blank->nil (:prompt params))}
                (blank->nil (:id params)) (assoc :id (str (:id params)))
                deadline (assoc :deadline deadline)
@@ -401,7 +414,9 @@
                               "token_budget" {:type "integer" :description "[await create] Context-reconstruction budget of the successor"}
                               "time_budget_ms" {:type "integer" :description "[await create] Wall-clock budget of the successor"}
                               "max_budget_usd" {:type "number" :description "[await create] Spend cap of the successor"}
-                              "source"     {:type "string" :description "[await create] Event source type (default manual)"}
+                              "source"     {:type "string" :description "[await create] Event source type: manual (default), sql-predicate (NEEDS ADDON hive.await-sql; poll one read-only SQL query: spec {connection_ref k8s:<ns>/<secret>/<key>|vault:<row> (operator-allowlisted), query with $1.., params [..] (ids, never secrets), predicate {kind exists|count|scalar, op, value, column?}, dialect?, row_cap?, statement_timeout_ms?, sample_rows? (default 0)}), k8s-log-regex (poll kubectl logs of an allowlisted namespace: spec {namespace, pod|selector, container?, context?, regex, lookback_ms?, tail?}), prom-predicate (poll PromQL on a configured target: spec {query, op, threshold, match any|all, target?}). Specs are closed (unknown keys refused). Polling sources REQUIRE a deadline or timeout_ms"}
+                              "spec"       {:type "object" :description "[await create] Source-specific spec of a polling source (see source)"}
+                              "poll_ms"    {:type "integer" :description "[await create] Poll interval of a polling source (minimum: sql-predicate 30000, k8s-log-regex and prom-predicate 10000)"}
                               "filter"     {:type "object" :description "[await create] Every key must equal the event data's value. Default for a manual awaiter naming ling_id: {to: <ling_id>}; an awaiter with no filter wakes only on a fire naming its id"}
                               "dedup_key"  {:type "string" :description "[await create] Event data key whose value never wakes twice"}
                               "timeout_ms" {:type "integer" :description "[await create] Wake with reason timeout after this long"}
