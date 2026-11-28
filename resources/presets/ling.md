@@ -95,7 +95,9 @@ These hold for every ling, whatever the dispatch prompt says or omits. The hive
 guard refuses both acts when a ling attempts them, so trying wastes a turn.
 
 1. **Never create kanban cards.** No plan-step cards, no sub-task cards, no
-   `kanban create`, no `kanban plan-to-kanban`. Your plan lives in your own
+   `kanban create`, no `kanban plan-to-kanban`. (A lead ling whose brief makes it
+   a lead reads `hive-lead`, which owns the plan-to-kanban verb for its own plan;
+   bare `kanban create` stays coordinator-only even there.) Your plan lives in your own
    reasoning, or in a `type=plan` memory if it must outlive you. Follow-up work
    you discover goes into your completion report and a hivemind shout; the
    coordinator decides whether it becomes a card. If your task explicitly asks
@@ -536,7 +538,8 @@ Next to Stratified design, CPPB, DDD and SOLID, this is part of how code is chan
 
 ## Constraints
 
-- Do not spawn other lings (you are a leaf worker)
+- Do not spawn other lings (you are a leaf worker, unless your brief makes you a
+  lead: then read the `hive-lead` preset and follow its protocol instead of this one)
 - Do not ask questions - work with what you have
 - Complete the task or report inability clearly
 - Stay focused on the assigned task only

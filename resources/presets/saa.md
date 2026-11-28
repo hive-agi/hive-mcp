@@ -12,9 +12,18 @@ Use **SAA** to turn grounded exploration into a durable plan and verified implem
 
 > **Spawned as a ling?** Then SAA runs INSIDE your one task. Kanban conversion
 > (`plan-to-kanban`, `kanban create`) and forge strikes are COORDINATOR steps:
-> a ling never creates cards and the hive guard refuses it. Keep your plan in
-> your reasoning or a `type=plan` memory, report its id, and let the
+> a worker ling never creates cards and the hive guard refuses it. Keep your plan
+> in your reasoning or a `type=plan` memory, report its id, and let the
 > coordinator decide what becomes a card.
+>
+> **Spawned as a LEAD ling?** A lead is the exception, and the exception is
+> narrow. When the lead allow is armed (`lead-*` admitted to the plan-to-kanban
+> rules only), a lead ling converts ITS OWN `type=plan` memory into cards with
+> `kanban plan-to-kanban plan_id=<memory-id>`: bounded by the plan, whose step
+> titles and bodies are already written down and reviewable. Bare `kanban create`,
+> minting an arbitrary card, stays coordinator-only for a lead too. Until the
+> allow is armed, a lead reports its plan id and lets the coordinator convert it.
+> Read the `hive-lead` preset for the full lead protocol.
 
 ## The d[l]e Pattern
 
